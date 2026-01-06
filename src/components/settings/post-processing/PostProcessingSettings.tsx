@@ -17,6 +17,7 @@ import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { usePostProcessProviderState } from "../PostProcessingSettingsApi/usePostProcessProviderState";
 import { useSettings } from "../../../hooks/useSettings";
+import { MlxModelSelector } from "../MlxModelSelector";
 
 const DisabledNotice: React.FC<{ children: React.ReactNode }> = ({
   children,
@@ -78,6 +79,11 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
             {t("settings.postProcessing.api.appleIntelligence.requirements")}
           </DisabledNotice>
         </SettingContainer>
+      ) : state.isMlxProvider ? (
+        <MlxModelSelector
+          selectedModelId={state.model}
+          onModelSelect={state.handleModelSelect}
+        />
       ) : (
         <>
           {state.selectedProvider?.id === "custom" && (

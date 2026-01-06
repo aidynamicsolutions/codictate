@@ -5,612 +5,109 @@
 
 
 export const commands = {
-async changeBinding(id: string, binding: string) : Promise<Result<BindingResponse, string>> {
+/**
+ * List all available MLX models with their current status
+ */
+async mlxListModels() : Promise<Result<MlxModelInfo[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("change_binding", { id, binding }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async resetBinding(id: string) : Promise<Result<BindingResponse, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("reset_binding", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changePttSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_ptt_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAudioFeedbackSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_audio_feedback_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAudioFeedbackVolumeSetting(volume: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_audio_feedback_volume_setting", { volume }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeSoundThemeSetting(theme: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_sound_theme_setting", { theme }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeStartHiddenSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_start_hidden_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAutostartSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_autostart_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeTranslateToEnglishSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_translate_to_english_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeSelectedLanguageSetting(language: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_selected_language_setting", { language }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeOverlayPositionSetting(position: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_overlay_position_setting", { position }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeDebugModeSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_debug_mode_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeWordCorrectionThresholdSetting(threshold: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_word_correction_threshold_setting", { threshold }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changePasteMethodSetting(method: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_paste_method_setting", { method }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeClipboardHandlingSetting(handling: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_clipboard_handling_setting", { handling }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changePostProcessEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_post_process_enabled_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changePostProcessBaseUrlSetting(providerId: string, baseUrl: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_post_process_base_url_setting", { providerId, baseUrl }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changePostProcessApiKeySetting(providerId: string, apiKey: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_post_process_api_key_setting", { providerId, apiKey }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changePostProcessModelSetting(providerId: string, model: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_post_process_model_setting", { providerId, model }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setPostProcessProvider(providerId: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_post_process_provider", { providerId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async fetchPostProcessModels(providerId: string) : Promise<Result<string[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("fetch_post_process_models", { providerId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async addPostProcessPrompt(name: string, prompt: string) : Promise<Result<LLMPrompt, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("add_post_process_prompt", { name, prompt }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async updatePostProcessPrompt(id: string, name: string, prompt: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_post_process_prompt", { id, name, prompt }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async deletePostProcessPrompt(id: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_post_process_prompt", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setPostProcessSelectedPrompt(id: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_post_process_selected_prompt", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async updateCustomWords(words: string[]) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_custom_words", { words }) };
+    return { status: "ok", data: await TAURI_INVOKE("mlx_list_models") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Temporarily unregister a binding while the user is editing it in the UI.
- * This avoids firing the action while keys are being recorded.
+ * Get the status of a specific MLX model
  */
-async suspendBinding(id: string) : Promise<Result<null, string>> {
+async mlxGetModelStatus(modelId: string) : Promise<Result<MlxModelInfo | null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("suspend_binding", { id }) };
+    return { status: "ok", data: await TAURI_INVOKE("mlx_get_model_status", { modelId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Re-register the binding after the user has finished editing.
+ * Start downloading an MLX model from Hugging Face Hub
  */
-async resumeBinding(id: string) : Promise<Result<null, string>> {
+async mlxDownloadModel(modelId: string) : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("resume_binding", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeMuteWhileRecordingSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_mute_while_recording_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAppendTrailingSpaceSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_append_trailing_space_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeAppLanguageSetting(language: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_app_language_setting", { language }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async changeUpdateChecksSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_update_checks_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async triggerUpdateCheck() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("trigger_update_check") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async cancelOperation() : Promise<void> {
-    await TAURI_INVOKE("cancel_operation");
-},
-async getAppDirPath() : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_app_dir_path") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getAppSettings() : Promise<Result<AppSettings, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_app_settings") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getDefaultSettings() : Promise<Result<AppSettings, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_default_settings") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getLogDirPath() : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_log_dir_path") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setLogLevel(level: LogLevel) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_log_level", { level }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async openRecordingsFolder() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("open_recordings_folder") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async openLogDir() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("open_log_dir") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async openAppDataDir() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("open_app_data_dir") };
+    return { status: "ok", data: await TAURI_INVOKE("mlx_download_model", { modelId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Check if Apple Intelligence is available on this device.
- * Called by the frontend when the user selects Apple Intelligence provider.
+ * Cancel an in-progress MLX model download
  */
-async checkAppleIntelligenceAvailable() : Promise<boolean> {
-    return await TAURI_INVOKE("check_apple_intelligence_available");
-},
-async getAvailableModels() : Promise<Result<ModelInfo[], string>> {
+async mlxCancelDownload() : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_available_models") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getModelInfo(modelId: string) : Promise<Result<ModelInfo | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_model_info", { modelId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async downloadModel(modelId: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("download_model", { modelId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async deleteModel(modelId: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_model", { modelId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async cancelDownload(modelId: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("cancel_download", { modelId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setActiveModel(modelId: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_active_model", { modelId }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getCurrentModel() : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_current_model") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getTranscriptionModelStatus() : Promise<Result<string | null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_transcription_model_status") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async isModelLoading() : Promise<Result<boolean, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("is_model_loading") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async hasAnyModelsAvailable() : Promise<Result<boolean, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("has_any_models_available") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async hasAnyModelsOrDownloads() : Promise<Result<boolean, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("has_any_models_or_downloads") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getRecommendedFirstModel() : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_recommended_first_model") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async updateMicrophoneMode(alwaysOn: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_microphone_mode", { alwaysOn }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getMicrophoneMode() : Promise<Result<boolean, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_microphone_mode") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getAvailableMicrophones() : Promise<Result<AudioDevice[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_available_microphones") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setSelectedMicrophone(deviceName: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_selected_microphone", { deviceName }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getSelectedMicrophone() : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_selected_microphone") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getAvailableOutputDevices() : Promise<Result<AudioDevice[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_available_output_devices") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async setSelectedOutputDevice(deviceName: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_selected_output_device", { deviceName }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getSelectedOutputDevice() : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_selected_output_device") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async playTestSound(soundType: string) : Promise<void> {
-    await TAURI_INVOKE("play_test_sound", { soundType });
-},
-async checkCustomSounds() : Promise<CustomSounds> {
-    return await TAURI_INVOKE("check_custom_sounds");
-},
-async setClamshellMicrophone(deviceName: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("set_clamshell_microphone", { deviceName }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getClamshellMicrophone() : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_clamshell_microphone") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async isRecording() : Promise<boolean> {
-    return await TAURI_INVOKE("is_recording");
-},
-async setModelUnloadTimeout(timeout: ModelUnloadTimeout) : Promise<void> {
-    await TAURI_INVOKE("set_model_unload_timeout", { timeout });
-},
-async getModelLoadStatus() : Promise<Result<ModelLoadStatus, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_model_load_status") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async unloadModelManually() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("unload_model_manually") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getHistoryEntries() : Promise<Result<HistoryEntry[], string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_history_entries") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async toggleHistoryEntrySaved(id: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("toggle_history_entry_saved", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async getAudioFilePath(fileName: string) : Promise<Result<string, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("get_audio_file_path", { fileName }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async deleteHistoryEntry(id: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("delete_history_entry", { id }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async updateHistoryLimit(limit: number) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_history_limit", { limit }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("update_recording_retention_period", { period }) };
+    return { status: "ok", data: await TAURI_INVOKE("mlx_cancel_download") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Retry a failed MLX model download (max 3 attempts)
  */
-async isLaptop() : Promise<Result<boolean, string>> {
+async mlxRetryDownload() : Promise<Result<null, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("is_laptop") };
+    return { status: "ok", data: await TAURI_INVOKE("mlx_retry_download") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete a downloaded MLX model
+ * Returns an error if the model is currently in use
+ */
+async mlxDeleteModel(modelId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mlx_delete_model", { modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Process text using the loaded MLX model
+ * This is used for transcription post-processing
+ */
+async mlxProcessText(prompt: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mlx_process_text", { prompt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Check if any MLX model operation is currently in progress
+ */
+async mlxIsBusy() : Promise<boolean> {
+    return await TAURI_INVOKE("mlx_is_busy");
+},
+/**
+ * Unload the currently loaded MLX model to free memory
+ */
+async mlxUnloadModel() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mlx_unload_model") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Switch to a different MLX model
+ * Unloads the current model and prepares for the new one to be loaded on next use
+ */
+async mlxSwitchModel(modelId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mlx_switch_model", { modelId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -637,6 +134,78 @@ export type EngineType = "Whisper" | "Parakeet"
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null }
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
+/**
+ * Information about an available MLX model
+ */
+export type MlxModelInfo = { 
+/**
+ * Unique model identifier
+ */
+id: string; 
+/**
+ * Display name for the UI
+ */
+display_name: string; 
+/**
+ * Model description
+ */
+description: string; 
+/**
+ * Hugging Face repository ID
+ */
+hf_repo: string; 
+/**
+ * Approximate size in bytes when downloaded
+ */
+size_bytes: number; 
+/**
+ * Current status of the model
+ */
+status: MlxModelStatus; 
+/**
+ * Download progress (0.0 - 1.0) when downloading
+ */
+download_progress: number; 
+/**
+ * Whether this is the default recommended model
+ */
+is_default: boolean; 
+/**
+ * Number of parameters (for display)
+ */
+parameters: string }
+/**
+ * Model status enum representing the lifecycle of a model
+ */
+export type MlxModelStatus = 
+/**
+ * Model is not downloaded
+ */
+"not_downloaded" | 
+/**
+ * Model is currently being downloaded
+ */
+"downloading" | 
+/**
+ * Model download failed
+ */
+"download_failed" | 
+/**
+ * Model is downloaded but not loaded
+ */
+"downloaded" | 
+/**
+ * Model is currently being loaded into memory
+ */
+"loading" | 
+/**
+ * Model is loaded and ready for inference
+ */
+"ready" | 
+/**
+ * Model loading failed
+ */
+"load_failed"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_5"

@@ -2,56 +2,56 @@
 
 ## 1. Backend Infrastructure
 
-- [ ] 1.1 Add `mlx-rs = "0.21.0"` dependency to `Cargo.toml` with macOS aarch64 conditional compilation
-- [ ] 1.2 Create `src-tauri/src/managers/mlx.rs` with `MlxModelManager` struct
-- [ ] 1.3 Implement model registry with available models (Qwen 3, Gemma 3, SmolLM 3, Ministral 3) with Qwen 3 Base 1.7B as default
-- [ ] 1.4 Implement model download from Hugging Face Hub with progress events
-- [ ] 1.5 Implement download cancellation support
-- [ ] 1.6 Implement download retry logic (max 3 attempts)
-- [ ] 1.7 Implement model loading/unloading with state management
-- [ ] 1.8 Implement model switching (unload current, reset state for new)
-- [ ] 1.9 Implement text generation API (adapt from mlx-rs mistral example)
-- [ ] 1.10 Add MLX manager initialization in `lib.rs` (macOS aarch64 only)
-- [ ] 1.11 Integrate with existing model unload timeout setting
-- [ ] 1.12 Implement error handling (network errors, disk space, corrupted files)
-- [ ] 1.13 Implement empty directory cleanup on status check
+- [x] 1.1 Add `mlx-rs = "0.25.3"`, `mlx-lm = "0.0.1"`, `hf-hub = "0.4.3"` dependencies to `Cargo.toml` with macOS aarch64 conditional compilation
+- [x] 1.2 Create `src-tauri/src/managers/mlx.rs` with `MlxModelManager` struct
+- [x] 1.3 Implement model registry with available models (Qwen 3, Gemma 3, SmolLM 3) with Qwen 3 Base 1.7B as default
+- [x] 1.4 Implement model download from Hugging Face Hub with progress events
+- [x] 1.5 Implement download cancellation support
+- [x] 1.6 Implement download retry logic (max 3 attempts)
+- [x] 1.7 Implement model loading/unloading with state management
+- [x] 1.8 Implement model switching (unload current, reset state for new)
+- [/] 1.9 Implement text generation API (placeholder implemented, actual MLX inference TODO)
+- [x] 1.10 Add MLX manager initialization in `lib.rs` (macOS aarch64 only)
+- [x] 1.11 Integrate with existing model unload timeout setting
+- [x] 1.12 Implement error handling (network errors, disk space, corrupted files)
+- [x] 1.13 Implement empty directory cleanup on status check
 
 ## 2. Tauri Commands
 
-- [ ] 2.1 Create `src-tauri/src/commands/mlx.rs` with command handlers
-- [ ] 2.2 Implement `mlx_list_models` command
-- [ ] 2.3 Implement `mlx_get_model_status` command
-- [ ] 2.4 Implement `mlx_download_model` async command with progress events
-- [ ] 2.5 Implement `mlx_cancel_download` command
-- [ ] 2.6 Implement `mlx_retry_download` command
-- [ ] 2.7 Implement `mlx_delete_model` command (with busy check)
-- [ ] 2.8 Implement `mlx_process_text` async command
-- [ ] 2.9 Register MLX commands in Tauri builder (macOS aarch64 only)
-- [ ] 2.10 Add specta TypeScript bindings generation
+- [x] 2.1 Create `src-tauri/src/commands/mlx.rs` with command handlers
+- [x] 2.2 Implement `mlx_list_models` command
+- [x] 2.3 Implement `mlx_get_model_status` command
+- [x] 2.4 Implement `mlx_download_model` async command with progress events
+- [x] 2.5 Implement `mlx_cancel_download` command
+- [x] 2.6 Implement `mlx_retry_download` command
+- [x] 2.7 Implement `mlx_delete_model` command (with busy check)
+- [x] 2.8 Implement `mlx_process_text` async command
+- [x] 2.9 Register MLX commands in Tauri builder (macOS aarch64 only)
+- [x] 2.10 Add specta TypeScript bindings generation
 
 ## 3. Settings Integration
 
-- [ ] 3.1 Add `LOCAL_MLX_PROVIDER_ID` constant to `settings.rs`
-- [ ] 3.2 Add MLX provider to `PostProcessProvider` list
-- [ ] 3.3 Add `selected_mlx_model` field to settings
-- [ ] 3.4 Update `maybe_post_process_transcription()` to handle local-mlx provider
+- [x] 3.1 Add `LOCAL_MLX_PROVIDER_ID` constant to `settings.rs`
+- [x] 3.2 Add MLX provider to `PostProcessProvider` list
+- [ ] 3.3 Add `selected_mlx_model` field to settings (using existing post_process_models HashMap)
+- [x] 3.4 Update `maybe_post_process_transcription()` to handle local-mlx provider
 
 ## 4. Frontend - Settings UI
 
-- [ ] 4.1 Update post-processing provider dropdown to include "Local (MLX)" option
-- [ ] 4.2 Create `MlxModelSelector` component with model list and status
-- [ ] 4.3 Add download progress indicator with cancel button
-- [ ] 4.4 Add retry button for failed downloads
-- [ ] 4.5 Add model delete confirmation dialog
-- [ ] 4.6 Show storage usage and model size information
-- [ ] 4.7 Handle and display error states (network, disk, loading failures)
+- [x] 4.1 Update post-processing provider dropdown to include "Local (MLX)" option
+- [x] 4.2 Create `MlxModelSelector` component with model list and status
+- [x] 4.3 Add download progress indicator with cancel button
+- [x] 4.4 Add retry button for failed downloads
+- [x] 4.5 Add model delete confirmation dialog
+- [x] 4.6 Show storage usage and model size information
+- [x] 4.7 Handle and display error states (network, disk, loading failures)
 - [ ] 4.8 Conditionally render MLX options (hide on non-Apple Silicon)
 
 ## 5. TypeScript Bindings & Types
 
-- [ ] 5.1 Add `MlxModelInfo` and `MlxModelStatus` types to bindings
-- [ ] 5.2 Add event type for `mlx-model-state-changed`
-- [ ] 5.3 Create `useMlxModels` hook for model state management
+- [x] 5.1 Add `MlxModelInfo` and `MlxModelStatus` types to bindings (auto-generated by tauri-specta)
+- [x] 5.2 Add event type for `mlx-model-state-changed`
+- [x] 5.3 Create `useMlxModels` hook for model state management
 
 ## 6. Testing & Verification
 

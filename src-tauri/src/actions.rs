@@ -3,7 +3,11 @@ use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use crate::managers::mlx::MlxModelManager;
 use crate::managers::transcription::TranscriptionManager;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use crate::settings::LOCAL_MLX_PROVIDER_ID;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
@@ -127,6 +131,26 @@ async fn maybe_post_process_transcription(
             debug!("Apple Intelligence provider selected on unsupported platform");
             return None;
         }
+    }
+
+    // Handle MLX Local AI provider
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    if provider.id == LOCAL_MLX_PROVIDER_ID {
+        // MLX provider doesn't need external API calls - handled locally
+        debug!("Using MLX Local AI for post-processing");
+
+        // Note: The actual MLX processing will be handled through the MlxModelManager
+        // For now, we return None to fall back to original transcription
+        // This will be connected when the full MLX inference pipeline is implemented
+        debug!(
+            "MLX Local AI post-processing requested with prompt length: {} chars",
+            processed_prompt.len()
+        );
+
+        // TODO: Integrate with MlxModelManager.process_text() when model inference is fully implemented
+        // For now, log and return None to indicate the feature isn't fully functional yet
+        debug!("MLX inference not yet fully implemented - falling back to original transcription");
+        return None;
     }
 
     let api_key = settings

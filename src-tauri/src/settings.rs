@@ -9,6 +9,10 @@ use tauri_plugin_store::StoreExt;
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
 
+/// MLX Local AI Provider - for local LLM inference on Apple Silicon
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+pub const LOCAL_MLX_PROVIDER_ID: &str = "local_mlx";
+
 #[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
 #[serde(rename_all = "lowercase")]
 pub enum LogLevel {
@@ -423,6 +427,15 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "apple-intelligence://local".to_string(),
             allow_base_url_edit: false,
             models_endpoint: None,
+        });
+
+        // MLX Local AI - runs local LLM models on Apple Silicon
+        providers.push(PostProcessProvider {
+            id: LOCAL_MLX_PROVIDER_ID.to_string(),
+            label: "Local (MLX)".to_string(),
+            base_url: "mlx://local".to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: None, // Models are managed internally
         });
     }
 

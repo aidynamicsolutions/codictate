@@ -22,6 +22,8 @@ use tauri_specta::{collect_commands, Builder};
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
 use managers::history::HistoryManager;
+#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+use managers::mlx::MlxModelManager;
 use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
 #[cfg(unix)]
@@ -127,11 +129,18 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
 
+    // Initialize MLX model manager for Apple Silicon Macs
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    let mlx_manager =
+        Arc::new(MlxModelManager::new(app_handle).expect("Failed to initialize MLX model manager"));
+
     // Add managers to Tauri's managed state
     app_handle.manage(recording_manager.clone());
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    app_handle.manage(mlx_manager.clone());
 
     // Initialize the shortcuts
     shortcut::init_shortcuts(app_handle);
@@ -310,6 +319,21 @@ pub fn run() {
         commands::history::update_history_limit,
         commands::history::update_recording_retention_period,
         helpers::clamshell::is_laptop,
+    ]);
+
+    // Add MLX commands on Apple Silicon only
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    let specta_builder = specta_builder.commands(collect_commands![
+        commands::mlx::mlx_list_models,
+        commands::mlx::mlx_get_model_status,
+        commands::mlx::mlx_download_model,
+        commands::mlx::mlx_cancel_download,
+        commands::mlx::mlx_retry_download,
+        commands::mlx::mlx_delete_model,
+        commands::mlx::mlx_process_text,
+        commands::mlx::mlx_is_busy,
+        commands::mlx::mlx_unload_model,
+        commands::mlx::mlx_switch_model,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
