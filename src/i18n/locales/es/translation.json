@@ -408,13 +408,15 @@
     "dismiss": "Descartar"
   },
   "errors": {
-    "loadDirectory": "Error al cargar el directorio: {{error}}"
+    "loadDirectory": "Error al cargar el directorio: {{error}}",
+    "postProcessFailed": "El post procesamiento falló. Usando transcripción original."
   },
   "appLanguage": {
     "title": "Idioma de la aplicación",
     "description": "Cambia el idioma de la interfaz de Handy"
   },
   "overlay": {
-    "transcribing": "Transcribiendo..."
+    "transcribing": "Transcribiendo...",
+    "processing": "Procesando Transcripción..."
   }
 }

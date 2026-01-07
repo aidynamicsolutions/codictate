@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
+import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import Footer from "./components/footer";
@@ -15,6 +17,7 @@ const renderSettingsContent = (section: SidebarSection) => {
 };
 
 function App() {
+  const { t } = useTranslation();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
@@ -23,6 +26,16 @@ function App() {
   useEffect(() => {
     checkOnboardingStatus();
   }, []);
+
+  // Listen for post-processing errors to show toast notification
+  useEffect(() => {
+    const unlisten = listen<string>("post-process-error", () => {
+      toast.error(t("errors.postProcessFailed"));
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [t]);
 
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {

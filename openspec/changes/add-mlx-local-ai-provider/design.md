@@ -16,10 +16,10 @@ The WritingTools `LocalModelProvider.swift` demonstrates:
 
 | Finding | Source |
 |---------|--------|
-| mlx-rs is feature-complete (v0.21.0) | [mlx-rs GitHub](https://github.com/oxideai/mlx-rs) |
 | MLX ~1.14x faster than llama.cpp on M3 | Reddit benchmarks Dec 2024 |
-| Has working Mistral text generation example | mlx-rs/examples/mistral |
-| Industry recommends direct Rust bindings for Tauri | Tauri LLM best practices |
+| mlx-lm has best model ecosystem support | mlx-lm GitHub examples |
+| Python sidecar pattern works well for ML inference | Tauri ML best practices |
+| uv provides fast Python environment management | [uv GitHub](https://github.com/astral-sh/uv) |
 | MLX optimized for Apple Silicon unified memory | Apple MLX documentation |
 
 ## Goals / Non-Goals
@@ -52,36 +52,49 @@ graph TD
         G[mlx_list_models]
     end
 
-    subgraph Backend - MLX Manager
+    subgraph Backend - Rust
         H[MlxModelManager]
-        H --> I[Model Download via HF Hub]
-        H --> J[Model Loading]
-        H --> K[Text Generation]
+        H --> I[HTTP Client]
+    end
+
+    subgraph Python Sidecar
+        J[FastAPI Server :5000]
+        J --> K[/load endpoint]
+        J --> L[/generate endpoint]
+        J --> M[/unload endpoint]
+        J --> N[/status endpoint]
+        J --> O[mlx-lm library]
+    end
+
+    subgraph Runtime
+        P[uv binary - bundled]
+        P --> Q[python-backend/server.py]
     end
 
     subgraph Storage
-        L[~/Library/Application Support/handy/mlx-models/]
+        R[~/.cache/huggingface/hub/]
     end
 
     B --> D & E & F & G
     D & E --> H
-    H --> L
+    I --> J
+    O --> R
 ```
 
 ## Key Decisions
 
-### Decision 1: Use mlx-rs for Rust MLX bindings
-**Choice:** Use [mlx-rs](https://github.com/oxideai/mlx-rs) v0.21.0 for Rust bindings to Apple's MLX framework.
+### Decision 1: Use Python Sidecar with mlx-lm
+**Choice:** Use a Python FastAPI sidecar with [mlx-lm](https://github.com/ml-explore/mlx-lm) library, managed by [uv](https://github.com/astral-sh/uv).
 
 **Rationale:**
-- Native Rust integration with Tauri
-- Feature-complete with LLM text generation examples
-- Follows MLX versioning for easy tracking
-- Avoids FFI complexity of Swift interop
+- Best model ecosystem support (chat templates, tokenizers, quantized models)
+- Official Apple MLX library with active development
+- Simpler model loading compared to raw Rust bindings
+- uv provides fast, reproducible Python environment (~60s first run)
 
 **Alternatives considered:**
+- mlx-rs (Rust bindings) — Complex to maintain, limited model format support
 - Swift interop via `objc` crate — Too complex, maintenance burden
-- Python subprocess with `mlx-lm` — Performance overhead, packaging issues
 - llama.cpp — MLX is ~1.14x faster on Apple Silicon
 
 ### Decision 2: Separate MLX Model Manager from Transcription Manager
@@ -109,7 +122,7 @@ graph TD
 - Existing timeout infrastructure can be reused
 
 ### Decision 5: Hugging Face Hub for Model Downloads
-**Choice:** Download models from Hugging Face Hub, like the reference WritingTools implementation.
+**Choice:** Download models from Hugging Face Hub via hf-hub crate (Rust) and mlx-lm (Python).
 
 **Rationale:**
 - Standard model hosting, widely used
@@ -117,10 +130,10 @@ graph TD
 - Same approach as macOS reference implementation
 
 ### Decision 6: Model Storage Location
-**Choice:** Store models in `~/Library/Application Support/handy/mlx-models/`
+**Choice:** Store models in `~/.cache/huggingface/hub/` (standard HuggingFace cache)
 
 **Rationale:**
-- Follows macOS conventions
+- Follows HuggingFace conventions, shared with other tools
 - Separate from transcription models (`resources/models/`)
 - User can delete to reclaim space
 - Persists across app updates
@@ -144,19 +157,28 @@ sequenceDiagram
     participant Actions as actions.rs
     participant Settings as settings.rs
     participant MLX as MlxModelManager
-    participant Model as MLX Model
+    participant Server as Python Sidecar
+    participant Model as mlx-lm
 
     Actions->>Settings: get_settings()
     Settings-->>Actions: provider = "local-mlx"
     Actions->>MLX: process_text(prompt)
     
-    alt Model not loaded
-        MLX->>MLX: load_model()
-        MLX->>Model: Load weights to GPU
+    alt Server not running
+        MLX->>MLX: ensure_server_running()
+        MLX->>Server: Spawn via uv run
+        MLX->>MLX: wait_for_server_ready() polls /status
     end
     
-    MLX->>Model: generate(prompt)
-    Model-->>MLX: generated_text
+    alt Model not loaded
+        MLX->>Server: POST /load (model_path)
+        Server->>Model: Load weights to GPU
+    end
+    
+    MLX->>Server: POST /generate (prompt, max_tokens, temp)
+    Server->>Model: generate with chat template
+    Model-->>Server: generated_text
+    Server-->>MLX: {"text": ...}
     MLX-->>Actions: enhanced_text
 ```
 
@@ -177,7 +199,7 @@ stateDiagram-v2
 
 ## API Design
 
-### Tauri Commands
+### Tauri Commands (Rust)
 
 ```rust
 // List available models with their status
@@ -204,9 +226,28 @@ async fn mlx_retry_download() -> Result<(), String>;
 #[tauri::command]
 fn mlx_delete_model(model_id: &str) -> Result<(), String>;
 
-// Process text with the loaded model
+// Process text with the loaded model (via sidecar)
 #[tauri::command]
 async fn mlx_process_text(prompt: String) -> Result<String, String>;
+```
+
+### Python Sidecar Endpoints (FastAPI)
+
+```python
+# POST /load - Load a model into memory
+# Body: {"model_path": "/path/to/model"}
+# Response: {"status": "loaded", "model_path": "..."}
+
+# POST /generate - Generate text
+# Body: {"prompt": "...", "max_tokens": 150, "temperature": 0.7}
+# Applies: chat template (enable_thinking=False), top_p=0.8, repetition_penalty=1.15
+# Response: {"response": "...", "tokens_generated": int}
+
+# POST /unload - Unload model from memory
+# Response: {"status": "unloaded", "model_loaded": false}
+
+# GET /status - Health check
+# Response: {"status": "running", "model_loaded": bool, "model_path": str|null}
 ```
 
 ### Events
@@ -236,9 +277,13 @@ type MlxModelStateEvent = {
 - **Impact:** Model loading takes 5-15 seconds on first use
 - **Mitigation:** Loading indicator in UI, match existing transcription model UX
 
-### Risk 4: mlx-rs API changes
-- **Impact:** API may evolve as mlx-rs matures
-- **Mitigation:** Pin version 0.21.0, comprehensive error handling
+### Risk 4: Python sidecar startup time
+- **Impact:** First inference takes ~5-10s for server startup + model loading
+- **Mitigation:** Show loading indicator, pre-warm server on settings page visit
+
+### Risk 5: uv binary size
+- **Impact:** Bundled uv adds ~42MB to app size
+- **Mitigation:** Accept trade-off for reliable Python environment management
 
 ### Risk 5: Concurrent operations
 - **Impact:** User may attempt to delete model while downloading or running

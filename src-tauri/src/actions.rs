@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::AppHandle;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
@@ -31,6 +31,7 @@ pub trait ShortcutAction: Send + Sync {
 struct TranscribeAction;
 
 async fn maybe_post_process_transcription(
+    app: &AppHandle,
     settings: &AppSettings,
     transcription: &str,
 ) -> Option<String> {
@@ -136,21 +137,34 @@ async fn maybe_post_process_transcription(
     // Handle MLX Local AI provider
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     if provider.id == LOCAL_MLX_PROVIDER_ID {
-        // MLX provider doesn't need external API calls - handled locally
         debug!("Using MLX Local AI for post-processing");
-
-        // Note: The actual MLX processing will be handled through the MlxModelManager
-        // For now, we return None to fall back to original transcription
-        // This will be connected when the full MLX inference pipeline is implemented
         debug!(
             "MLX Local AI post-processing requested with prompt length: {} chars",
             processed_prompt.len()
         );
 
-        // TODO: Integrate with MlxModelManager.process_text() when model inference is fully implemented
-        // For now, log and return None to indicate the feature isn't fully functional yet
-        debug!("MLX inference not yet fully implemented - falling back to original transcription");
-        return None;
+        // Get the MLX manager from app state
+        let mlx_manager = app.state::<Arc<MlxModelManager>>();
+        return match mlx_manager.process_text(&processed_prompt).await {
+            Ok(result) => {
+                if result.trim().is_empty() {
+                    debug!("MLX Local AI returned an empty response");
+                    None
+                } else {
+                    debug!(
+                        "MLX Local AI post-processing succeeded. Output length: {} chars",
+                        result.len()
+                    );
+                    Some(result)
+                }
+            }
+            Err(e) => {
+                error!("MLX Local AI post-processing failed: {}", e);
+                // Emit error event for toast notification
+                let _ = app.emit("post-process-error", e.to_string());
+                None
+            }
+        };
     }
 
     let api_key = settings
@@ -362,7 +376,11 @@ impl ShortcutAction for TranscribeAction {
                             }
                             // Then apply regular post-processing if enabled
                             else if let Some(processed_text) =
-                                maybe_post_process_transcription(&settings, &transcription).await
+                                {
+                                    // Switch overlay to "processing" state
+                                    utils::show_processing_overlay(&ah);
+                                    maybe_post_process_transcription(&ah, &settings, &transcription).await
+                                }
                             {
                                 final_text = processed_text.clone();
                                 post_processed_text = Some(processed_text);

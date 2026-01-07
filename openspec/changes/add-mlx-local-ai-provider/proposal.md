@@ -13,37 +13,47 @@ Currently, Handy relies on **cloud-based LLM APIs** (OpenAI, Anthropic, OpenRout
 
 | Finding | Source |
 |---------|--------|
-| mlx-rs is feature-complete (v0.21.0) | [mlx-rs GitHub](https://github.com/oxideai/mlx-rs) |
 | MLX ~1.14x faster than llama.cpp on M3 | Reddit benchmarks Dec 2024 |
-| Has working Mistral text generation example | mlx-rs/examples/mistral |
-| Industry recommends direct Rust bindings for Tauri | Tauri LLM best practices |
+| mlx-lm has best model ecosystem support | mlx-lm GitHub examples |
+| Python sidecar pattern works well for ML inference | Tauri ML best practices |
+| uv provides fast Python environment management | [uv GitHub](https://github.com/astral-sh/uv) |
 | MLX optimized for Apple Silicon unified memory | Apple MLX documentation |
 
 ## What Changes
 
 ### New Capability: Local AI Inference Provider
-A new local AI provider that uses **mlx-rs** (Rust bindings for MLX) to run quantized LLMs on Apple Silicon Macs for transcription enhancement.
+A new local AI provider that uses a **Python sidecar** with **mlx-lm** to run quantized LLMs on Apple Silicon Macs for transcription enhancement. The sidecar is managed via **uv** for fast, reproducible Python environment setup.
 
 ### Detailed Changes
 
-1. **New module: `src-tauri/src/managers/mlx.rs`**
-   - Model management (download, load, unload, cache)
-   - Text generation API matching the existing `AIProvider` pattern
-   - Support for LLM models (Qwen 3, Gemma 3, SmolLM 3, Ministral 3)
+1. **New module: `src-tauri/src/managers/mlx/`**
+   - `manager.rs` - HTTP client for Python sidecar, model management
+   - Sidecar lifecycle (spawn, health check, shutdown)
+   - Support for LLM models (Qwen 3 family)
    - Progress reporting for model downloads
 
-2. **Settings integration**
+2. **New Python sidecar: `python-backend/server.py`**
+   - FastAPI server with endpoints: `/load`, `/generate`, `/unload`, `/status`
+   - Uses `mlx-lm` library for model loading and text generation
+   - Inline `uv` dependencies for zero-setup deployment
+   - Chat template formatting for instruction-following models
+
+3. **Bundled runtime: `src-tauri/binaries/uv-*`**
+   - Bundled `uv` binary (~42MB) for Python environment management
+   - Configured as Tauri external binary
+
+4. **Settings integration**
    - Add "Local (MLX)" as a post-processing provider option
    - Model selection dropdown with available local models
    - Download/delete model actions
    - **Note**: Only available on macOS Apple Silicon (aarch64)
 
-3. **Frontend updates**
+5. **Frontend updates**
    - Model download UI with progress indicator
    - Model status display (downloaded, downloading, loading, ready)
    - Storage usage information
 
-4. **Integration with existing post-processing pipeline**
+6. **Integration with existing post-processing pipeline**
    - Update `maybe_post_process_transcription()` to support local provider
    - Seamless fallback to original transcription if local inference fails
 
@@ -78,14 +88,16 @@ A new local AI provider that uses **mlx-rs** (Rust bindings for MLX) to run quan
   - Windows/Linux will continue using cloud providers
 
 - **Dependencies:**
-  - [`mlx-rs`](https://github.com/oxideai/mlx-rs) v0.21.0 — Rust bindings for MLX
-  - Model files stored in `~/Library/Application Support/handy/mlx-models/`
+  - [`mlx-lm`](https://github.com/ml-explore/mlx-lm) — Python MLX LLM library
+  - [`uv`](https://github.com/astral-sh/uv) — Fast Python package manager (bundled)
+  - Model files stored in `~/.cache/huggingface/hub/` (HuggingFace cache)
 
 ## Decisions (Resolved Open Questions)
 
 | Question | Decision | Rationale |
 |----------|----------|-----------|
 | VLM Support | **No** — LLM only for Phase 1 | Reduces complexity, can add later if needed |
-| Model Loading | **On-demand** | User triggers load before first inference, match existing pattern |
+| Model Loading | **On-demand via sidecar** | Server starts on first MLX use, model loaded on inference |
 | Memory Management | **Same unload timeout as transcription engine** | Consistency with existing behavior, reuse settings infrastructure |
 | Model Downloads | **Hugging Face Hub** | Standard model hosting, like the reference WritingTools implementation |
+| Rust vs Python | **Python sidecar** | Better mlx-lm ecosystem support, easier model compatibility |

@@ -409,13 +409,15 @@
     "dismiss": "Ignorer"
   },
   "errors": {
-    "loadDirectory": "Erreur lors du chargement du répertoire : {{error}}"
+    "loadDirectory": "Erreur lors du chargement du répertoire : {{error}}",
+    "postProcessFailed": "Le post-traitement a échoué. Utilisation de la transcription originale."
   },
   "appLanguage": {
     "title": "Langue de l'application",
     "description": "Changer la langue de l'interface de Handy"
   },
   "overlay": {
-    "transcribing": "Transcription..."
+    "transcribing": "Transcription...",
+    "processing": "Traitement de la transcription..."
   }
 }

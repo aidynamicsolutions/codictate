@@ -4,7 +4,8 @@
 
 use crate::managers::mlx::{MlxModelInfo, MlxModelManager};
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 
 /// List all available MLX models with their current status
 #[tauri::command]
@@ -113,4 +114,22 @@ pub fn mlx_switch_model(
     mlx_manager
         .switch_model(&model_id)
         .map_err(|e| e.to_string())
+}
+
+/// Open the specific MLX model folder in Finder/Explorer
+#[tauri::command]
+#[specta::specta]
+pub fn mlx_open_models_dir(
+    app: AppHandle,
+    mlx_manager: State<'_, Arc<MlxModelManager>>,
+    model_id: String,
+) -> Result<(), String> {
+    let model_dir = mlx_manager.models_dir().join(&model_id);
+    if !model_dir.exists() {
+        return Err(format!("Model directory not found: {}", model_id));
+    }
+    let path = model_dir.to_string_lossy().to_string();
+    app.opener()
+        .open_path(path, None::<String>)
+        .map_err(|e| format!("Failed to open model directory: {}", e))
 }

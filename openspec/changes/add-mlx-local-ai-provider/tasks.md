@@ -1,95 +1,124 @@
 # Tasks: Add MLX Local AI Provider
 
-## 1. Backend Infrastructure
+## 1. Backend Infrastructure (Python Sidecar Architecture)
 
-- [x] 1.1 Add `mlx-rs = "0.25.3"`, `mlx-lm = "0.0.1"`, `hf-hub = "0.4.3"` dependencies to `Cargo.toml` with macOS aarch64 conditional compilation
-- [x] 1.2 Create `src-tauri/src/managers/mlx.rs` with `MlxModelManager` struct
-- [x] 1.3 Implement model registry with available models (Qwen 3, Gemma 3, SmolLM 3) with Qwen 3 Base 1.7B as default
+- [x] 1.1 Add `hf-hub = "0.4.3"` dependency to `Cargo.toml` with macOS aarch64 conditional compilation
+- [x] 1.2 Create `src-tauri/src/managers/mlx/manager.rs` with `MlxModelManager` struct
+- [x] 1.3 Implement model registry with available models (Qwen 3 family) with Qwen 3 Base 1.7B as default
 - [x] 1.4 Implement model download from Hugging Face Hub with progress events
 - [x] 1.5 Implement download cancellation support
 - [x] 1.6 Implement download retry logic (max 3 attempts)
-- [x] 1.7 Implement model loading/unloading with state management
-- [x] 1.8 Implement model switching (unload current, reset state for new)
-- [/] 1.9 Implement text generation API (placeholder implemented, actual MLX inference TODO)
+- [x] 1.7 Implement sidecar lifecycle management (spawn, health check, shutdown)
+- [x] 1.8 Implement HTTP client for sidecar communication
+- [x] 1.9 Delete Rust Qwen3 model files (~1400 lines removed)
 - [x] 1.10 Add MLX manager initialization in `lib.rs` (macOS aarch64 only)
 - [x] 1.11 Integrate with existing model unload timeout setting
-- [x] 1.12 Implement error handling (network errors, disk space, corrupted files)
+- [x] 1.12 Implement error handling (network errors, disk space, sidecar failures)
 - [x] 1.13 Implement empty directory cleanup on status check
 
-## 2. Tauri Commands
+## 2. Python Sidecar
 
-- [x] 2.1 Create `src-tauri/src/commands/mlx.rs` with command handlers
-- [x] 2.2 Implement `mlx_list_models` command
-- [x] 2.3 Implement `mlx_get_model_status` command
-- [x] 2.4 Implement `mlx_download_model` async command with progress events
-- [x] 2.5 Implement `mlx_cancel_download` command
-- [x] 2.6 Implement `mlx_retry_download` command
-- [x] 2.7 Implement `mlx_delete_model` command (with busy check)
-- [x] 2.8 Implement `mlx_process_text` async command
-- [x] 2.9 Register MLX commands in Tauri builder (macOS aarch64 only)
-- [x] 2.10 Add specta TypeScript bindings generation
+- [x] 2.1 Create `python-backend/server.py` with FastAPI endpoints
+- [x] 2.2 Implement `/load` endpoint for model loading
+- [x] 2.3 Implement `/generate` endpoint for text generation via mlx-lm
+- [x] 2.4 Implement `/unload` endpoint for memory cleanup
+- [x] 2.5 Implement `/status` endpoint for health checks
+- [x] 2.6 Use inline uv dependencies for zero-setup deployment
+- [x] 2.7 Add chat template formatting for Qwen3 (enable_thinking=False)
+- [x] 2.8 Reduce max_tokens from 512 to 150 for translation tasks
+- [x] 2.9 Add top_p=0.8 sampler setting (temperature 0.7 confirmed optimal)
+- [x] 2.10 Add repetition penalty (1.15) to prevent model output loops
+- [x] 2.11 Add response cleaning (strip thinking tags, handle duplicate outputs)
 
-## 3. Settings Integration
+## 3. Bundled Runtime
 
-- [x] 3.1 Add `LOCAL_MLX_PROVIDER_ID` constant to `settings.rs`
-- [x] 3.2 Add MLX provider to `PostProcessProvider` list
-- [ ] 3.3 Add `selected_mlx_model` field to settings (using existing post_process_models HashMap)
-- [x] 3.4 Update `maybe_post_process_transcription()` to handle local-mlx provider
+- [x] 3.1 Bundle uv binary (~42MB) at `src-tauri/binaries/uv-aarch64-apple-darwin`
+- [x] 3.2 Update `tauri.conf.json` with externalBin for uv
+- [x] 3.3 Add python-backend to Tauri resources
 
-## 4. Frontend - Settings UI
+## 4. Tauri Commands
 
-- [x] 4.1 Update post-processing provider dropdown to include "Local (MLX)" option
-- [x] 4.2 Create `MlxModelSelector` component with model list and status
-- [x] 4.3 Add download progress indicator with cancel button
-- [x] 4.4 Add retry button for failed downloads
-- [x] 4.5 Add model delete confirmation dialog
-- [x] 4.6 Show storage usage and model size information
-- [x] 4.7 Handle and display error states (network, disk, loading failures)
-- [ ] 4.8 Conditionally render MLX options (hide on non-Apple Silicon)
+- [x] 4.1 Create `src-tauri/src/commands/mlx.rs` with command handlers
+- [x] 4.2 Implement `mlx_list_models` command
+- [x] 4.3 Implement `mlx_get_model_status` command
+- [x] 4.4 Implement `mlx_download_model` async command with progress events
+- [x] 4.5 Implement `mlx_cancel_download` command
+- [x] 4.6 Implement `mlx_retry_download` command
+- [x] 4.7 Implement `mlx_delete_model` command (with busy check)
+- [x] 4.8 Implement `mlx_process_text` async command (calls sidecar)
+- [x] 4.9 Register MLX commands in Tauri builder (macOS aarch64 only)
+- [x] 4.10 Add specta TypeScript bindings generation
 
-## 5. TypeScript Bindings & Types
+## 5. Settings Integration
 
-- [x] 5.1 Add `MlxModelInfo` and `MlxModelStatus` types to bindings (auto-generated by tauri-specta)
-- [x] 5.2 Add event type for `mlx-model-state-changed`
-- [x] 5.3 Create `useMlxModels` hook for model state management
+- [x] 5.1 Add `LOCAL_MLX_PROVIDER_ID` constant to `settings.rs`
+- [x] 5.2 Add MLX provider to `PostProcessProvider` list
+- [x] 5.3 Add `selected_mlx_model` field to settings (using existing post_process_models HashMap)
+- [x] 5.4 Update `maybe_post_process_transcription()` to handle local-mlx provider
+- [x] 5.5 Wire up `actions.rs` to call `MlxModelManager.process_text()`
 
-## 6. Testing & Verification
+## 6. Frontend - Settings UI
 
-- [ ] 6.1 Test model download with progress tracking
-- [ ] 6.2 Test download cancellation mid-download
-- [ ] 6.3 Test download retry after failure
-- [ ] 6.4 Test model loading and text generation
-- [ ] 6.5 Test post-processing pipeline with local provider
-- [ ] 6.6 Test graceful degradation on non-Apple Silicon platforms
-- [ ] 6.7 Test model deletion and cleanup
-- [ ] 6.8 Test prevent delete while model is busy (downloading/loading/running)
-- [ ] 6.9 Verify TypeScript bindings are generated correctly
-- [ ] 6.10 Test model unload timeout behavior
-- [ ] 6.11 Test model switching behavior (unload old, load new)
-- [ ] 6.12 Test fallback to original transcription when model not downloaded
+- [x] 6.1 Update post-processing provider dropdown to include "Local (MLX)" option
+- [x] 6.2 Create `MlxModelSelector` component with model list and status
+- [x] 6.3 Add download progress indicator with cancel button
+- [x] 6.4 Add retry button for failed downloads
+- [x] 6.5 Add model delete confirmation dialog
+- [x] 6.6 Show storage usage and model size information
+- [x] 6.7 Handle and display error states (network, disk, loading failures)
+- [x] 6.8 Conditionally render MLX options (hide on non-Apple Silicon via backend cfg condition)
 
-## 7. Documentation
+## 7. TypeScript Bindings & Types
 
-- [ ] 7.1 Update CLAUDE.md with MLX development notes
-- [ ] 7.2 Add user-facing documentation for local AI feature
-- [ ] 7.3 Document supported models and hardware requirements
+- [x] 7.1 Add `MlxModelInfo` and `MlxModelStatus` types to bindings (auto-generated by tauri-specta)
+- [x] 7.2 Add event type for `mlx-model-state-changed`
+- [x] 7.3 Create `useMlxModels` hook for model state management
 
-## Dependencies
+## 8. Testing & Verification
 
-- Task group 2 depends on 1 (commands need manager)
-- Task group 3 depends on 1, 2 (settings integration needs backend)
-- Task group 4 depends on 2, 3, 5 (UI needs commands and types)
-- Task group 6 depends on all above
+- [x] 8.1 Test model download with progress tracking
+- [x] 8.2 Test download cancellation mid-download
+- [x] 8.3 Test sidecar auto-start on first MLX use
+- [x] 8.4 Test model loading from downloaded path
+- [x] 8.5 Test text generation with proper chat template
+- [ ] 8.6 Test post-processing pipeline with local provider
+- [ ] 8.7 Test graceful degradation on non-Apple Silicon platforms
+- [ ] 8.8 Test model deletion and cleanup
+- [ ] 8.9 Test prevent delete while model is busy (downloading/loading/running)
+- [ ] 8.10 Verify TypeScript bindings are generated correctly
+- [ ] 8.11 Test model unload timeout behavior
+- [ ] 8.12 Test subsequent transcription paste issue
+- [ ] 8.13 Test fallback to original transcription when model not downloaded
 
-## Parallelizable Work
+## 9. Documentation
 
-- 1.2-1.6 can be developed incrementally
-- 4.1-4.6 can be developed in parallel with backend once types are defined
-- 5.x can be done alongside 2.x
+- [ ] 9.1 Update CLAUDE.md with MLX development notes
+- [ ] 9.2 Add user-facing documentation for local AI feature
+- [ ] 9.3 Document supported models and hardware requirements
 
-## Estimated Effort
+---
 
-- Backend (tasks 1-3): ~3-4 days
-- Frontend (tasks 4-5): ~2-3 days
-- Testing & docs (tasks 6-7): ~1-2 days
-- **Total: ~6-9 days**
+## Current Status: Qwen3 Chat Template Fixed
+
+### ✅ Completed
+- Python sidecar architecture implemented
+- Server starts automatically on first MLX use
+- Model loading works from local downloaded path
+- Generation works (returns 200 OK)
+- **Qwen3 chat template fix applied** (enable_thinking=False)
+- **max_tokens reduced** from 512 to 150
+- **top_p=0.8** added to sampler settings
+- **Repetition penalty** (1.15) prevents model output loops
+- **Response cleaning** strips thinking tags, handles duplicate outputs
+
+### ⚠️ Remaining Issues
+
+1. **Paste issue on subsequent transcriptions**
+   - First transcription pastes correctly
+   - Subsequent ones don't show output
+   - May be clipboard, empty response, or race condition
+
+### Key Files
+- `python-backend/server.py` — FastAPI server (chat template fixed)
+- `src-tauri/src/managers/mlx/manager.rs` — Rust manager (max_tokens=150)
+- `src-tauri/src/actions.rs` — Calls MlxModelManager.process_text()

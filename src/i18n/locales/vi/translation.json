@@ -409,13 +409,15 @@
     "dismiss": "Bỏ qua"
   },
   "errors": {
-    "loadDirectory": "Lỗi khi tải thư mục: {{error}}"
+    "loadDirectory": "Lỗi khi tải thư mục: {{error}}",
+    "postProcessFailed": "Xử lý sau thất bại. Sử dụng bản ghi gốc."
   },
   "appLanguage": {
     "title": "Ngôn ngữ ứng dụng",
     "description": "Thay đổi ngôn ngữ giao diện của Handy"
   },
   "overlay": {
-    "transcribing": "Đang chuyển đổi..."
+    "transcribing": "Đang chuyển đổi...",
+    "processing": "Đang xử lý bản ghi..."
   }
 }

@@ -262,7 +262,7 @@
       },
       "mlx": {
         "title": "Local AI Model",
-        "description": "Select a model to download for offline processing. Models run entirely on your device using Apple's MLX framework.",
+        "description": "Select a model for offline processing. All models are 4-bit quantized for efficient Apple Silicon inference.",
         "recommended": "Recommended",
         "download": "Download",
         "downloading": "Downloading...",
@@ -277,8 +277,10 @@
         "loading": "Loading...",
         "failed": "Failed",
         "size": "Size",
-        "parameters": "Parameters",
-        "notAvailable": "Local AI requires Apple Silicon Mac"
+        "ram": "RAM",
+        "notAvailable": "Local AI requires Apple Silicon Mac",
+        "default": "Default",
+        "showInFinder": "Show in Finder"
       }
     },
     "history": {
@@ -428,13 +430,15 @@
     "dismiss": "Dismiss"
   },
   "errors": {
-    "loadDirectory": "Error loading directory: {{error}}"
+    "loadDirectory": "Error loading directory: {{error}}",
+    "postProcessFailed": "Post-processing failed. Using original transcription."
   },
   "appLanguage": {
     "title": "Application Language",
     "description": "Change the language of the Handy interface"
   },
   "overlay": {
-    "transcribing": "Transcribing..."
+    "transcribing": "Transcribing...",
+    "processing": "Processing Transcription..."
   }
 }

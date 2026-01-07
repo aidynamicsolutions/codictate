@@ -130,51 +130,54 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
         </>
       )}
 
-      <SettingContainer
-        title={t("settings.postProcessing.api.model.title")}
-        description={
-          state.isAppleProvider
-            ? t("settings.postProcessing.api.model.descriptionApple")
-            : state.isCustomProvider
-              ? t("settings.postProcessing.api.model.descriptionCustom")
-              : t("settings.postProcessing.api.model.descriptionDefault")
-        }
-        descriptionMode="tooltip"
-        layout="stacked"
-        grouped={true}
-      >
-        <div className="flex items-center gap-2">
-          <ModelSelect
-            value={state.model}
-            options={state.modelOptions}
-            disabled={state.isModelUpdating}
-            isLoading={state.isFetchingModels}
-            placeholder={
-              state.isAppleProvider
-                ? t("settings.postProcessing.api.model.placeholderApple")
-                : state.modelOptions.length > 0
-                  ? t(
-                      "settings.postProcessing.api.model.placeholderWithOptions",
-                    )
-                  : t("settings.postProcessing.api.model.placeholderNoOptions")
-            }
-            onSelect={state.handleModelSelect}
-            onCreate={state.handleModelCreate}
-            onBlur={() => {}}
-            className="flex-1 min-w-[380px]"
-          />
-          <ResetButton
-            onClick={state.handleRefreshModels}
-            disabled={state.isFetchingModels || state.isAppleProvider}
-            ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
-            className="flex h-10 w-10 items-center justify-center"
-          >
-            <RefreshCcw
-              className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
+      {/* Hide model dropdown for MLX provider - MlxModelSelector handles model selection */}
+      {!state.isMlxProvider && (
+        <SettingContainer
+          title={t("settings.postProcessing.api.model.title")}
+          description={
+            state.isAppleProvider
+              ? t("settings.postProcessing.api.model.descriptionApple")
+              : state.isCustomProvider
+                ? t("settings.postProcessing.api.model.descriptionCustom")
+                : t("settings.postProcessing.api.model.descriptionDefault")
+          }
+          descriptionMode="tooltip"
+          layout="stacked"
+          grouped={true}
+        >
+          <div className="flex items-center gap-2">
+            <ModelSelect
+              value={state.model}
+              options={state.modelOptions}
+              disabled={state.isModelUpdating}
+              isLoading={state.isFetchingModels}
+              placeholder={
+                state.isAppleProvider
+                  ? t("settings.postProcessing.api.model.placeholderApple")
+                  : state.modelOptions.length > 0
+                    ? t(
+                        "settings.postProcessing.api.model.placeholderWithOptions",
+                      )
+                    : t("settings.postProcessing.api.model.placeholderNoOptions")
+              }
+              onSelect={state.handleModelSelect}
+              onCreate={state.handleModelCreate}
+              onBlur={() => {}}
+              className="flex-1 min-w-[380px]"
             />
-          </ResetButton>
-        </div>
-      </SettingContainer>
+            <ResetButton
+              onClick={state.handleRefreshModels}
+              disabled={state.isFetchingModels || state.isAppleProvider}
+              ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
+              className="flex h-10 w-10 items-center justify-center"
+            >
+              <RefreshCcw
+                className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
+              />
+            </ResetButton>
+          </div>
+        </SettingContainer>
+      )}
     </>
   );
 };

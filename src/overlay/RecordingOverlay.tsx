@@ -10,7 +10,7 @@ import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
 
-type OverlayState = "recording" | "transcribing";
+type OverlayState = "recording" | "transcribing" | "processing";
 
 const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
@@ -46,7 +46,7 @@ const RecordingOverlay: React.FC = () => {
         });
 
         smoothedLevelsRef.current = smoothed;
-        setLevels(smoothed.slice(0, 9));
+        setLevels(smoothed.slice(0, 16));
       });
 
       // Cleanup function
@@ -90,6 +90,9 @@ const RecordingOverlay: React.FC = () => {
         )}
         {state === "transcribing" && (
           <div className="transcribing-text">{t("overlay.transcribing")}</div>
+        )}
+        {state === "processing" && (
+          <div className="transcribing-text">{t("overlay.processing")}</div>
         )}
       </div>
 

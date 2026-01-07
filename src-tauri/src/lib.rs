@@ -240,6 +240,8 @@ pub fn run() {
     // when the variable is unset
     let console_filter = build_console_filter();
 
+    // On Apple Silicon macOS, include MLX commands
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     let specta_builder = Builder::<tauri::Wry>::new().commands(collect_commands![
         shortcut::change_binding,
         shortcut::reset_binding,
@@ -319,11 +321,7 @@ pub fn run() {
         commands::history::update_history_limit,
         commands::history::update_recording_retention_period,
         helpers::clamshell::is_laptop,
-    ]);
-
-    // Add MLX commands on Apple Silicon only
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    let specta_builder = specta_builder.commands(collect_commands![
+        // MLX commands
         commands::mlx::mlx_list_models,
         commands::mlx::mlx_get_model_status,
         commands::mlx::mlx_download_model,
@@ -334,6 +332,90 @@ pub fn run() {
         commands::mlx::mlx_is_busy,
         commands::mlx::mlx_unload_model,
         commands::mlx::mlx_switch_model,
+        commands::mlx::mlx_open_models_dir,
+    ]);
+
+    // On other platforms, exclude MLX commands
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+    let specta_builder = Builder::<tauri::Wry>::new().commands(collect_commands![
+        shortcut::change_binding,
+        shortcut::reset_binding,
+        shortcut::change_ptt_setting,
+        shortcut::change_audio_feedback_setting,
+        shortcut::change_audio_feedback_volume_setting,
+        shortcut::change_sound_theme_setting,
+        shortcut::change_start_hidden_setting,
+        shortcut::change_autostart_setting,
+        shortcut::change_translate_to_english_setting,
+        shortcut::change_selected_language_setting,
+        shortcut::change_overlay_position_setting,
+        shortcut::change_debug_mode_setting,
+        shortcut::change_word_correction_threshold_setting,
+        shortcut::change_paste_method_setting,
+        shortcut::change_clipboard_handling_setting,
+        shortcut::change_post_process_enabled_setting,
+        shortcut::change_post_process_base_url_setting,
+        shortcut::change_post_process_api_key_setting,
+        shortcut::change_post_process_model_setting,
+        shortcut::set_post_process_provider,
+        shortcut::fetch_post_process_models,
+        shortcut::add_post_process_prompt,
+        shortcut::update_post_process_prompt,
+        shortcut::delete_post_process_prompt,
+        shortcut::set_post_process_selected_prompt,
+        shortcut::update_custom_words,
+        shortcut::suspend_binding,
+        shortcut::resume_binding,
+        shortcut::change_mute_while_recording_setting,
+        shortcut::change_append_trailing_space_setting,
+        shortcut::change_app_language_setting,
+        shortcut::change_update_checks_setting,
+        trigger_update_check,
+        commands::cancel_operation,
+        commands::get_app_dir_path,
+        commands::get_app_settings,
+        commands::get_default_settings,
+        commands::get_log_dir_path,
+        commands::set_log_level,
+        commands::open_recordings_folder,
+        commands::open_log_dir,
+        commands::open_app_data_dir,
+        commands::check_apple_intelligence_available,
+        commands::models::get_available_models,
+        commands::models::get_model_info,
+        commands::models::download_model,
+        commands::models::delete_model,
+        commands::models::cancel_download,
+        commands::models::set_active_model,
+        commands::models::get_current_model,
+        commands::models::get_transcription_model_status,
+        commands::models::is_model_loading,
+        commands::models::has_any_models_available,
+        commands::models::has_any_models_or_downloads,
+        commands::models::get_recommended_first_model,
+        commands::audio::update_microphone_mode,
+        commands::audio::get_microphone_mode,
+        commands::audio::get_available_microphones,
+        commands::audio::set_selected_microphone,
+        commands::audio::get_selected_microphone,
+        commands::audio::get_available_output_devices,
+        commands::audio::set_selected_output_device,
+        commands::audio::get_selected_output_device,
+        commands::audio::play_test_sound,
+        commands::audio::check_custom_sounds,
+        commands::audio::set_clamshell_microphone,
+        commands::audio::get_clamshell_microphone,
+        commands::audio::is_recording,
+        commands::transcription::set_model_unload_timeout,
+        commands::transcription::get_model_load_status,
+        commands::transcription::unload_model_manually,
+        commands::history::get_history_entries,
+        commands::history::toggle_history_entry_saved,
+        commands::history::get_audio_file_path,
+        commands::history::delete_history_entry,
+        commands::history::update_history_limit,
+        commands::history::update_recording_retention_period,
+        helpers::clamshell::is_laptop,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -433,6 +515,20 @@ pub fn run() {
             _ => {}
         })
         .invoke_handler(specta_builder.invoke_handler())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            // Handle app exit to properly shutdown sidecar processes
+            if let tauri::RunEvent::Exit = event {
+                #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+                {
+                    if let Some(mlx_manager) = app.try_state::<Arc<MlxModelManager>>() {
+                        log::info!("App exiting, stopping MLX sidecar server...");
+                        if let Err(e) = mlx_manager.stop_server() {
+                            log::error!("Failed to stop MLX sidecar server: {}", e);
+                        }
+                    }
+                }
+            }
+        });
 }

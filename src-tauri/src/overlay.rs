@@ -25,7 +25,7 @@ tauri_panel! {
     })
 }
 
-const OVERLAY_WIDTH: f64 = 172.0;
+const OVERLAY_WIDTH: f64 = 230.0;
 const OVERLAY_HEIGHT: f64 = 36.0;
 
 #[cfg(target_os = "macos")]
@@ -249,6 +249,19 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
 
         // Emit event to switch to transcribing state
         let _ = overlay_window.emit("show-overlay", "transcribing");
+    }
+}
+
+/// Shows the processing overlay window (during post-processing phase)
+pub fn show_processing_overlay(app_handle: &AppHandle) {
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_position == OverlayPosition::None {
+        return;
+    }
+
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Emit event to switch to processing state
+        let _ = overlay_window.emit("show-overlay", "processing");
     }
 }
 

@@ -254,6 +254,13 @@ fn run_consumer(
 
     let mut processed_samples = Vec::<f32>::new();
     let mut recording = false;
+    
+    // Warmup counter: discard initial frames after recording starts to allow
+    // microphone and VAD to stabilize. This is industry best practice for handling
+    // initialization noise that could otherwise cause empty transcriptions.
+    // At 16kHz with 30ms frames, 3 frames ≈ 90ms of warmup.
+    const WARMUP_FRAMES: u32 = 3;
+    let mut warmup_remaining: u32 = 0;
 
     // ---------- spectrum visualisation setup ---------------------------- //
     const BUCKETS: usize = 16;
@@ -302,6 +309,11 @@ fn run_consumer(
 
         // ---------- existing pipeline ------------------------------------ //
         frame_resampler.push(&raw, &mut |frame: &[f32]| {
+            // Skip initial warmup frames to allow microphone/VAD to stabilize
+            if warmup_remaining > 0 {
+                warmup_remaining -= 1;
+                return;
+            }
             handle_frame(frame, recording, &vad, &mut processed_samples)
         });
 
@@ -311,6 +323,7 @@ fn run_consumer(
                 Cmd::Start => {
                     processed_samples.clear();
                     recording = true;
+                    warmup_remaining = WARMUP_FRAMES; // Initialize warmup counter
                     visualizer.reset(); // Reset visualization buffer
                     if let Some(v) = &vad {
                         v.lock().unwrap().reset();

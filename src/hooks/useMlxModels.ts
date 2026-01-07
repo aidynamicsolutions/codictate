@@ -6,13 +6,15 @@ import { commands, type MlxModelInfo, type MlxModelStatus } from "@/bindings";
  * MLX model state event payload from the backend
  */
 type MlxModelStateEvent =
-  | { event_type: "download_started"; model_id: string }
+  | { event_type: "download_started"; model_id: string; total_bytes: number }
   | {
       event_type: "download_progress";
       model_id: string;
       progress: number;
       downloaded_bytes: number;
       total_bytes: number;
+      speed_bytes_per_sec: number;
+      current_file: string;
     }
   | { event_type: "download_completed"; model_id: string }
   | { event_type: "download_failed"; model_id: string; error: string }
@@ -23,6 +25,18 @@ type MlxModelStateEvent =
   | { event_type: "unloaded"; model_id: string }
   | { event_type: "error"; model_id: string; error: string };
 
+/** Download progress details for UI display */
+interface DownloadProgress {
+  /** Downloaded bytes so far */
+  downloadedBytes: number;
+  /** Total bytes to download */
+  totalBytes: number;
+  /** Download speed in bytes per second */
+  speedBytesPerSec: number;
+  /** Current file being downloaded */
+  currentFile: string;
+}
+
 interface UseMlxModelsReturn {
   /** List of all available MLX models */
   models: MlxModelInfo[];
@@ -32,6 +46,8 @@ interface UseMlxModelsReturn {
   error: string | null;
   /** Currently downloading model ID (if any) */
   downloadingModelId: string | null;
+  /** Detailed download progress info */
+  downloadProgress: DownloadProgress | null;
   /** Last error message from download/load operation */
   lastError: string | null;
   /** Start downloading a model */
@@ -59,6 +75,8 @@ export function useMlxModels(): UseMlxModelsReturn {
   const [downloadingModelId, setDownloadingModelId] = useState<string | null>(
     null
   );
+  const [downloadProgress, setDownloadProgress] =
+    useState<DownloadProgress | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
 
   const refreshModels = useCallback(async () => {
@@ -80,9 +98,13 @@ export function useMlxModels(): UseMlxModelsReturn {
   const downloadModel = useCallback(async (modelId: string) => {
     setDownloadingModelId(modelId);
     setLastError(null);
+    setDownloadProgress(null);
     const result = await commands.mlxDownloadModel(modelId);
     if (result.status === "error") {
-      setLastError(result.error);
+      // Don't show "cancelled" as an error - it's intentional user action
+      if (!result.error.toLowerCase().includes("cancelled")) {
+        setLastError(result.error);
+      }
     }
     // State will be updated via events
   }, []);
@@ -134,25 +156,40 @@ export function useMlxModels(): UseMlxModelsReturn {
           case "download_started":
             status = "downloading";
             progress = 0;
+            setDownloadProgress({
+              downloadedBytes: 0,
+              totalBytes: event.total_bytes,
+              speedBytesPerSec: 0,
+              currentFile: "",
+            });
             break;
           case "download_progress":
             status = "downloading";
             progress = event.progress;
+            setDownloadProgress({
+              downloadedBytes: event.downloaded_bytes,
+              totalBytes: event.total_bytes,
+              speedBytesPerSec: event.speed_bytes_per_sec,
+              currentFile: event.current_file,
+            });
             break;
           case "download_completed":
             status = "downloaded";
             progress = 1;
             setDownloadingModelId(null);
+            setDownloadProgress(null);
             break;
           case "download_failed":
             status = "download_failed";
             setDownloadingModelId(null);
+            setDownloadProgress(null);
             setLastError(event.error);
             break;
           case "download_cancelled":
             status = "not_downloaded";
             progress = 0;
             setDownloadingModelId(null);
+            setDownloadProgress(null);
             break;
           case "loading_started":
             status = "loading";
@@ -202,6 +239,7 @@ export function useMlxModels(): UseMlxModelsReturn {
     isLoading,
     error,
     downloadingModelId,
+    downloadProgress,
     lastError,
     downloadModel,
     cancelDownload,
@@ -211,3 +249,4 @@ export function useMlxModels(): UseMlxModelsReturn {
     selectModel,
   };
 }
+

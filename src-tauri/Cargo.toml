@@ -58,7 +58,7 @@ tokio = "1.43.0"
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
 enigo = "0.6.1"
 rodio = { git = "https://github.com/cjpais/rodio.git" }
-reqwest = { version = "0.12", features = ["json", "stream"] }
+reqwest = { version = "0.12", features = ["json", "stream", "blocking"] }
 futures-util = "0.3"
 rustfft = "6.4.0"
 strsim = "0.11.0"
@@ -95,10 +95,9 @@ windows = { version = "0.61.3", features = [
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
 
 # MLX Local AI Provider - Apple Silicon only (macOS aarch64)
+# Uses Python sidecar with mlx-lm, hf-hub for model downloads
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
-mlx-rs = { version = "0.25.3", features = ["safetensors", "metal", "accelerate"] }
 hf-hub = { version = "0.4.3", default-features = false, features = ["tokio"] }
-tokenizers = "0.22"
 
 [profile.release]
 lto = true

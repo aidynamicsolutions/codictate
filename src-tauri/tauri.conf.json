@@ -29,7 +29,9 @@
       "assetProtocol": {
         "enable": true,
         "scope": {
-          "allow": ["**"],
+          "allow": [
+            "**"
+          ],
           "requireLiteralLeadingDot": false
         }
       }
@@ -39,7 +41,13 @@
     "active": true,
     "createUpdaterArtifacts": true,
     "targets": "all",
-    "resources": ["resources/**/*"],
+    "externalBin": [
+      "binaries/uv"
+    ],
+    "resources": [
+      "resources/**/*",
+      "../python-backend/**/*"
+    ],
     "license": "MIT",
     "icon": [
       "icons/32x32.png",
