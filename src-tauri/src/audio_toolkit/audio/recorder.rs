@@ -255,11 +255,13 @@ fn run_consumer(
     let mut processed_samples = Vec::<f32>::new();
     let mut recording = false;
     
-    // Warmup counter: discard initial frames after recording starts to allow
-    // microphone and VAD to stabilize. This is industry best practice for handling
-    // initialization noise that could otherwise cause empty transcriptions.
-    // At 16kHz with 30ms frames, 3 frames ≈ 90ms of warmup.
-    const WARMUP_FRAMES: u32 = 3;
+    // Warmup counter: Previously discarded initial frames after recording starts.
+    // REMOVED: This was causing issues with short recordings because the SmoothedVad
+    // already implements a pre-roll buffer (prefill_frames) that captures early audio.
+    // Discarding warmup frames conflicted with the pre-roll design, causing the first
+    // ~90ms of speech to be lost. Industry best practice is to use pre-roll buffers
+    // to capture early speech, not to discard initial audio.
+    const WARMUP_FRAMES: u32 = 0;
     let mut warmup_remaining: u32 = 0;
 
     // ---------- spectrum visualisation setup ---------------------------- //
