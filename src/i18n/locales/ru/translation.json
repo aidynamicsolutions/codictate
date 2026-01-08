@@ -443,5 +443,9 @@
   },
   "recording": {
     "limitWarning": "Запись завершится через 30 секунд"
+  },
+  "notifications": {
+    "errorTitle": "Handy",
+    "infoTitle": "Handy"
   }
 }

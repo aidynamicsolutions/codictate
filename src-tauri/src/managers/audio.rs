@@ -379,7 +379,6 @@ impl AudioRecordingManager {
     fn start_recording_timer(&self, binding_id: String) {
         use crate::actions::ACTION_MAP;
         use crate::i18n;
-        use tauri_plugin_notification::NotificationExt;
         
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         *self.timer_stop_tx.lock().unwrap() = Some(stop_tx);
@@ -425,41 +424,8 @@ impl AudioRecordingManager {
                     // Check for 30s warning - use native notification
                     let remaining = max_secs.saturating_sub(elapsed);
                     if remaining <= 30 && remaining > 0 && !warned_at_30s {
-                        // Send native notification using tauri-plugin-notification
-                        use tauri_plugin_notification::PermissionState;
-                        
-                        // Check permission status
-                        let permission = app_handle.notification().permission_state();
-                        
-                        match permission {
-                            Ok(PermissionState::Granted) => {
-                                if let Err(e) = app_handle
-                                    .notification()
-                                    .builder()
-                                    .title("Handy")
-                                    .body(&warning_message)
-                                    .show()
-                                {
-                                    error!("Failed to show notification: {}", e);
-                                }
-                            }
-                            Ok(PermissionState::Denied) => {
-                                warn!("Notification permission denied by user");
-                            }
-                            Ok(PermissionState::Prompt) | Ok(PermissionState::PromptWithRationale) => {
-                                warn!("Notification permission not yet granted, requesting...");
-                                // Permission not yet granted - try to show anyway (will trigger prompt)
-                                let _ = app_handle
-                                    .notification()
-                                    .builder()
-                                    .title("Handy")
-                                    .body(&warning_message)
-                                    .show();
-                            }
-                            Err(e) => {
-                                error!("Failed to check notification permission: {}", e);
-                            }
-                        }
+                        // Use centralized notification module
+                        crate::notification::show_info_with_text(&app_handle, &warning_message);
                         
                         warned_at_30s = true;
                         info!("Recording limit warning: {}s remaining", remaining);

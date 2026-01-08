@@ -10,6 +10,7 @@ mod i18n;
 mod input;
 mod llm_client;
 mod managers;
+mod notification;
 mod overlay;
 mod settings;
 mod shortcut;

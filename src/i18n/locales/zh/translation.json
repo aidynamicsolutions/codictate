@@ -443,5 +443,9 @@
   },
   "recording": {
     "limitWarning": "录音将在 30 秒后结束"
+  },
+  "notifications": {
+    "errorTitle": "Handy",
+    "infoTitle": "Handy"
   }
 }

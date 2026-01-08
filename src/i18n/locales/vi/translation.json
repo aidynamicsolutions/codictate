@@ -444,5 +444,9 @@
   },
   "recording": {
     "limitWarning": "Ghi âm kết thúc trong 30 giây"
+  },
+  "notifications": {
+    "errorTitle": "Handy",
+    "infoTitle": "Handy"
   }
 }

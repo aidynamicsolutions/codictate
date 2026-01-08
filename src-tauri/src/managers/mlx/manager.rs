@@ -23,8 +23,10 @@ use tokio::sync::watch;
 use crate::settings::get_settings;
 
 /// Port range to search for available port
-const PORT_RANGE_START: u16 = 5000;
-const PORT_RANGE_END: u16 = 5100;
+/// Using higher registered ports (1024-49151 range) to minimize conflicts with system services.
+/// Ports below 10000 often conflict with common services (e.g., macOS AirPlay uses 5000).
+const PORT_RANGE_START: u16 = 11400;
+const PORT_RANGE_END: u16 = 11500;
 
 /// Minimum required disk space buffer (100 MB) before downloading
 const DISK_SPACE_BUFFER_BYTES: u64 = 100 * 1024 * 1024;
@@ -593,14 +595,41 @@ impl MlxModelManager {
     }
 
     /// Find an available port in the configured range
+    /// 
+    /// This function performs two checks to ensure the port is truly available:
+    /// 1. Binds to 0.0.0.0 (all interfaces) to catch services listening on any interface
+    /// 2. Attempts to connect to the port to verify no existing listeners
     fn find_available_port() -> Result<u16> {
+        use std::net::TcpStream;
+        use std::time::Duration;
+        
         for port in PORT_RANGE_START..=PORT_RANGE_END {
-            if let Ok(listener) = TcpListener::bind(format!("127.0.0.1:{}", port)) {
-                // Successfully bound, port is available
-                drop(listener); // Release the port immediately
-                info!("Found available port: {}", port);
-                return Ok(port);
+            // First check: Try to bind on all interfaces (catches more conflicts)
+            let bind_result = TcpListener::bind(format!("0.0.0.0:{}", port));
+            if bind_result.is_err() {
+                debug!("Port {} bind failed, trying next", port);
+                continue;
             }
+            
+            // Drop the listener before connection check
+            drop(bind_result);
+            
+            // Second check: Verify nothing is already listening by attempting connection
+            // If connection succeeds, something is already listening on this port
+            let connect_result = TcpStream::connect_timeout(
+                &format!("127.0.0.1:{}", port).parse().unwrap(),
+                Duration::from_millis(50),
+            );
+            
+            if connect_result.is_ok() {
+                // Something responded - port is in use by another service
+                debug!("Port {} has existing listener, trying next", port);
+                continue;
+            }
+            
+            // Both checks passed - port is available
+            info!("Found available port: {}", port);
+            return Ok(port);
         }
         Err(anyhow!(
             "No available port found in range {}-{}",

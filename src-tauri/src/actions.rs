@@ -160,8 +160,8 @@ async fn maybe_post_process_transcription(
             }
             Err(e) => {
                 error!("MLX Local AI post-processing failed: {}", e);
-                // Emit error event for toast notification
-                let _ = app.emit("post-process-error", e.to_string());
+                // Show native notification so user sees error even if UI is not active
+                crate::notification::show_error(app, "errors.postProcessFailed");
                 None
             }
         };

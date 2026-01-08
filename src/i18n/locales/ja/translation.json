@@ -443,5 +443,9 @@
   },
   "recording": {
     "limitWarning": "録音は30秒後に終了します"
+  },
+  "notifications": {
+    "errorTitle": "Handy",
+    "infoTitle": "Handy"
   }
 }
