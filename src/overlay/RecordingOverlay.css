@@ -1,14 +1,34 @@
-.recording-overlay {
-  height: 36px;
-  width: 230px;
+/* Outer wrapper provides the countdown border via pseudo-element */
+.recording-overlay-wrapper {
+  position: relative;
+  height: 40px;
+  width: 234px;
+  padding: 2px;
+  border-radius: 20px;
+  opacity: 0;
+  transition: opacity 300ms ease-out;
+  box-sizing: border-box;
+  background: #000000cc;
+}
+
+/* SVG countdown border - positioned absolutely over the wrapper */
+.countdown-border {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* Inner container holds the actual overlay content */
+.recording-overlay-inner {
+  height: 100%;
+  width: 100%;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
   padding: 6px;
-  background: #000000cc;
+  background: transparent;
   border-radius: 18px;
-  opacity: 0;
-  transition: opacity 300ms ease-out;
   box-sizing: border-box;
 }
 
@@ -48,7 +68,7 @@
   min-height: 4px;
 }
 
-.recording-overlay.fade-in {
+.recording-overlay-wrapper.fade-in {
   opacity: 1;
 }
 
@@ -94,3 +114,4 @@
 .cancel-button:active {
   transform: scale(0.95);
 }
+

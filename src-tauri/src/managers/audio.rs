@@ -1,10 +1,11 @@
 use crate::audio_toolkit::{list_input_devices, vad::SmoothedVad, AudioRecorder, SileroVad};
 use crate::helpers::clamshell;
+use crate::overlay;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info};
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 fn set_mute(mute: bool) {
@@ -149,6 +150,11 @@ pub struct AudioRecordingManager {
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
     did_mute: Arc<Mutex<bool>>,
+    
+    /// Recording start time for tracking elapsed time
+    recording_start_time: Arc<Mutex<Option<Instant>>>,
+    /// Channel to stop the time tracking timer
+    timer_stop_tx: Arc<Mutex<Option<mpsc::Sender<()>>>>,
 }
 
 impl AudioRecordingManager {
@@ -171,6 +177,8 @@ impl AudioRecordingManager {
             is_open: Arc::new(Mutex::new(false)),
             is_recording: Arc::new(Mutex::new(false)),
             did_mute: Arc::new(Mutex::new(false)),
+            recording_start_time: Arc::new(Mutex::new(None)),
+            timer_stop_tx: Arc::new(Mutex::new(None)),
         };
 
         // Always-on?  Open immediately.
@@ -350,6 +358,12 @@ impl AudioRecordingManager {
                     *state = RecordingState::Recording {
                         binding_id: binding_id.to_string(),
                     };
+                    
+                    // Start recording timer
+                    let start_time = Instant::now();
+                    *self.recording_start_time.lock().unwrap() = Some(start_time);
+                    self.start_recording_timer(binding_id.to_string());
+                    
                     debug!("Recording started for binding {binding_id}");
                     return true;
                 }
@@ -359,6 +373,116 @@ impl AudioRecordingManager {
         } else {
             false
         }
+    }
+    
+    /// Start a timer thread that emits recording time updates every second
+    fn start_recording_timer(&self, binding_id: String) {
+        use crate::actions::ACTION_MAP;
+        use std::process::Command;
+        
+        let (stop_tx, stop_rx) = mpsc::channel::<()>();
+        *self.timer_stop_tx.lock().unwrap() = Some(stop_tx);
+        
+        let app_handle = self.app_handle.clone();
+        let max_secs = utils::get_recording_limit_seconds();
+        let is_recording = self.is_recording.clone();
+        let recording_start_time = self.recording_start_time.clone();
+        let timer_stop_tx = self.timer_stop_tx.clone();
+        
+        std::thread::spawn(move || {
+            let mut warned_at_30s = false;
+            let mut next_tick: u32 = 1; // Next second to emit (1-indexed since we emit after first second)
+            
+            // Get the start instant for drift-free timing
+            let start_instant = match *recording_start_time.lock().unwrap() {
+                Some(t) => t,
+                None => return,
+            };
+            
+            loop {
+                // Check if we should stop
+                if stop_rx.try_recv().is_ok() {
+                    break;
+                }
+                
+                // Check if still recording
+                if !*is_recording.lock().unwrap() {
+                    break;
+                }
+                
+                // Calculate elapsed time
+                let elapsed = start_instant.elapsed().as_secs() as u32;
+                
+                // If we've passed the next tick point, emit update
+                if elapsed >= next_tick {
+                    // Emit time update to overlay
+                    overlay::emit_recording_time(&app_handle, elapsed, max_secs);
+                    
+                    // Check for 30s warning - use system notification via osascript
+                    let remaining = max_secs.saturating_sub(elapsed);
+                    if remaining <= 30 && remaining > 0 && !warned_at_30s {
+                        // Show system-wide notification on macOS using osascript
+                        #[cfg(target_os = "macos")]
+                        {
+                            // Note: osascript notifications don't support i18n easily,
+                            // using hardcoded English for system-level notification
+                            let script = r#"display notification "Recording ends in 30 seconds" with title "Handy""#;
+                            if let Err(e) = Command::new("osascript")
+                                .args(["-e", script])
+                                .output()
+                            {
+                                error!("Failed to show notification: {}", e);
+                            }
+                        }
+                        warned_at_30s = true;
+                        info!("Recording limit warning: {}s remaining", remaining);
+                    }
+                    
+                    // Check for auto-stop at limit
+                    if elapsed >= max_secs {
+                        info!("Recording limit reached ({}s), auto-stopping", max_secs);
+                        
+                        // Clean up timer state before triggering stop to avoid double-call
+                        // The action.stop() will eventually call stop_recording_timer(),
+                        // but we've already cleared the sender so it's a no-op
+                        *timer_stop_tx.lock().unwrap() = None;
+                        
+                        // Trigger the transcribe action's stop handler to properly process recording
+                        // This matches how SIGUSR2 and keyboard shortcuts trigger transcription
+                        if let Some(action) = ACTION_MAP.get("transcribe") {
+                            info!("Triggering transcribe action stop for binding: {}", binding_id);
+                            action.stop(&app_handle, &binding_id, "recording_limit");
+                        } else {
+                            error!("Failed to find transcribe action in ACTION_MAP");
+                        }
+                        
+                        break;
+                    }
+                    
+                    next_tick = elapsed + 1;
+                }
+                
+                // Calculate sleep duration until next tick to avoid drift
+                let target_time = start_instant + Duration::from_secs(next_tick as u64);
+                let now = Instant::now();
+                let sleep_duration = if target_time > now {
+                    target_time - now
+                } else {
+                    // We're behind, catch up immediately
+                    Duration::from_millis(10)
+                };
+                
+                std::thread::sleep(sleep_duration);
+            }
+        });
+    }
+    
+    /// Stop the recording timer if running
+    fn stop_recording_timer(&self) {
+        if let Some(tx) = self.timer_stop_tx.lock().unwrap().take() {
+            let _ = tx.send(());
+        }
+        *self.recording_start_time.lock().unwrap() = None;
     }
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {
@@ -379,6 +503,9 @@ impl AudioRecordingManager {
             } if active == binding_id => {
                 *state = RecordingState::Idle;
                 drop(state);
+                
+                // Stop the recording timer
+                self.stop_recording_timer();
 
                 let samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                     match rec.stop() {
@@ -428,6 +555,9 @@ impl AudioRecordingManager {
         if let RecordingState::Recording { .. } = *state {
             *state = RecordingState::Idle;
             drop(state);
+            
+            // Stop the recording timer
+            self.stop_recording_timer();
 
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                 let _ = rec.stop(); // Discard the result

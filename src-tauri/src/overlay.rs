@@ -25,8 +25,8 @@ tauri_panel! {
     })
 }
 
-const OVERLAY_WIDTH: f64 = 230.0;
-const OVERLAY_HEIGHT: f64 = 36.0;
+const OVERLAY_WIDTH: f64 = 234.0;
+const OVERLAY_HEIGHT: f64 = 40.0;
 
 #[cfg(target_os = "macos")]
 const OVERLAY_TOP_OFFSET: f64 = 46.0;
@@ -300,3 +300,13 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
         let _ = overlay_window.emit("mic-level", levels);
     }
 }
+
+/// Emit recording time progress to the overlay
+/// elapsed_secs: seconds elapsed since recording started
+/// max_secs: maximum allowed recording time in seconds
+pub fn emit_recording_time(app_handle: &AppHandle, elapsed_secs: u32, max_secs: u32) {
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.emit("recording-time", (elapsed_secs, max_secs));
+    }
+}
+

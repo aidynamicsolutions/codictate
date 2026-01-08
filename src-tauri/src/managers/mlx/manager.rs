@@ -337,7 +337,7 @@ impl MlxModelManager {
     }
 
     /// Get system memory in gigabytes using macOS sysctl
-    fn get_system_memory_gb() -> u64 {
+    pub fn get_system_memory_gb() -> u64 {
         // Use sysctl to get total physical memory on macOS
         let output = Command::new("sysctl")
             .args(["-n", "hw.memsize"])
@@ -1096,6 +1096,7 @@ impl MlxModelManager {
             prompt: String,
             max_tokens: i32,
             temperature: f32,
+            system_ram_gb: u64,
         }
 
         #[derive(Deserialize)]
@@ -1108,8 +1109,9 @@ impl MlxModelManager {
             .post(format!("{}/generate", self.get_base_url()))
             .json(&GenerateRequest {
                 prompt: prompt.to_string(),
-                max_tokens: 150,  // Translation tasks need few tokens
+                max_tokens: -1,  // Sentinel: Python calculates dynamically based on input + RAM
                 temperature: 0.7,
+                system_ram_gb: Self::get_system_memory_gb(),
             })
             .timeout(Duration::from_secs(60))  // 60s timeout for local LLM inference
             .send()

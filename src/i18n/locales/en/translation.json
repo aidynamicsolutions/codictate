@@ -440,5 +440,8 @@
   "overlay": {
     "transcribing": "Transcribing...",
     "processing": "Processing Transcription..."
+  },
+  "recording": {
+    "limitWarning": "Recording ends in 30 seconds"
   }
 }

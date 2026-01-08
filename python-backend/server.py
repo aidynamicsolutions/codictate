@@ -85,6 +85,67 @@ def clean_model_response(response: str) -> str:
     return response.strip()
 
 
+# =============================================================================
+# RAM-Based Dynamic Token Limits
+# =============================================================================
+# Memory research: Qwen3-4B uses ~3GB base + ~147KB per token for KV cache
+# Safe limits to leave headroom for macOS and Whisper model
+
+RAM_TIER_CEILINGS = {
+    8: 1536,   # 8GB RAM: ~6 min of speech, uses ~3.2GB MLX total
+    16: 2048,  # 16GB RAM: ~8 min of speech, uses ~3.3GB MLX total
+    32: 3072,  # 32GB+ RAM: ~12 min of speech, uses ~3.5GB MLX total
+}
+
+
+def get_max_tokens_ceiling(system_ram_gb: int) -> int:
+    """Get the maximum token ceiling based on system RAM."""
+    if system_ram_gb <= 8:
+        return RAM_TIER_CEILINGS[8]
+    elif system_ram_gb <= 16:
+        return RAM_TIER_CEILINGS[16]
+    else:
+        return RAM_TIER_CEILINGS[32]
+
+
+def calculate_dynamic_max_tokens(
+    prompt: str,
+    tokenizer_instance,
+    system_ram_gb: int
+) -> int:
+    """
+    Calculate dynamic max_tokens based on input length and system RAM.
+    
+    Algorithm:
+    1. Count actual input tokens using model tokenizer
+    2. Apply 1.3x multiplier (translation/correction buffer)
+    3. Clamp to floor (64) and ceiling (RAM-based)
+    """
+    # Count actual input tokens
+    input_tokens = len(tokenizer_instance.encode(prompt))
+    
+    # Constants
+    MIN_OUTPUT_TOKENS = 64        # Floor for very short inputs
+    TASK_MULTIPLIER = 1.3         # Translation/correction ~1:1, buffer for expansion
+    
+    # Get RAM-based ceiling
+    ceiling = get_max_tokens_ceiling(system_ram_gb)
+    
+    # Calculate based on input length
+    calculated = int(input_tokens * TASK_MULTIPLIER)
+    
+    # Apply bounds
+    max_tokens = max(calculated, MIN_OUTPUT_TOKENS)
+    max_tokens = min(max_tokens, ceiling)
+    
+    logger.info(
+        f"Dynamic max_tokens: input={input_tokens}, calculated={calculated}, "
+        f"ceiling={ceiling} (RAM={system_ram_gb}GB), final={max_tokens}"
+    )
+    
+    return max_tokens
+
+
 class LoadRequest(BaseModel):
     """Request to load a model from a local path or HuggingFace repo."""
     model_path: str
@@ -93,8 +154,9 @@ class LoadRequest(BaseModel):
 class GenerateRequest(BaseModel):
     """Request to generate text from a prompt."""
     prompt: str
-    max_tokens: int = 150  # Translation tasks need few tokens
+    max_tokens: int = -1  # Sentinel: -1 means auto-calculate
     temperature: float = 0.7
+    system_ram_gb: int = 16  # Default to 16GB if not provided
 
 
 class LoadResponse(BaseModel):
@@ -203,7 +265,17 @@ async def generate_text(request: GenerateRequest):
         from mlx_lm import generate
         from mlx_lm.sample_utils import make_sampler
         
-        logger.info(f"Generating text (max_tokens={request.max_tokens}, temp={request.temperature})")
+        # Calculate dynamic max_tokens if sentinel value (-1) or invalid
+        if request.max_tokens < 0:
+            effective_max_tokens = calculate_dynamic_max_tokens(
+                request.prompt,
+                tokenizer,
+                request.system_ram_gb
+            )
+        else:
+            effective_max_tokens = request.max_tokens
+        
+        logger.info(f"Generating text (max_tokens={effective_max_tokens}, temp={request.temperature})")
         logger.info(f"=== INPUT PROMPT ===\n{request.prompt}\n=== END INPUT ===")
         
         # Apply Qwen3 chat template with thinking disabled for translation tasks
@@ -246,7 +318,7 @@ async def generate_text(request: GenerateRequest):
             model,
             tokenizer,
             prompt=formatted_prompt,
-            max_tokens=request.max_tokens,
+            max_tokens=effective_max_tokens,
             sampler=sampler,
             logits_processors=logits_processors,  # Add repetition penalty
             verbose=False,

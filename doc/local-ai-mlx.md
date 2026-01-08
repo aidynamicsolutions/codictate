@@ -90,7 +90,8 @@ The MLX inference runs in a separate Python process for best model compatibility
           │                                         │
           ├──────────POST /generate────────────────▶│  Generate text
           │          {"prompt": "...",              │
-          │           "max_tokens": 150,            │
+          │           "max_tokens": -1,             │  (-1 = auto-calculate)
+          │           "system_ram_gb": 16,          │
           │           "temperature": 0.7}           │
           │◀─────────{"response": "..."}────────────┤
           │                                         │
@@ -154,11 +155,33 @@ The sidecar uses optimized settings for translation/enhancement tasks:
 
 | Setting | Value | Purpose |
 |---------|-------|---------|
-| `max_tokens` | 150 | Limit output length for efficiency |
+| `max_tokens` | Dynamic | Auto-calculated: input×1.3, capped by RAM tier |
 | `temperature` | 0.7 | Balanced creativity/consistency |
 | `top_p` | 0.8 | Nucleus sampling for quality |
 | `repetition_penalty` | 1.15 | Prevent output loops |
 | `enable_thinking` | false | Disable verbose reasoning |
+
+### Dynamic Token Limits by RAM
+
+| RAM | Token Ceiling | Max Recording |
+|-----|--------------|---------------|
+| ≤8GB | 1536 | ~6 min |
+| 9-16GB | 2048 | ~8 min |
+| >16GB | 3072 | ~12 min |
+
+### Recording Time Limits
+
+Recordings are automatically limited based on system RAM to prevent memory exhaustion:
+
+- **Visual countdown:** Pink border depletes clockwise during recording
+- **30s warning:** Toast notification before auto-stop
+- **Auto-stop:** Recording stops and proceeds to transcription
+
+| RAM | Max Duration |
+|-----|--------------|
+| ≤8GB | 6 minutes |
+| 9-16GB | 8 minutes |
+| >16GB | 12 minutes |
 
 ## Key Files
 
