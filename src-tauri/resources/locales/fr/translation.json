@@ -260,28 +260,6 @@
         "cancel": "Annuler",
         "selectToEdit": "Sélectionnez un prompt ci-dessus pour voir et modifier ses détails.",
         "createFirst": "Cliquez sur 'Créer un nouveau prompt' ci-dessus pour créer votre premier prompt de post-traitement."
-      },
-      "mlx": {
-        "title": "Modèle IA Local",
-        "description": "Sélectionnez un modèle pour le traitement hors ligne. Tous les modèles sont quantifiés sur 4 bits pour une inférence efficace sur Apple Silicon.",
-        "recommended": "Recommandé",
-        "download": "Télécharger",
-        "downloading": "Téléchargement...",
-        "cancel": "Annuler",
-        "retry": "Réessayer",
-        "select": "Sélectionner",
-        "cancelDelete": "Annuler",
-        "confirmDelete": "Supprimer",
-        "notDownloaded": "Non téléchargé",
-        "downloaded": "Téléchargé",
-        "ready": "Prêt",
-        "loading": "Chargement...",
-        "failed": "Échec",
-        "size": "Taille",
-        "ram": "RAM",
-        "notAvailable": "L'IA locale nécessite un Mac Apple Silicon",
-        "default": "Par défaut",
-        "showInFinder": "Afficher dans le Finder"
       }
     },
     "history": {

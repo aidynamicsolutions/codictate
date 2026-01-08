@@ -6,6 +6,7 @@ pub mod audio_toolkit;
 mod clipboard;
 mod commands;
 mod helpers;
+mod i18n;
 mod input;
 mod llm_client;
 mod managers;
@@ -112,6 +113,9 @@ fn show_main_window(app: &AppHandle) {
 }
 
 fn initialize_core_logic(app_handle: &AppHandle) {
+    // Initialize the i18n system
+    i18n::init(app_handle);
+    
     // Initialize the input state (Enigo singleton for keyboard/mouse simulation)
     let enigo_state = input::EnigoState::new().expect("Failed to initialize input state (Enigo)");
     app_handle.manage(enigo_state);
@@ -466,6 +470,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(

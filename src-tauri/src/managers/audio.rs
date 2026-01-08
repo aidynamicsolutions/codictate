@@ -3,7 +3,7 @@ use crate::helpers::clamshell;
 use crate::overlay;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -378,7 +378,8 @@ impl AudioRecordingManager {
     /// Start a timer thread that emits recording time updates every second
     fn start_recording_timer(&self, binding_id: String) {
         use crate::actions::ACTION_MAP;
-        use std::process::Command;
+        use crate::i18n;
+        use tauri_plugin_notification::NotificationExt;
         
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         *self.timer_stop_tx.lock().unwrap() = Some(stop_tx);
@@ -388,6 +389,9 @@ impl AudioRecordingManager {
         let is_recording = self.is_recording.clone();
         let recording_start_time = self.recording_start_time.clone();
         let timer_stop_tx = self.timer_stop_tx.clone();
+        
+        // Get the localized warning message before spawning the thread
+        let warning_message = i18n::t(&self.app_handle, "recording.limitWarning");
         
         std::thread::spawn(move || {
             let mut warned_at_30s = false;
@@ -418,22 +422,45 @@ impl AudioRecordingManager {
                     // Emit time update to overlay
                     overlay::emit_recording_time(&app_handle, elapsed, max_secs);
                     
-                    // Check for 30s warning - use system notification via osascript
+                    // Check for 30s warning - use native notification
                     let remaining = max_secs.saturating_sub(elapsed);
                     if remaining <= 30 && remaining > 0 && !warned_at_30s {
-                        // Show system-wide notification on macOS using osascript
-                        #[cfg(target_os = "macos")]
-                        {
-                            // Note: osascript notifications don't support i18n easily,
-                            // using hardcoded English for system-level notification
-                            let script = r#"display notification "Recording ends in 30 seconds" with title "Handy""#;
-                            if let Err(e) = Command::new("osascript")
-                                .args(["-e", script])
-                                .output()
-                            {
-                                error!("Failed to show notification: {}", e);
+                        // Send native notification using tauri-plugin-notification
+                        use tauri_plugin_notification::PermissionState;
+                        
+                        // Check permission status
+                        let permission = app_handle.notification().permission_state();
+                        
+                        match permission {
+                            Ok(PermissionState::Granted) => {
+                                if let Err(e) = app_handle
+                                    .notification()
+                                    .builder()
+                                    .title("Handy")
+                                    .body(&warning_message)
+                                    .show()
+                                {
+                                    error!("Failed to show notification: {}", e);
+                                }
+                            }
+                            Ok(PermissionState::Denied) => {
+                                warn!("Notification permission denied by user");
+                            }
+                            Ok(PermissionState::Prompt) | Ok(PermissionState::PromptWithRationale) => {
+                                warn!("Notification permission not yet granted, requesting...");
+                                // Permission not yet granted - try to show anyway (will trigger prompt)
+                                let _ = app_handle
+                                    .notification()
+                                    .builder()
+                                    .title("Handy")
+                                    .body(&warning_message)
+                                    .show();
+                            }
+                            Err(e) => {
+                                error!("Failed to check notification permission: {}", e);
                             }
                         }
+                        
                         warned_at_30s = true;
                         info!("Recording limit warning: {}s remaining", remaining);
                     }

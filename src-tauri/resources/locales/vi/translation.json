@@ -260,28 +260,6 @@
         "cancel": "Hủy",
         "selectToEdit": "Chọn một prompt ở trên để xem và chỉnh sửa chi tiết.",
         "createFirst": "Nhấn 'Tạo Prompt mới' ở trên để tạo prompt xử lý sau đầu tiên của bạn."
-      },
-      "mlx": {
-        "title": "Mô hình AI Cục bộ",
-        "description": "Chọn một mô hình để xử lý ngoại tuyến. Tất cả các mô hình đều được lượng tử hóa 4-bit để suy luận hiệu quả trên Apple Silicon.",
-        "recommended": "Đề xuất",
-        "download": "Tải xuống",
-        "downloading": "Đang tải xuống...",
-        "cancel": "Hủy",
-        "retry": "Thử lại",
-        "select": "Chọn",
-        "cancelDelete": "Hủy",
-        "confirmDelete": "Xóa",
-        "notDownloaded": "Chưa tải xuống",
-        "downloaded": "Đã tải xuống",
-        "ready": "Sẵn sàng",
-        "loading": "Đang tải...",
-        "failed": "Thất bại",
-        "size": "Kích thước",
-        "ram": "RAM",
-        "notAvailable": "AI cục bộ yêu cầu Mac Apple Silicon",
-        "default": "Mặc định",
-        "showInFinder": "Hiển thị trong Finder"
       }
     },
     "history": {

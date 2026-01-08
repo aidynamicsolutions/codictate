@@ -259,28 +259,6 @@
         "cancel": "Cancelar",
         "selectToEdit": "Selecciona un prompt arriba para ver y editar sus detalles.",
         "createFirst": "Haz clic en 'Crear Nuevo Prompt' arriba para crear tu primer prompt de post procesamiento."
-      },
-      "mlx": {
-        "title": "Modelo de IA Local",
-        "description": "Selecciona un modelo para procesamiento offline. Todos los modelos están cuantizados a 4 bits para inferencia eficiente en Apple Silicon.",
-        "recommended": "Recomendado",
-        "download": "Descargar",
-        "downloading": "Descargando...",
-        "cancel": "Cancelar",
-        "retry": "Reintentar",
-        "select": "Seleccionar",
-        "cancelDelete": "Cancelar",
-        "confirmDelete": "Eliminar",
-        "notDownloaded": "No descargado",
-        "downloaded": "Descargado",
-        "ready": "Listo",
-        "loading": "Cargando...",
-        "failed": "Fallido",
-        "size": "Tamaño",
-        "ram": "RAM",
-        "notAvailable": "IA local requiere Mac con Apple Silicon",
-        "default": "Predeterminado",
-        "showInFinder": "Mostrar en Finder"
       }
     },
     "history": {
