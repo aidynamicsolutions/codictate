@@ -1,12 +1,86 @@
-use natural::phonetics::soundex;
-use strsim::levenshtein;
+use log::{debug, info};
+use rphonetic::{DoubleMetaphone, Encoder};
+use strsim::{damerau_levenshtein, jaro_winkler};
+
+/// Threshold for using Jaro-Winkler vs Damerau-Levenshtein
+/// Jaro-Winkler is better for short strings due to prefix emphasis
+const SHORT_WORD_THRESHOLD: usize = 6;
+
+/// Phonetic codes for a word (primary and alternate Double Metaphone codes)
+struct PhoneticCodes {
+    primary: String,
+    alternate: String,
+}
+
+impl PhoneticCodes {
+    fn new(encoder: &DoubleMetaphone, word: &str) -> Self {
+        Self {
+            primary: encoder.encode(word),
+            alternate: encoder.encode_alternate(word),
+        }
+    }
+
+    /// Check if any of our codes match any of the other word's codes
+    fn matches(&self, other: &PhoneticCodes) -> bool {
+        // Both codes being empty means no phonetic representation available
+        if self.primary.is_empty() || other.primary.is_empty() {
+            return false;
+        }
+
+        // Check all 4 possible combinations
+        self.primary == other.primary
+            || (!self.primary.is_empty()
+                && !other.alternate.is_empty()
+                && self.primary == other.alternate)
+            || (!self.alternate.is_empty()
+                && !other.primary.is_empty()
+                && self.alternate == other.primary)
+            || (!self.alternate.is_empty()
+                && !other.alternate.is_empty()
+                && self.alternate == other.alternate)
+    }
+}
+
+/// Represents a custom word that may be a multi-word phrase
+struct CustomPhrase {
+    /// Original form as provided by user
+    original: String,
+    /// Phonetic codes of concatenated form (for "chat gpt" → "chatgpt")
+    phonetic: PhoneticCodes,
+    /// Number of words in the phrase
+    word_count: usize,
+    /// Individual words (lowercase) for multi-word matching
+    words: Vec<String>,
+    /// Concatenated lowercase form for matching
+    concatenated: String,
+}
+
+impl CustomPhrase {
+    fn new(original: &str, encoder: &DoubleMetaphone) -> Self {
+        let normalized = original.to_lowercase();
+        let words: Vec<String> = normalized.split_whitespace().map(String::from).collect();
+        let concatenated: String = words.join("");
+        let phonetic = PhoneticCodes::new(encoder, &concatenated);
+
+        Self {
+            original: original.to_string(),
+            phonetic,
+            word_count: words.len().max(1),
+            words,
+            concatenated,
+        }
+    }
+}
 
 /// Applies custom word corrections to transcribed text using fuzzy matching
 ///
 /// This function corrects words in the input text by finding the best matches
 /// from a list of custom words using a combination of:
-/// - Levenshtein distance for string similarity
-/// - Soundex phonetic matching for pronunciation similarity
+/// - Exact case-insensitive matching (checked first to avoid false positives)
+/// - Multi-word phrase matching with sliding window (for "chat GPT" → "ChatGPT")
+/// - Jaro-Winkler for short words (≤6 chars) - better prefix matching
+/// - Damerau-Levenshtein for longer words - handles transpositions
+/// - Double Metaphone phonetic matching for pronunciation similarity
 ///
 /// # Arguments
 /// * `text` - The input text to correct
@@ -20,84 +94,208 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
         return text.to_string();
     }
 
-    // Pre-compute lowercase versions to avoid repeated allocations
-    let custom_words_lower: Vec<String> = custom_words.iter().map(|w| w.to_lowercase()).collect();
+    info!(
+        "[CustomWords] Processing: '{}' with {} custom words, threshold={}",
+        text,
+        custom_words.len(),
+        threshold
+    );
 
-    let words: Vec<&str> = text.split_whitespace().collect();
-    let mut corrected_words = Vec::new();
+    // Pre-compute phrase data
+    let double_metaphone = DoubleMetaphone::default();
+    let phrases: Vec<CustomPhrase> = custom_words
+        .iter()
+        .map(|w| CustomPhrase::new(w, &double_metaphone))
+        .collect();
 
-    for word in words {
-        let cleaned_word = word
-            .trim_matches(|c: char| !c.is_alphabetic())
+    // Max window size for multi-word phrase matching
+    // Check up to 3-word combinations to handle cases like "chat GPT" → "ChatGPT"
+    let phrase_max = phrases.iter().map(|p| p.word_count).max().unwrap_or(1);
+    let max_window_size = phrase_max.max(3);
+
+    // Split input into words, preserving original forms
+    let input_words: Vec<&str> = text.split_whitespace().collect();
+
+    if input_words.is_empty() {
+        return text.to_string();
+    }
+
+    let mut result: Vec<String> = Vec::new();
+    let mut i = 0;
+
+    while i < input_words.len() {
+        // First, try single-word matching (most common case)
+        let single_word = input_words[i];
+        let single_cleaned = single_word
+            .chars()
+            .filter(|c| c.is_alphabetic())
+            .collect::<String>()
             .to_lowercase();
 
-        if cleaned_word.is_empty() {
-            corrected_words.push(word.to_string());
+        if single_cleaned.is_empty() || single_cleaned.len() > 50 {
+            result.push(single_word.to_string());
+            i += 1;
             continue;
         }
 
-        // Skip extremely long words to avoid performance issues
-        if cleaned_word.len() > 50 {
-            corrected_words.push(word.to_string());
-            continue;
-        }
+        // Check for exact single-word match first
+        let mut found_match: Option<(&CustomPhrase, usize, f64)> = None;
 
-        let mut best_match: Option<&String> = None;
-        let mut best_score = f64::MAX;
-
-        for (i, custom_word_lower) in custom_words_lower.iter().enumerate() {
-            // Skip if lengths are too different (optimization)
-            let len_diff = (cleaned_word.len() as i32 - custom_word_lower.len() as i32).abs();
-            if len_diff > 5 {
-                continue;
-            }
-
-            // Calculate Levenshtein distance (normalized by length)
-            let levenshtein_dist = levenshtein(&cleaned_word, custom_word_lower);
-            let max_len = cleaned_word.len().max(custom_word_lower.len()) as f64;
-            let levenshtein_score = if max_len > 0.0 {
-                levenshtein_dist as f64 / max_len
-            } else {
-                1.0
-            };
-
-            // Calculate phonetic similarity using Soundex
-            let phonetic_match = soundex(&cleaned_word, custom_word_lower);
-
-            // Combine scores: favor phonetic matches, but also consider string similarity
-            let combined_score = if phonetic_match {
-                levenshtein_score * 0.3 // Give significant boost to phonetic matches
-            } else {
-                levenshtein_score
-            };
-
-            // Accept if the score is good enough (configurable threshold)
-            if combined_score < threshold && combined_score < best_score {
-                best_match = Some(&custom_words[i]);
-                best_score = combined_score;
+        for phrase in &phrases {
+            if single_cleaned == phrase.concatenated {
+                info!(
+                    "[CustomWords] Exact single-word match: '{}' -> '{}'",
+                    single_word, phrase.original
+                );
+                found_match = Some((phrase, 1, 0.0));
+                break;
             }
         }
 
-        if let Some(replacement) = best_match {
-            // Preserve the original case pattern as much as possible
-            let corrected = preserve_case_pattern(word, replacement);
+        // If no exact single-word match, try multi-word EXACT match
+        // (only accept multi-word for exact matches to avoid over-matching)
+        if found_match.is_none() {
+            for window_size in (2..=max_window_size.min(input_words.len() - i)).rev() {
+                let window_words: Vec<&str> = input_words[i..i + window_size].to_vec();
+                let window_cleaned: String = window_words
+                    .iter()
+                    .map(|w| {
+                        w.chars()
+                            .filter(|c| c.is_alphabetic())
+                            .collect::<String>()
+                            .to_lowercase()
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
 
-            // Preserve punctuation from original word
-            let (prefix, suffix) = extract_punctuation(word);
-            corrected_words.push(format!("{}{}{}", prefix, corrected, suffix));
+                for phrase in &phrases {
+                    // Only accept multi-word match if it's EXACT
+                    if window_cleaned == phrase.concatenated {
+                        let window_text = window_words.join(" ");
+                        info!(
+                            "[CustomWords] Exact multi-word match: '{}' -> '{}'",
+                            window_text, phrase.original
+                        );
+                        found_match = Some((phrase, window_size, 0.0));
+                        break;
+                    }
+                }
+
+                if found_match.is_some() {
+                    break;
+                }
+            }
+        }
+
+        // If still no exact match, try fuzzy single-word matching
+        if found_match.is_none() {
+            let word_codes = PhoneticCodes::new(&double_metaphone, &single_cleaned);
+            let mut best_score = f64::MAX;
+
+            for phrase in &phrases {
+                // Skip if lengths are too different
+                let len_diff =
+                    (single_cleaned.len() as i32 - phrase.concatenated.len() as i32).abs();
+                if len_diff > 5 {
+                    continue;
+                }
+
+                // Calculate string similarity score
+                // Use Jaro-Winkler for short strings (better for names/prefixes)
+                // Use Damerau-Levenshtein for longer strings (better for transpositions)
+                // Only use Jaro-Winkler when:
+                // 1. BOTH strings are short (≤6 chars)
+                // 2. They have similar lengths (at least half of each other)
+                let len1 = single_cleaned.len();
+                let len2 = phrase.concatenated.len();
+                let lengths_similar = len1.min(len2) * 2 >= len1.max(len2);
+                let use_jaro = len1 <= SHORT_WORD_THRESHOLD
+                    && len2 <= SHORT_WORD_THRESHOLD
+                    && lengths_similar;
+
+                let base_score = if use_jaro {
+                    // Jaro-Winkler returns 0.0-1.0 similarity, convert to distance
+                    // Use stricter matching for short words to prevent false positives
+                    let jw_distance = 1.0 - jaro_winkler(&single_cleaned, &phrase.concatenated);
+                    // Only accept if very similar (Jaro-Winkler > 0.85 similarity = < 0.15 distance)
+                    if jw_distance > 0.2 {
+                        1.0 // Reject: not similar enough
+                    } else {
+                        jw_distance
+                    }
+                } else {
+                    // Damerau-Levenshtein normalized by length
+                    let damerau_dist = damerau_levenshtein(&single_cleaned, &phrase.concatenated);
+                    let max_len = single_cleaned.len().max(phrase.concatenated.len()) as f64;
+                    if max_len > 0.0 {
+                        damerau_dist as f64 / max_len
+                    } else {
+                        1.0
+                    }
+                };
+
+                // Phonetic matching
+                let phonetic_match = word_codes.matches(&phrase.phonetic);
+
+                // Combined score with phonetic boost
+                let combined_score = if phonetic_match {
+                    base_score * 0.3
+                } else {
+                    base_score
+                };
+
+                debug!(
+                    "[CustomWords] '{}' vs '{}': base={:.3}, phonetic={}, combined={:.3}, algo={}",
+                    single_cleaned, phrase.concatenated, base_score, phonetic_match, combined_score,
+                    if use_jaro { "jaro-winkler" } else { "damerau-lev" }
+                );
+
+                if combined_score < threshold && combined_score < best_score {
+                    found_match = Some((phrase, 1, combined_score));
+                    best_score = combined_score;
+                }
+            }
+        }
+
+        // Apply the match or keep original
+        if let Some((phrase, words_consumed, score)) = found_match {
+            let first_word = input_words[i];
+            let corrected = preserve_case_pattern(first_word, &phrase.original);
+            let (prefix, _) = extract_punctuation(first_word);
+            let (_, suffix) = extract_punctuation(input_words[i + words_consumed - 1]);
+
+            info!(
+                "[CustomWords] Matched {} word(s): '{}' -> '{}' (score={:.3})",
+                words_consumed,
+                input_words[i..i + words_consumed].join(" "),
+                phrase.original,
+                score
+            );
+
+            result.push(format!("{}{}{}", prefix, corrected, suffix));
+            i += words_consumed;
         } else {
-            corrected_words.push(word.to_string());
+            result.push(single_word.to_string());
+            i += 1;
         }
     }
 
-    corrected_words.join(" ")
+    let output = result.join(" ");
+    info!("[CustomWords] Result: '{}'", output);
+    output
 }
 
 /// Preserves the case pattern of the original word when applying a replacement
 fn preserve_case_pattern(original: &str, replacement: &str) -> String {
-    if original.chars().all(|c| c.is_uppercase()) {
+    let alpha_chars: Vec<char> = original.chars().filter(|c| c.is_alphabetic()).collect();
+
+    if alpha_chars.is_empty() {
+        return replacement.to_string();
+    }
+
+    if alpha_chars.iter().all(|c| c.is_uppercase()) {
         replacement.to_uppercase()
-    } else if original.chars().next().map_or(false, |c| c.is_uppercase()) {
+    } else if alpha_chars.first().map_or(false, |c| c.is_uppercase()) {
         let mut chars: Vec<char> = replacement.chars().collect();
         if let Some(first_char) = chars.get_mut(0) {
             *first_char = first_char.to_uppercase().next().unwrap_or(*first_char);
@@ -172,5 +370,94 @@ mod tests {
         let custom_words = vec![];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_exact_match_before_fuzzy() {
+        let text = "handy is a great app";
+        let custom_words = vec!["Handy".to_string(), "Candy".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "Handy is a great app");
+    }
+
+    #[test]
+    fn test_transposition_handling() {
+        let text = "teh quick brown fox";
+        let custom_words = vec!["the".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "the quick brown fox");
+    }
+
+    #[test]
+    fn test_double_metaphone_phonetic() {
+        let text = "I have a kat";
+        let custom_words = vec!["cat".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I have a cat");
+    }
+
+    #[test]
+    fn test_phonetic_name_matching() {
+        let text = "I work at Anthrapik";
+        let custom_words = vec!["Anthropic".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I work at Anthropic");
+    }
+
+    // Multi-word phrase matching tests
+    #[test]
+    fn test_multi_word_phrase_exact() {
+        // "chat GPT" (two words) should match "ChatGPT" custom word
+        let text = "I use chat GPT daily";
+        let custom_words = vec!["ChatGPT".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I use ChatGPT daily");
+    }
+
+    #[test]
+    fn test_multi_word_phrase_case_variations() {
+        let custom_words = vec!["ChatGPT".to_string()];
+
+        assert_eq!(
+            apply_custom_words("chat gpt is cool", &custom_words, 0.5),
+            "ChatGPT is cool"
+        );
+        assert_eq!(
+            apply_custom_words("Chat GPT is cool", &custom_words, 0.5),
+            "ChatGPT is cool"
+        );
+        assert_eq!(
+            apply_custom_words("CHAT GPT is cool", &custom_words, 0.5),
+            "CHATGPT is cool"
+        );
+    }
+
+    #[test]
+    fn test_single_word_still_works() {
+        // Single word "chatgpt" should still match
+        let text = "I use chatgpt daily";
+        let custom_words = vec!["ChatGPT".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I use ChatGPT daily");
+    }
+
+    #[test]
+    fn test_three_word_phrase() {
+        // Test with a three-word phrase
+        let text = "I love new york city";
+        let custom_words = vec!["New York City".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I love New York City");
+    }
+
+    // Test that multi-word matching doesn't over-match
+    #[test]
+    fn test_no_false_multi_word_match() {
+        // "at Anthropic" should NOT match as a phrase
+        let text = "I work at Anthropic";
+        let custom_words = vec!["Anthropic".to_string()];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        // Should match "Anthropic" as single word, not consume "at Anthropic"
+        assert_eq!(result, "I work at Anthropic");
     }
 }
