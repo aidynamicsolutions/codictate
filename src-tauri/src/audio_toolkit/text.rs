@@ -49,8 +49,6 @@ struct CustomPhrase {
     phonetic: PhoneticCodes,
     /// Number of words in the phrase
     word_count: usize,
-    /// Individual words (lowercase) for multi-word matching
-    words: Vec<String>,
     /// Concatenated lowercase form for matching
     concatenated: String,
 }
@@ -66,7 +64,6 @@ impl CustomPhrase {
             original: original.to_string(),
             phonetic,
             word_count: words.len().max(1),
-            words,
             concatenated,
         }
     }

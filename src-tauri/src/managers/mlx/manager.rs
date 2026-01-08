@@ -210,10 +210,6 @@ impl DownloadProgressTracker {
         }
     }
 
-    fn cancel(&self) {
-        self.cancelled.store(true, Ordering::SeqCst);
-    }
-
     fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
     }
@@ -787,9 +783,8 @@ impl MlxModelManager {
             fs::create_dir_all(&model_dir)?;
         }
 
-        // Use hf-hub API to download model files
-        let api = Api::new()?;
-        let repo = api.model(hf_repo.to_string());
+        // Use hf-hub API to download model files (Api created inside each spawn for each file)
+        let _api = Api::new()?;
 
         // Get list of files to download
         // For MLX models, we typically need: config.json, tokenizer files, and model weights
@@ -1116,6 +1111,7 @@ impl MlxModelManager {
                 max_tokens: 150,  // Translation tasks need few tokens
                 temperature: 0.7,
             })
+            .timeout(Duration::from_secs(60))  // 60s timeout for local LLM inference
             .send()
             .await
             .map_err(|e| anyhow!("Failed to call sidecar: {}", e))?;
@@ -1419,42 +1415,7 @@ impl MlxModelManager {
         Ok(())
     }
 
-    /// Unload the currently loaded model via Python sidecar
-    pub async fn unload_model_async(&self) -> Result<()> {
-        let model_id = {
-            let mut loaded = self.loaded_model.write().unwrap();
-            match loaded.take() {
-                Some(state) => state.model_id,
-                None => return Ok(()), // No model loaded
-            }
-        };
 
-        info!("Unloading MLX model via sidecar: {}", model_id);
-
-        // Call sidecar to unload
-        let response = self
-            .http_client
-            .post(format!("{}/unload", self.get_base_url()))
-            .send()
-            .await;
-
-        if let Err(e) = response {
-            warn!("Failed to unload model from sidecar: {}", e);
-            // Continue anyway - the local state will be cleared
-        }
-
-        // Update status to downloaded
-        {
-            let mut models = self.models.write().unwrap();
-            if let Some(model) = models.get_mut(&model_id) {
-                model.status = MlxModelStatus::Downloaded;
-            }
-        }
-
-        self.emit_event(MlxModelStateEvent::Unloaded { model_id });
-
-        Ok(())
-    }
 
     /// Synchronous unload for compatibility with existing code
     pub fn unload_model(&self) -> Result<()> {

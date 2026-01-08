@@ -20,6 +20,7 @@ Usage:
 
 import gc
 import logging
+import re
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -35,6 +36,53 @@ logger = logging.getLogger(__name__)
 model = None
 tokenizer = None
 current_model_path: Optional[str] = None
+
+
+def clean_model_response(response: str) -> str:
+    """
+    Clean the raw model response by removing thinking blocks and handling repeated patterns.
+    
+    This function:
+    1. Removes <think>...</think> blocks (Qwen3 thinking mode artifacts)
+    2. Extracts first meaningful content after "Output:" labels
+    3. Handles repeated "Text:" patterns from model loops
+    
+    Args:
+        response: Raw response string from the model
+        
+    Returns:
+        Cleaned response string
+    """
+    if not response:
+        return ""
+    
+    # Remove <think>...</think> blocks if present
+    response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+    
+    # Remove repeated "Output:" sections - take only the first one
+    if 'Output:' in response:
+        parts = response.split('Output:')
+        # Take the first non-empty part after "Output:"
+        for part in parts[1:]:  # Skip first part before any "Output:"
+            clean_part = part.strip()
+            if clean_part:
+                response = clean_part.split('\n\n')[0]  # Take first paragraph
+                break
+    
+    # Remove repeated "Text:" patterns that indicate the model is looping
+    if response.count('Text:') > 1:
+        # Take only content before the first "Text:" repetition
+        first_text_idx = response.find('Text:')
+        if first_text_idx > 0:
+            response = response[:first_text_idx].strip()
+        elif first_text_idx == 0:
+            # If starts with Text:, find next occurrence
+            second_text_idx = response.find('Text:', 5)
+            if second_text_idx > 0:
+                response = response[:second_text_idx].strip()
+    
+    # Strip leading/trailing whitespace and newlines
+    return response.strip()
 
 
 class LoadRequest(BaseModel):
@@ -206,35 +254,8 @@ async def generate_text(request: GenerateRequest):
         
         logger.info(f"=== RAW OUTPUT ===\n{response}\n=== END RAW OUTPUT ===")
         
-        # Clean response: remove any thinking blocks and strip whitespace
-        if response:
-            # Remove <think>...</think> blocks if present
-            response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
-            
-            # Remove repeated "Output:" sections - take only the first one
-            if 'Output:' in response:
-                parts = response.split('Output:')
-                # Take the first non-empty part after "Output:"
-                for part in parts[1:]:  # Skip first part before any "Output:"
-                    clean_part = part.strip()
-                    if clean_part:
-                        response = clean_part.split('\n\n')[0]  # Take first paragraph
-                        break
-            
-            # Remove repeated "Text:" patterns that indicate the model is looping
-            if response.count('Text:') > 1:
-                # Take only content before the first "Text:" repetition
-                first_text_idx = response.find('Text:')
-                if first_text_idx > 0:
-                    response = response[:first_text_idx].strip()
-                elif first_text_idx == 0:
-                    # If starts with Text:, find next occurrence
-                    second_text_idx = response.find('Text:', 5)
-                    if second_text_idx > 0:
-                        response = response[:second_text_idx].strip()
-            
-            # Strip leading/trailing whitespace and newlines
-            response = response.strip()
+        # Clean response using the extracted function
+        response = clean_model_response(response)
         
         logger.info(f"=== CLEANED OUTPUT ===\n{response}\n=== END CLEANED OUTPUT ===")
         
