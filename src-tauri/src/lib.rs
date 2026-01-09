@@ -199,6 +199,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 // Use centralized cancellation that handles all operations
                 cancel_current_operation(app);
             }
+            "copy_last_recording" => {
+                tray::copy_last_recording_to_clipboard(app);
+            }
             "quit" => {
                 app.exit(0);
             }
@@ -208,8 +211,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         .unwrap();
     app_handle.manage(tray);
 
-    // Initialize tray menu with idle state
-    utils::update_tray_menu(app_handle, &utils::TrayIconState::Idle, None);
+    // Initialize tray menu with idle state (spawn async since Idle needs history check)
+    let app_clone = app_handle.clone();
+    tauri::async_runtime::spawn(async move {
+        utils::update_tray_menu_async(&app_clone, &utils::TrayIconState::Idle, None).await;
+    });
 
     // Get the autostart manager and configure based on user setting
     let autostart_manager = app_handle.autolaunch();

@@ -2,6 +2,7 @@
   "tray": {
     "settings": "Settings...",
     "checkUpdates": "Check for Updates...",
+    "copyLastRecording": "Copy Last Recording",
     "quit": "Quit",
     "cancel": "Cancel"
   },

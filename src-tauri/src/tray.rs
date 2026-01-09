@@ -1,9 +1,12 @@
+use crate::managers::history::HistoryManager;
 use crate::settings;
 use crate::tray_i18n::get_tray_translations;
+use std::sync::Arc;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Manager, Theme};
+
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TrayIconState {
@@ -72,10 +75,47 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
     ));
 
     // Update menu based on state
-    update_tray_menu(app, &icon, None);
+    // For Idle state, spawn the menu update in a background task to avoid blocking
+    // (the Idle menu may query history, which requires async DB access)
+    match icon {
+        TrayIconState::Idle => {
+            let app_clone = app.clone();
+            tauri::async_runtime::spawn(async move {
+                update_tray_menu_async(&app_clone, &TrayIconState::Idle, None).await;
+            });
+        }
+        _ => {
+            // Recording/Transcribing states don't need history, can use sync update
+            update_tray_menu_sync(app, &icon, None);
+        }
+    }
 }
 
-pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&str>) {
+/// Async version of update_tray_menu - use this when calling from async context
+pub async fn update_tray_menu_async(app: &AppHandle, state: &TrayIconState, locale: Option<&str>) {
+    let has_history = if matches!(state, TrayIconState::Idle) {
+        has_history_entries_async(app).await
+    } else {
+        false
+    };
+    build_and_set_tray_menu(app, state, locale, has_history);
+}
+
+/// Sync version of update_tray_menu - use for Recording/Transcribing states that don't need history
+pub fn update_tray_menu_sync(app: &AppHandle, state: &TrayIconState, locale: Option<&str>) {
+    // Sync version doesn't check history - only use for non-Idle states
+    build_and_set_tray_menu(app, state, locale, false);
+}
+
+
+
+/// Internal function that builds and sets the tray menu
+fn build_and_set_tray_menu(
+    app: &AppHandle,
+    state: &TrayIconState,
+    locale: Option<&str>,
+    has_history: bool,
+) {
     let settings = settings::get_settings(app);
 
     let locale = locale.unwrap_or(&settings.app_language);
@@ -134,21 +174,110 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
             )
             .expect("failed to create menu")
         }
-        TrayIconState::Idle => Menu::with_items(
-            app,
-            &[
-                &version_i,
-                &separator(),
-                &settings_i,
-                &check_updates_i,
-                &separator(),
-                &quit_i,
-            ],
-        )
-        .expect("failed to create menu"),
+        TrayIconState::Idle => {
+            if has_history {
+                let copy_last_i = MenuItem::with_id(
+                    app,
+                    "copy_last_recording",
+                    &strings.copy_last_recording,
+                    true,
+                    None::<&str>,
+                )
+                .expect("failed to create copy last recording item");
+                Menu::with_items(
+                    app,
+                    &[
+                        &version_i,
+                        &separator(),
+                        &copy_last_i,
+                        &separator(),
+                        &settings_i,
+                        &check_updates_i,
+                        &separator(),
+                        &quit_i,
+                    ],
+                )
+                .expect("failed to create menu")
+            } else {
+                Menu::with_items(
+                    app,
+                    &[
+                        &version_i,
+                        &separator(),
+                        &settings_i,
+                        &check_updates_i,
+                        &separator(),
+                        &quit_i,
+                    ],
+                )
+                .expect("failed to create menu")
+            }
+        }
     };
 
     let tray = app.state::<TrayIcon>();
     let _ = tray.set_menu(Some(menu));
     let _ = tray.set_icon_as_template(true);
+}
+
+/// Async check if there are any history entries
+async fn has_history_entries_async(app: &AppHandle) -> bool {
+    if let Some(history_manager) = app.try_state::<Arc<HistoryManager>>() {
+        let manager = history_manager.inner().clone();
+        match manager.get_history_entries().await {
+            Ok(entries) => !entries.is_empty(),
+            Err(e) => {
+                log::warn!("Failed to check history entries: {}", e);
+                false
+            }
+        }
+    } else {
+        log::debug!("HistoryManager not available for history check");
+        false
+    }
+}
+
+/// Copy the latest transcription to clipboard
+pub fn copy_last_recording_to_clipboard(app: &AppHandle) {
+    if let Some(history_manager) = app.try_state::<Arc<HistoryManager>>() {
+        let manager = history_manager.inner().clone();
+        let app_clone = app.clone();
+
+        // Spawn async task to get history entries and copy to clipboard
+        tauri::async_runtime::spawn(async move {
+            match manager.get_history_entries().await {
+                Ok(entries) => {
+                    if let Some(latest) = entries.first() {
+                        // Prefer post-processed text if available, otherwise use raw transcription
+                        let text = latest
+                            .post_processed_text
+                            .as_ref()
+                            .unwrap_or(&latest.transcription_text)
+                            .clone();
+
+                        // Copy to clipboard on main thread
+                        let app_for_clipboard = app_clone.clone();
+                        if let Err(e) = app_clone.run_on_main_thread(move || {
+                            use tauri_plugin_clipboard_manager::ClipboardExt;
+                            let clipboard = app_for_clipboard.clipboard();
+                            if let Err(e) = clipboard.write_text(&text) {
+                                log::error!("Failed to write to clipboard: {}", e);
+                            } else {
+                                log::info!("Copied last recording to clipboard");
+                            }
+                        }) {
+                            log::error!("Failed to schedule clipboard copy on main thread: {}", e);
+                        }
+                    } else {
+                        log::debug!("No history entries to copy");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to get history entries for clipboard copy: {}", e);
+                }
+            }
+        });
+    } else {
+        log::warn!("Cannot copy last recording: HistoryManager not available");
+    }
 }

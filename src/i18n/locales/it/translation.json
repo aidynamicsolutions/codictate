@@ -2,6 +2,7 @@
   "tray": {
     "settings": "Impostazioni...",
     "checkUpdates": "Verifica aggiornamenti...",
+    "copyLastRecording": "Copia ultima registrazione",
     "quit": "Esci",
     "cancel": "Annulla"
   },

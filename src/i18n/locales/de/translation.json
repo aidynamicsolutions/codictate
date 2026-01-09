@@ -2,6 +2,7 @@
   "tray": {
     "settings": "Einstellungen...",
     "checkUpdates": "Nach Updates suchen...",
+    "copyLastRecording": "Letzte Aufnahme kopieren",
     "quit": "Beenden",
     "cancel": "Abbrechen"
   },

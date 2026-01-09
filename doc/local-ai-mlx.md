@@ -240,7 +240,7 @@ Handy/
 
 On model unload, the sidecar performs:
 1. `gc.collect()` — Free Python objects
-2. `mx.metal.clear_cache()` — Release Metal GPU buffers
+2. `mx.clear_cache()` — Release Metal GPU buffers
 
 This ensures GPU memory is fully released when the model is unloaded.
 

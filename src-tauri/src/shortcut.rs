@@ -618,8 +618,11 @@ pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(
     settings.app_language = language.clone();
     settings::write_settings(&app, settings);
 
-    // Refresh the tray menu with the new language
-    tray::update_tray_menu(&app, &tray::TrayIconState::Idle, Some(&language));
+    // Refresh the tray menu with the new language (spawn async since Idle needs history check)
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tray::update_tray_menu_async(&app_clone, &tray::TrayIconState::Idle, Some(&language)).await;
+    });
 
     Ok(())
 }

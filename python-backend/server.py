@@ -363,7 +363,7 @@ async def unload_model():
     gc.collect()
     try:
         import mlx.core as mx
-        mx.metal.clear_cache()
+        mx.clear_cache()
     except Exception as e:
         logger.warning(f"Failed to clear MLX Metal cache: {e}")
     
