@@ -3,7 +3,7 @@ use crate::helpers::clamshell;
 use crate::overlay;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;

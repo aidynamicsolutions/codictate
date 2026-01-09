@@ -122,6 +122,7 @@ pub fn show_error(app: &AppHandle, body_key: &str) {
 /// # Arguments
 /// * `app` - The Tauri AppHandle
 /// * `body_key` - Translation key for the info message
+#[allow(dead_code)] // Part of public notification API, mirrors show_error
 pub fn show_info(app: &AppHandle, body_key: &str) {
     show_notification(
         app,
@@ -136,6 +137,7 @@ pub fn show_info(app: &AppHandle, body_key: &str) {
 /// # Arguments
 /// * `app` - The Tauri AppHandle
 /// * `body` - The error message text (not a translation key)
+#[allow(dead_code)] // Part of public notification API, mirrors show_info_with_text
 pub fn show_error_with_text(app: &AppHandle, body: &str) {
     let title = i18n::t(app, "notifications.errorTitle");
     show_notification_with_text(app, NotificationType::Error, &title, body);

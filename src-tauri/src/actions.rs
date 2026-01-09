@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::AppHandle;
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
