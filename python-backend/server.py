@@ -321,9 +321,11 @@ async def generate_text(
         logger.info(f"=== FORMATTED PROMPT ===\n{formatted_prompt}\n=== END FORMATTED ===", extra=extra)
         
         # Create sampler with recommended settings for Qwen3 non-thinking mode
+        # min_p=0.05 dynamically filters low-probability tokens, reducing hallucination
         sampler = make_sampler(
             temp=request.temperature,
             top_p=0.8,
+            min_p=0.05,
             min_tokens_to_keep=1,
         )
         
