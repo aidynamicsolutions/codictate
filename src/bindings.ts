@@ -350,6 +350,13 @@ async openAppDataDir() : Promise<Result<null, string>> {
 async checkAppleIntelligenceAvailable() : Promise<boolean> {
     return await TAURI_INVOKE("check_apple_intelligence_available");
 },
+/**
+ * Log a message from the frontend to the unified log file.
+ * This enables session-correlated logging across Rust, Python, and Frontend.
+ */
+async logFromFrontend(level: string, sessionId: string | null, target: string, message: string) : Promise<void> {
+    await TAURI_INVOKE("log_from_frontend", { level, sessionId, target, message });
+},
 async getAvailableModels() : Promise<Result<ModelInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_models") };

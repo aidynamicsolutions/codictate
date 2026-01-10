@@ -8,6 +8,7 @@ import Onboarding from "./components/onboarding";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { useSettings } from "./hooks/useSettings";
 import { commands } from "@/bindings";
+import { initLogging } from "@/utils/logging";
 
 const renderSettingsContent = (section: SidebarSection) => {
   const ActiveComponent =
@@ -21,6 +22,12 @@ function App() {
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
   const { settings, updateSetting } = useSettings();
+
+  // Initialize unified logging system
+  useEffect(() => {
+    const cleanup = initLogging();
+    return cleanup;
+  }, []);
 
   useEffect(() => {
     checkOnboardingStatus();

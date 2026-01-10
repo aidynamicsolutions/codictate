@@ -1,4 +1,4 @@
-use log::{error, warn};
+use tracing::{error, warn};
 use serde::Serialize;
 use specta::Type;
 use std::sync::Arc;

@@ -5,6 +5,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { listen } from "@tauri-apps/api/event";
 import { ProgressBar } from "../shared";
 import { useSettings } from "../../hooks/useSettings";
+import { logError, logInfo } from "@/utils/logging";
 
 interface UpdateCheckerProps {
   className?: string;
@@ -82,7 +83,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
         }
       }
     } catch (error) {
-      console.error("Failed to check for updates:", error);
+      logError(`Failed to check for updates: ${error}`, "fe-updater");
     } finally {
       setIsChecking(false);
       isManualCheckRef.current = false;
@@ -105,7 +106,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
       const update = await check();
 
       if (!update) {
-        console.log("No update available during install attempt");
+        logInfo("No update available during install attempt", "fe-updater");
         return;
       }
 
@@ -130,7 +131,7 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
       });
       await relaunch();
     } catch (error) {
-      console.error("Failed to install update:", error);
+      logError(`Failed to install update: ${error}`, "fe-updater");
     } finally {
       setIsInstalling(false);
       setDownloadProgress(0);

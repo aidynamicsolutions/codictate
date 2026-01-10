@@ -7,6 +7,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { commands, type HistoryEntry } from "@/bindings";
 import { formatDateTime } from "@/utils/dateFormat";
+import { logError, logInfo } from "@/utils/logging";
 
 interface OpenRecordingsButtonProps {
   onClick: () => void;
@@ -41,7 +42,7 @@ export const HistorySettings: React.FC = () => {
         setHistoryEntries(result.data);
       }
     } catch (error) {
-      console.error("Failed to load history entries:", error);
+      logError(`Failed to load history entries: ${error}`, "fe-history");
     } finally {
       setLoading(false);
     }
@@ -53,7 +54,7 @@ export const HistorySettings: React.FC = () => {
     // Listen for history update events
     const setupListener = async () => {
       const unlisten = await listen("history-updated", () => {
-        console.log("History updated, reloading entries...");
+        logInfo("History updated, reloading entries...", "fe-history");
         loadHistoryEntries();
       });
 
@@ -77,7 +78,7 @@ export const HistorySettings: React.FC = () => {
       await commands.toggleHistoryEntrySaved(id);
       // No need to reload here - the event listener will handle it
     } catch (error) {
-      console.error("Failed to toggle saved status:", error);
+      logError(`Failed to toggle saved status: ${error}`, "fe-history");
     }
   };
 
@@ -85,7 +86,7 @@ export const HistorySettings: React.FC = () => {
     try {
       await navigator.clipboard.writeText(text);
     } catch (error) {
-      console.error("Failed to copy to clipboard:", error);
+      logError(`Failed to copy to clipboard: ${error}`, "fe-history");
     }
   };
 
@@ -97,7 +98,7 @@ export const HistorySettings: React.FC = () => {
       }
       return null;
     } catch (error) {
-      console.error("Failed to get audio file path:", error);
+      logError(`Failed to get audio file path: ${error}`, "fe-history");
       return null;
     }
   };
@@ -106,7 +107,7 @@ export const HistorySettings: React.FC = () => {
     try {
       await commands.deleteHistoryEntry(id);
     } catch (error) {
-      console.error("Failed to delete audio entry:", error);
+      logError(`Failed to delete audio entry: ${error}`, "fe-history");
       throw error;
     }
   };
@@ -115,7 +116,7 @@ export const HistorySettings: React.FC = () => {
     try {
       await commands.openRecordingsFolder();
     } catch (error) {
-      console.error("Failed to open recordings folder:", error);
+      logError(`Failed to open recordings folder: ${error}`, "fe-history");
     }
   };
 
@@ -239,7 +240,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     try {
       await deleteAudio(entry.id);
     } catch (error) {
-      console.error("Failed to delete entry:", error);
+      logError(`Failed to delete entry: ${error}`, "fe-history");
       alert("Failed to delete entry. Please try again.");
     }
   };

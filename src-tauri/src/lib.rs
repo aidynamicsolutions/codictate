@@ -17,11 +17,10 @@ mod shortcut;
 mod signal_handle;
 mod tray;
 mod tray_i18n;
+mod tracing_config;
 mod utils;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
-
-use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
 use managers::history::HistoryManager;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -33,7 +32,6 @@ use signal_hook::consts::SIGUSR2;
 #[cfg(unix)]
 use signal_hook::iterator::Signals;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 
@@ -41,47 +39,9 @@ use tauri::tray::TrayIconBuilder;
 use tauri::Emitter;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
-use tauri_plugin_log::{Builder as LogBuilder, RotationStrategy, Target, TargetKind};
 
 use crate::settings::get_settings;
 
-// Global atomic to store the file log level filter
-// We use u8 to store the log::LevelFilter as a number
-pub static FILE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Debug as u8);
-
-fn level_filter_from_u8(value: u8) -> log::LevelFilter {
-    match value {
-        0 => log::LevelFilter::Off,
-        1 => log::LevelFilter::Error,
-        2 => log::LevelFilter::Warn,
-        3 => log::LevelFilter::Info,
-        4 => log::LevelFilter::Debug,
-        5 => log::LevelFilter::Trace,
-        _ => log::LevelFilter::Trace,
-    }
-}
-
-fn build_console_filter() -> env_filter::Filter {
-    let mut builder = EnvFilterBuilder::new();
-
-    match std::env::var("RUST_LOG") {
-        Ok(spec) if !spec.trim().is_empty() => {
-            if let Err(err) = builder.try_parse(&spec) {
-                log::warn!(
-                    "Ignoring invalid RUST_LOG value '{}': {}. Falling back to info-level console logging",
-                    spec,
-                    err
-                );
-                builder.filter_level(log::LevelFilter::Info);
-            }
-        }
-        _ => {
-            builder.filter_level(log::LevelFilter::Info);
-        }
-    }
-
-    builder.build()
-}
 
 #[derive(Default)]
 struct ShortcutToggleStates {
@@ -95,21 +55,21 @@ fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
         // First, ensure the window is visible
         if let Err(e) = main_window.show() {
-            log::error!("Failed to show window: {}", e);
+            tracing::error!("Failed to show window: {}", e);
         }
         // Then, bring it to the front and give it focus
         if let Err(e) = main_window.set_focus() {
-            log::error!("Failed to focus window: {}", e);
+            tracing::error!("Failed to focus window: {}", e);
         }
         // Optional: On macOS, ensure the app becomes active if it was an accessory
         #[cfg(target_os = "macos")]
         {
             if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
-                log::error!("Failed to set activation policy to Regular: {}", e);
+                tracing::error!("Failed to set activation policy to Regular: {}", e);
             }
         }
     } else {
-        log::error!("Main window not found.");
+        tracing::error!("Main window not found.");
     }
 }
 
@@ -247,9 +207,6 @@ fn trigger_update_check(app: AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // Parse console logging directives from RUST_LOG, falling back to info-level logging
-    // when the variable is unset
-    let console_filter = build_console_filter();
 
     // On Apple Silicon macOS, include MLX commands
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -297,6 +254,7 @@ pub fn run() {
         commands::open_log_dir,
         commands::open_app_data_dir,
         commands::check_apple_intelligence_available,
+        commands::log_from_frontend,
         commands::models::get_available_models,
         commands::models::get_model_info,
         commands::models::download_model,
@@ -392,6 +350,7 @@ pub fn run() {
         commands::open_log_dir,
         commands::open_app_data_dir,
         commands::check_apple_intelligence_available,
+        commands::log_from_frontend,
         commands::models::get_available_models,
         commands::models::get_model_info,
         commands::models::download_model,
@@ -437,29 +396,7 @@ pub fn run() {
         )
         .expect("Failed to export typescript bindings");
 
-    let mut builder = tauri::Builder::default().plugin(
-        LogBuilder::new()
-            .level(log::LevelFilter::Trace) // Set to most verbose level globally
-            .max_file_size(500_000)
-            .rotation_strategy(RotationStrategy::KeepOne)
-            .clear_targets()
-            .targets([
-                // Console output respects RUST_LOG environment variable
-                Target::new(TargetKind::Stdout).filter({
-                    let console_filter = console_filter.clone();
-                    move |metadata| console_filter.enabled(metadata)
-                }),
-                // File logs respect the user's settings (stored in FILE_LOG_LEVEL atomic)
-                Target::new(TargetKind::LogDir {
-                    file_name: Some("handy".into()),
-                })
-                .filter(|metadata| {
-                    let file_level = FILE_LOG_LEVEL.load(Ordering::Relaxed);
-                    metadata.level() <= level_filter_from_u8(file_level)
-                }),
-            ])
-            .build(),
-    );
+    let mut builder = tauri::Builder::default();
 
     #[cfg(target_os = "macos")]
     {
@@ -486,11 +423,27 @@ pub fn run() {
         ))
         .manage(Mutex::new(ShortcutToggleStates::default()))
         .setup(move |app| {
+            // Initialize tracing with log directory
+            let log_dir = app.path().app_log_dir()
+                .expect("Failed to get app log directory");
+            
+            // Create log directory if it doesn't exist
+            std::fs::create_dir_all(&log_dir).ok();
+            
+            tracing_config::init_tracing(&log_dir)
+                .expect("Failed to initialize tracing");
+            
             let settings = get_settings(&app.handle());
-            let tauri_log_level: tauri_plugin_log::LogLevel = settings.log_level.into();
-            let file_log_level: log::Level = tauri_log_level.into();
-            // Store the file log level in the atomic for the filter to use
-            FILE_LOG_LEVEL.store(file_log_level.to_level_filter() as u8, Ordering::Relaxed);
+            // Set file log level from settings
+            let file_log_level = match settings.log_level {
+                settings::LogLevel::Error => tracing::Level::ERROR,
+                settings::LogLevel::Warn => tracing::Level::WARN,
+                settings::LogLevel::Info => tracing::Level::INFO,
+                settings::LogLevel::Debug => tracing::Level::DEBUG,
+                settings::LogLevel::Trace => tracing::Level::TRACE,
+            };
+            tracing_config::set_file_log_level(file_log_level);
+            
             let app_handle = app.handle().clone();
 
             initialize_core_logic(&app_handle);
@@ -515,12 +468,12 @@ pub fn run() {
                         .app_handle()
                         .set_activation_policy(tauri::ActivationPolicy::Accessory);
                     if let Err(e) = res {
-                        log::error!("Failed to set activation policy: {}", e);
+                        tracing::error!("Failed to set activation policy: {}", e);
                     }
                 }
             }
             tauri::WindowEvent::ThemeChanged(theme) => {
-                log::info!("Theme changed to: {:?}", theme);
+                tracing::info!("Theme changed to: {:?}", theme);
                 // Update tray icon to match new theme, maintaining idle state
                 utils::change_tray_icon(&window.app_handle(), utils::TrayIconState::Idle);
             }
@@ -535,9 +488,9 @@ pub fn run() {
                 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
                 {
                     if let Some(mlx_manager) = app.try_state::<Arc<MlxModelManager>>() {
-                        log::info!("App exiting, stopping MLX sidecar server...");
+                        tracing::info!("App exiting, stopping MLX sidecar server...");
                         if let Err(e) = mlx_manager.stop_server() {
-                            log::error!("Failed to stop MLX sidecar server: {}", e);
+                            tracing::error!("Failed to stop MLX sidecar server: {}", e);
                         }
                     }
                 }

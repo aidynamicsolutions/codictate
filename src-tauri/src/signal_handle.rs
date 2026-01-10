@@ -1,6 +1,6 @@
 use crate::actions::ACTION_MAP;
 use crate::ManagedToggleState;
-use log::{debug, info, warn};
+use tracing::{debug, info, warn};
 use std::thread;
 use tauri::{AppHandle, Manager};
 

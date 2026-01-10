@@ -227,12 +227,12 @@ async fn has_history_entries_async(app: &AppHandle) -> bool {
         match manager.get_history_entries().await {
             Ok(entries) => !entries.is_empty(),
             Err(e) => {
-                log::warn!("Failed to check history entries: {}", e);
+                tracing::warn!("Failed to check history entries: {}", e);
                 false
             }
         }
     } else {
-        log::debug!("HistoryManager not available for history check");
+        tracing::debug!("HistoryManager not available for history check");
         false
     }
 }
@@ -261,23 +261,23 @@ pub fn copy_last_recording_to_clipboard(app: &AppHandle) {
                             use tauri_plugin_clipboard_manager::ClipboardExt;
                             let clipboard = app_for_clipboard.clipboard();
                             if let Err(e) = clipboard.write_text(&text) {
-                                log::error!("Failed to write to clipboard: {}", e);
+                                tracing::error!("Failed to write to clipboard: {}", e);
                             } else {
-                                log::info!("Copied last recording to clipboard");
+                                tracing::info!("Copied last recording to clipboard");
                             }
                         }) {
-                            log::error!("Failed to schedule clipboard copy on main thread: {}", e);
+                            tracing::error!("Failed to schedule clipboard copy on main thread: {}", e);
                         }
                     } else {
-                        log::debug!("No history entries to copy");
+                        tracing::debug!("No history entries to copy");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to get history entries for clipboard copy: {}", e);
+                    tracing::error!("Failed to get history entries for clipboard copy: {}", e);
                 }
             }
         });
     } else {
-        log::warn!("Cannot copy last recording: HistoryManager not available");
+        tracing::warn!("Cannot copy last recording: HistoryManager not available");
     }
 }

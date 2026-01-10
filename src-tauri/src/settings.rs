@@ -1,4 +1,4 @@
-use log::{debug, warn};
+use tracing::{debug, warn};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
@@ -65,18 +65,6 @@ impl<'de> Deserialize<'de> for LogLevel {
         }
 
         deserializer.deserialize_any(LogLevelVisitor)
-    }
-}
-
-impl From<LogLevel> for tauri_plugin_log::LogLevel {
-    fn from(level: LogLevel) -> Self {
-        match level {
-            LogLevel::Trace => tauri_plugin_log::LogLevel::Trace,
-            LogLevel::Debug => tauri_plugin_log::LogLevel::Debug,
-            LogLevel::Info => tauri_plugin_log::LogLevel::Info,
-            LogLevel::Warn => tauri_plugin_log::LogLevel::Warn,
-            LogLevel::Error => tauri_plugin_log::LogLevel::Error,
-        }
     }
 }
 

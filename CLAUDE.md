@@ -29,10 +29,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Install dependencies
 bun install
 
-# Run in development mode
+# Run in development mode (different log levels)
+bun run tauri:dev          # Handy logs only (quietest, recommended)
+bun run tauri:dev:debug    # Handy DEBUG + suppress noisy deps
+bun run tauri:dev:verbose  # All logs including deps (noisiest)
+
+# Legacy command (uses default RUST_LOG)
 bun run tauri dev
+
 # If cmake error on macOS:
-CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
+CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri:dev
 
 # Build for production
 bun run tauri build

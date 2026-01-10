@@ -36,7 +36,6 @@ tauri = { version = "2.9.1", features = [
   "tray-icon",
   'image-png',
 ] }
-tauri-plugin-log = "2.7.1"
 tauri-plugin-opener = "2.5.2"
 tauri-plugin-store = "2.4.1"
 tauri-plugin-os = "2.3.2"
@@ -52,7 +51,6 @@ cpal = "0.16.0"
 anyhow = "1.0.95"
 rubato = "0.16.2"
 hound = "3.5.1"
-log = "0.4.25"
 env_filter = "0.1.0"
 tokio = "1.43.0"
 vad-rs = { git = "https://github.com/cjpais/vad-rs", default-features = false }
@@ -73,6 +71,11 @@ specta = "=2.0.0-rc.22"
 specta-typescript = "0.0.9"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 tauri-plugin-notification = "2.3.3"
+# Tracing stack for unified structured logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+uuid = { version = "1.0", features = ["v4"] }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

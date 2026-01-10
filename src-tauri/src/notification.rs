@@ -3,7 +3,7 @@
 //! This module provides a simple API for showing native notifications with proper
 //! localization and urgency differentiation between error and info notifications.
 
-use log::{error, warn};
+use tracing::{error, warn};
 use tauri::AppHandle;
 use tauri_plugin_notification::{NotificationExt, PermissionState};
 

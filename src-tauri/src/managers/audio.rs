@@ -3,7 +3,7 @@ use crate::helpers::clamshell;
 use crate::overlay;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
-use log::{debug, error, info};
+use tracing::{debug, error, info};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -104,7 +104,7 @@ const WHISPER_SAMPLE_RATE: usize = 16000;
 #[derive(Clone, Debug)]
 pub enum RecordingState {
     Idle,
-    Recording { binding_id: String },
+    Recording { binding_id: String, session_id: String },
 }
 
 #[derive(Clone, Debug)]
@@ -340,7 +340,7 @@ impl AudioRecordingManager {
 
     /* ---------- recording --------------------------------------------------- */
 
-    pub fn try_start_recording(&self, binding_id: &str) -> bool {
+    pub fn try_start_recording(&self, binding_id: &str, session_id: &str) -> bool {
         let mut state = self.state.lock().unwrap();
 
         if let RecordingState::Idle = *state {
@@ -357,6 +357,7 @@ impl AudioRecordingManager {
                     *self.is_recording.lock().unwrap() = true;
                     *state = RecordingState::Recording {
                         binding_id: binding_id.to_string(),
+                        session_id: session_id.to_string(),
                     };
                     
                     // Start recording timer
@@ -364,7 +365,7 @@ impl AudioRecordingManager {
                     *self.recording_start_time.lock().unwrap() = Some(start_time);
                     self.start_recording_timer(binding_id.to_string());
                     
-                    debug!("Recording started for binding {binding_id}");
+                    debug!(session = session_id, "Recording started for binding {binding_id}");
                     return true;
                 }
             }
@@ -493,6 +494,7 @@ impl AudioRecordingManager {
         match *state {
             RecordingState::Recording {
                 binding_id: ref active,
+                session_id: _,
             } if active == binding_id => {
                 *state = RecordingState::Idle;
                 drop(state);
@@ -539,6 +541,14 @@ impl AudioRecordingManager {
             *self.state.lock().unwrap(),
             RecordingState::Recording { .. }
         )
+    }
+    
+    /// Get the current session ID if recording is active
+    pub fn get_current_session_id(&self) -> Option<String> {
+        match &*self.state.lock().unwrap() {
+            RecordingState::Recording { session_id, .. } => Some(session_id.clone()),
+            RecordingState::Idle => None,
+        }
     }
 
     /// Cancel any ongoing recording without returning audio samples

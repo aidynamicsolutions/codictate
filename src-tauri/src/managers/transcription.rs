@@ -2,7 +2,7 @@ use crate::audio_toolkit::apply_custom_words;
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{get_settings, ModelUnloadTimeout};
 use anyhow::Result;
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};

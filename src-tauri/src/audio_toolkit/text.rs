@@ -1,4 +1,4 @@
-use log::{debug, info};
+use tracing::{debug, info};
 use rphonetic::{DoubleMetaphone, Encoder};
 use strsim::{damerau_levenshtein, jaro_winkler};
 

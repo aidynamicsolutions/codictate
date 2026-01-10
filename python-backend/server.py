@@ -24,12 +24,24 @@ import re
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 import uvicorn
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Configure logging with session-aware format
+class SessionLogFormatter(logging.Formatter):
+    """Custom formatter that includes session_id in logs."""
+    def format(self, record):
+        if not hasattr(record, 'session'):
+            record.session = '-'
+        return super().format(record)
+
+handler = logging.StreamHandler()
+handler.setFormatter(SessionLogFormatter(
+    '%(asctime)s %(levelname)s session=%(session)s target=mlx-sidecar msg="%(message)s"'
+))
+logging.root.handlers = [handler]
+logging.root.setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Global model state
@@ -248,14 +260,22 @@ async def load_model(request: LoadRequest):
 
 
 @app.post("/generate", response_model=GenerateResponse)
-async def generate_text(request: GenerateRequest):
+async def generate_text(
+    request: GenerateRequest,
+    x_session_id: Optional[str] = Header(None, alias="X-Session-Id")
+):
     """
     Generate text from a prompt using the loaded model.
     
     Requires a model to be loaded first via /load endpoint.
     Uses Qwen3 chat template with thinking mode disabled for efficient inference.
+    Accepts X-Session-Id header for log correlation.
     """
     global model, tokenizer
+    
+    # Create logger adapter with session context
+    session = x_session_id or '-'
+    extra = {'session': session}
     
     if model is None or tokenizer is None:
         raise HTTPException(status_code=400, detail="No model loaded. Call /load first.")
@@ -275,8 +295,8 @@ async def generate_text(request: GenerateRequest):
         else:
             effective_max_tokens = request.max_tokens
         
-        logger.info(f"Generating text (max_tokens={effective_max_tokens}, temp={request.temperature})")
-        logger.info(f"=== INPUT PROMPT ===\n{request.prompt}\n=== END INPUT ===")
+        logger.info(f"Generating text (max_tokens={effective_max_tokens}, temp={request.temperature})", extra=extra)
+        logger.info(f"=== INPUT PROMPT ===\n{request.prompt}\n=== END INPUT ===", extra=extra)
         
         # Apply Qwen3 chat template with thinking disabled for translation tasks
         # This formats the prompt properly with <|im_start|> and <|im_end|> tokens
@@ -298,7 +318,7 @@ async def generate_text(request: GenerateRequest):
             )
             logger.debug("Using chat template without enable_thinking parameter")
         
-        logger.info(f"=== FORMATTED PROMPT ===\n{formatted_prompt}\n=== END FORMATTED ===")
+        logger.info(f"=== FORMATTED PROMPT ===\n{formatted_prompt}\n=== END FORMATTED ===", extra=extra)
         
         # Create sampler with recommended settings for Qwen3 non-thinking mode
         sampler = make_sampler(
@@ -334,7 +354,7 @@ async def generate_text(request: GenerateRequest):
         # Count tokens in response (approximate)
         tokens_generated = len(tokenizer.encode(response)) if response else 0
         
-        logger.info(f"Generated {tokens_generated} tokens")
+        logger.info(f"Generated {tokens_generated} tokens", extra=extra)
         return GenerateResponse(response=response, tokens_generated=tokens_generated)
         
     except Exception as e:

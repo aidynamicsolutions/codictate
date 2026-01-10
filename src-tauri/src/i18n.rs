@@ -3,7 +3,7 @@
 //! This module loads translation files from the resources directory and provides
 //! a simple API to get translated strings based on the current app language.
 
-use log::{debug, warn};
+use tracing::{debug, warn};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::RwLock;

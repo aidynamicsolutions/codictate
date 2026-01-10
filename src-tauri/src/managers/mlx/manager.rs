@@ -6,7 +6,7 @@
 
 use anyhow::{anyhow, Result};
 use hf_hub::api::tokio::{Api, Progress};
-use log::{debug, error, info, warn};
+use tracing::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;

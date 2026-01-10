@@ -1,6 +1,6 @@
 use anyhow::Result;
 use hound::{WavSpec, WavWriter};
-use log::debug;
+use tracing::debug;
 use std::path::Path;
 
 /// Save audio samples as a WAV file

@@ -53,13 +53,15 @@ pub fn get_log_dir_path(app: AppHandle) -> Result<String, String> {
 #[specta::specta]
 #[tauri::command]
 pub fn set_log_level(app: AppHandle, level: LogLevel) -> Result<(), String> {
-    let tauri_log_level: tauri_plugin_log::LogLevel = level.into();
-    let log_level: log::Level = tauri_log_level.into();
-    // Update the file log level atomic so the filter picks up the new level
-    crate::FILE_LOG_LEVEL.store(
-        log_level.to_level_filter() as u8,
-        std::sync::atomic::Ordering::Relaxed,
-    );
+    // Convert LogLevel to tracing::Level and update the file log level
+    let tracing_level = match level {
+        LogLevel::Error => tracing::Level::ERROR,
+        LogLevel::Warn => tracing::Level::WARN,
+        LogLevel::Info => tracing::Level::INFO,
+        LogLevel::Debug => tracing::Level::DEBUG,
+        LogLevel::Trace => tracing::Level::TRACE,
+    };
+    crate::tracing_config::set_file_log_level(tracing_level);
 
     let mut settings = get_settings(&app);
     settings.log_level = level;
@@ -131,4 +133,22 @@ pub fn check_apple_intelligence_available() -> bool {
     {
         false
     }
+}
+
+/// Log a message from the frontend to the unified log file.
+/// This enables session-correlated logging across Rust, Python, and Frontend.
+#[specta::specta]
+#[tauri::command]
+pub fn log_from_frontend(
+    level: String,
+    session_id: Option<String>,
+    target: String,
+    message: String,
+) {
+    crate::tracing_config::log_from_frontend(
+        &level,
+        session_id.as_deref(),
+        &target,
+        &message,
+    );
 }

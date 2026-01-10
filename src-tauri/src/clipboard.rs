@@ -1,7 +1,7 @@
 use crate::input::{self, EnigoState};
 use crate::settings::{get_settings, ClipboardHandling, PasteMethod};
 use enigo::Enigo;
-use log::info;
+use tracing::info;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
