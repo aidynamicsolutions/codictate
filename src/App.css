@@ -1,14 +1,26 @@
 @import "tailwindcss";
 
+/*
+ * =============================================================================
+ * BRAND COLORS - Edit these to rebrand the app
+ * See doc/branding.md for complete rebranding instructions
+ * See src/theme.ts for TypeScript access to these colors
+ * =============================================================================
+ */
 @theme {
+  /* Primary brand color (coral red) */
   --color-text: #0f0f0f;
   --color-background: #fbfbfb;
-  --color-background-ui: #da5893;
-  --color-logo-primary: #faa2ca;
-  --color-logo-stroke: #382731;
+  --color-background-ui: #c1121f;
+  --color-logo-primary: #e63946;
+  --color-logo-stroke: #2b1d1e;
   --color-text-stroke: #f6f6f6;
   --color-mid-gray: #808080;
+  /* Additional brand colors for overlays */
+  --color-bar: #ffe0e0;
+  --color-border: #e63946;
 }
+
 
 :root {
   /* Typography */
@@ -49,8 +61,8 @@
     /* Colors - Dark Theme */
     --color-text: #fbfbfb;
     --color-background: #2c2b29;
-    --color-logo-primary: #f28cbb;
-    --color-logo-stroke: #fad1ed;
+    --color-logo-primary: #f07178;
+    --color-logo-stroke: #ffd5d5;
   }
 }
 

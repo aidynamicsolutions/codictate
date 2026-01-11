@@ -1,4 +1,4 @@
-//! Unified tracing configuration for Handy
+//! Unified tracing configuration for Codictate
 //!
 //! Provides structured logging with session correlation,
 //! dual output to stdout (colored) and file (plain),
@@ -53,7 +53,7 @@ pub fn init_tracing(log_dir: &std::path::Path) -> anyhow::Result<()> {
     let file_appender = RollingFileAppender::builder()
         .rotation(Rotation::DAILY)
         .max_log_files(7)
-        .filename_prefix("handy")
+        .filename_prefix("codictate")
         .filename_suffix("log")
         .build(log_dir)?;
 

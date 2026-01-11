@@ -1,4 +1,5 @@
 {
+  "appName": "Codictate",
   "tray": {
     "settings": "Настройки...",
     "checkUpdates": "Проверить обновления...",
@@ -55,7 +56,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Добро пожаловать в Handy!",
+    "welcome": "Welcome to {{appName}}!",
     "downloadPrompt": "Загрузите модель ниже, чтобы начать транскрипцию.",
     "availableModels": "Доступные модели",
     "downloadModels": "Скачать модели",
@@ -81,7 +82,7 @@
     "general": {
       "title": "Общие",
       "shortcut": {
-        "title": "Ярлыки Handy",
+        "title": "Ярлыки {{appName}}",
         "description": "Настройте сочетания клавиш для запуска записи речи в текст",
         "loading": "Загрузка ярлыков...",
         "none": "Ярлыки не настроены",
@@ -147,7 +148,7 @@
       },
       "autostart": {
         "label": "Запуск при запуске",
-        "description": "Автоматически запускать Handy при входе в систему."
+        "description": "Автоматически запускать {{appName}} при входе в систему."
       },
       "overlay": {
         "title": "Позиция наложения",
@@ -307,7 +308,7 @@
       },
       "updateChecks": {
         "label": "Проверьте наличие обновлений",
-        "description": "Автоматически проверять наличие новых версий Handy"
+        "description": "Автоматически проверять наличие новых версий {{appName}}"
       },
       "soundTheme": {
         "label": "Звуковая тема",
@@ -362,11 +363,11 @@
       "title": "О программе",
       "version": {
         "title": "Версия",
-        "description": "Текущая версия Handy"
+        "description": "Текущая версия {{appName}}"
       },
       "appDataDirectory": {
         "title": "Каталог данных приложения",
-        "description": "Место, где Handy хранит свои данные"
+        "description": "Место, где {{appName}} хранит свои данные"
       },
       "sourceCode": {
         "title": "Исходный код",
@@ -375,7 +376,7 @@
       },
       "supportDevelopment": {
         "title": "Поддержка развития",
-        "description": "Помогите нам продолжить создание Handy",
+        "description": "Помогите нам продолжить создание {{appName}}",
         "button": "Пожертвовать"
       },
       "acknowledgments": {
@@ -383,7 +384,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "Высокопроизводительный вывод модели автоматического распознавания речи OpenAI Whisper",
-          "details": "Handy использует Whisper.cpp для быстрой локальной обработки речи в текст. Спасибо великолепной работе Георгия Герганова и его участников."
+          "details": "{{appName}} использует Whisper.cpp для быстрой локальной обработки речи в текст. Спасибо великолепной работе Георгия Герганова и его участников."
         }
       }
     }
@@ -426,7 +427,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Требуются разрешения на доступ",
-    "permissionsDescription": "Handy необходимы разрешения на доступ для ввода расшифрованного текста.",
+    "permissionsDescription": "{{appName}} необходимы разрешения на доступ для ввода расшифрованного текста.",
     "openSettings": "Открыть настройки системы",
     "dismiss": "Увольнять"
   },
@@ -436,7 +437,7 @@
   },
   "appLanguage": {
     "title": "Язык приложения",
-    "description": "Изменить языка интерфейса Handy"
+    "description": "Изменить языка интерфейса {{appName}}"
   },
   "overlay": {
     "transcribing": "Расшифровка...",
@@ -446,7 +447,7 @@
     "limitWarning": "Запись завершится через 30 секунд"
   },
   "notifications": {
-    "errorTitle": "Handy",
-    "infoTitle": "Handy"
+    "errorTitle": "{{appName}}",
+    "infoTitle": "{{appName}}"
   }
 }

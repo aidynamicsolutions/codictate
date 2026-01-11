@@ -9,6 +9,7 @@ import {
 import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
+import { colors } from "@/theme";
 
 type OverlayState = "recording" | "transcribing" | "processing";
 
@@ -129,7 +130,7 @@ const RecordingOverlay: React.FC = () => {
           <path
             d={ROUNDED_RECT_PATH}
             fill="none"
-            stroke="#ff69b4"
+            stroke={`var(--color-border, ${colors.border})`}
             strokeWidth={SVG_STROKE_WIDTH}
             pathLength={SVG_PATH_LENGTH}
             strokeDasharray={SVG_PATH_LENGTH}

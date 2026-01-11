@@ -1,5 +1,5 @@
 {
-  "_comment": "French translation for Handy. Contribute at: https://github.com/cjpais/Handy",
+  "appName": "Codictate",
   "tray": {
     "settings": "Paramètres...",
     "checkUpdates": "Rechercher des mises à jour...",
@@ -56,7 +56,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Bienvenue sur Handy !",
+    "welcome": "Welcome to {{appName}}!",
     "downloadPrompt": "Téléchargez un modèle ci-dessous pour commencer la transcription.",
     "availableModels": "Modèles Disponibles",
     "downloadModels": "Télécharger des Modèles",
@@ -82,7 +82,7 @@
     "general": {
       "title": "Général",
       "shortcut": {
-        "title": "Raccourcis Handy",
+        "title": "Raccourcis {{appName}}",
         "description": "Configurer les raccourcis clavier pour déclencher l'enregistrement de la reconnaissance vocale",
         "loading": "Chargement des raccourcis...",
         "none": "Aucun raccourci configuré",
@@ -148,7 +148,7 @@
       },
       "autostart": {
         "label": "Lancer au démarrage",
-        "description": "Démarrer automatiquement Handy lorsque vous vous connectez à votre ordinateur."
+        "description": "Démarrer automatiquement {{appName}} lorsque vous vous connectez à votre ordinateur."
       },
       "overlay": {
         "title": "Position de la fenêtre d'enregistrement",
@@ -308,7 +308,7 @@
       },
       "updateChecks": {
         "label": "Vérifier les mises à jour",
-        "description": "Vérifier automatiquement les nouvelles versions de Handy"
+        "description": "Vérifier automatiquement les nouvelles versions de {{appName}}"
       },
       "soundTheme": {
         "label": "Thème sonore",
@@ -363,11 +363,11 @@
       "title": "À propos",
       "version": {
         "title": "Version",
-        "description": "Version actuelle de Handy"
+        "description": "Version actuelle de {{appName}}"
       },
       "appDataDirectory": {
         "title": "Emplacement des données de l'application",
-        "description": "Emplacement où Handy stocke ses données"
+        "description": "Emplacement où {{appName}} stocke ses données"
       },
       "sourceCode": {
         "title": "Code source",
@@ -376,7 +376,7 @@
       },
       "supportDevelopment": {
         "title": "Soutenir le développement",
-        "description": "Aidez-nous à continuer à construire Handy",
+        "description": "Aidez-nous à continuer à construire {{appName}}",
         "button": "Faire un don"
       },
       "acknowledgments": {
@@ -384,7 +384,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "Inférence haute performance du modèle de reconnaissance vocale automatique Whisper d'OpenAI",
-          "details": "Handy utilise Whisper.cpp pour un traitement rapide et local de la parole en texte. Merci au travail incroyable de Georgi Gerganov et des contributeurs."
+          "details": "{{appName}} utilise Whisper.cpp pour un traitement rapide et local de la parole en texte. Merci au travail incroyable de Georgi Gerganov et des contributeurs."
         }
       }
     }
@@ -427,7 +427,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Autorisations d'accessibilité requises",
-    "permissionsDescription": "Handy a besoin des autorisations d'accessibilité pour taper le texte transcrit.",
+    "permissionsDescription": "{{appName}} a besoin des autorisations d'accessibilité pour taper le texte transcrit.",
     "openSettings": "Ouvrir les Préférences Système",
     "dismiss": "Ignorer"
   },
@@ -437,7 +437,7 @@
   },
   "appLanguage": {
     "title": "Langue de l'application",
-    "description": "Changer la langue de l'interface de Handy"
+    "description": "Changer la langue de l'interface de {{appName}}"
   },
   "overlay": {
     "transcribing": "Transcription...",
@@ -447,7 +447,7 @@
     "limitWarning": "L'enregistrement se termine dans 30 secondes"
   },
   "notifications": {
-    "errorTitle": "Handy",
-    "infoTitle": "Handy"
+    "errorTitle": "{{appName}}",
+    "infoTitle": "{{appName}}"
   }
 }

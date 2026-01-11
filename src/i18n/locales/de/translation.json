@@ -1,4 +1,5 @@
 {
+  "appName": "Codictate",
   "tray": {
     "settings": "Einstellungen...",
     "checkUpdates": "Nach Updates suchen...",
@@ -55,7 +56,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Willkommen bei Handy!",
+    "welcome": "Welcome to {{appName}}!",
     "downloadPrompt": "Lade ein Modell herunter, um mit der Transkription zu beginnen.",
     "availableModels": "Verfügbare Modelle",
     "downloadModels": "Modelle herunterladen",
@@ -81,7 +82,7 @@
     "general": {
       "title": "Allgemein",
       "shortcut": {
-        "title": "Handy-Tastenkürzel",
+        "title": "{{appName}}-Tastenkürzel",
         "description": "Tastenkürzel für die Sprachaufnahme konfigurieren",
         "loading": "Tastenkürzel werden geladen...",
         "none": "Keine Tastenkürzel konfiguriert",
@@ -147,7 +148,7 @@
       },
       "autostart": {
         "label": "Beim Start ausführen",
-        "description": "Handy automatisch beim Anmelden starten."
+        "description": "{{appName}} automatisch beim Anmelden starten."
       },
       "overlay": {
         "title": "Overlay-Position",
@@ -307,7 +308,7 @@
       },
       "updateChecks": {
         "label": "Nach Updates suchen",
-        "description": "Automatisch nach neuen Versionen von Handy suchen"
+        "description": "Automatisch nach neuen Versionen von {{appName}} suchen"
       },
       "soundTheme": {
         "label": "Sound-Thema",
@@ -362,11 +363,11 @@
       "title": "Info",
       "version": {
         "title": "Version",
-        "description": "Aktuelle Version von Handy"
+        "description": "Aktuelle Version von {{appName}}"
       },
       "appDataDirectory": {
         "title": "App-Datenverzeichnis",
-        "description": "Speicherort der Handy-Daten"
+        "description": "Speicherort der {{appName}}-Daten"
       },
       "sourceCode": {
         "title": "Quellcode",
@@ -375,7 +376,7 @@
       },
       "supportDevelopment": {
         "title": "Entwicklung unterstützen",
-        "description": "Hilf uns, Handy weiterzuentwickeln",
+        "description": "Hilf uns, {{appName}} weiterzuentwickeln",
         "button": "Spenden"
       },
       "acknowledgments": {
@@ -383,7 +384,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "Hochleistungs-Inferenz des Whisper-Spracherkennungsmodells von OpenAI",
-          "details": "Handy verwendet Whisper.cpp für schnelle, lokale Sprach-zu-Text-Verarbeitung. Dank an Georgi Gerganov und die Mitwirkenden für ihre großartige Arbeit."
+          "details": "{{appName}} verwendet Whisper.cpp für schnelle, lokale Sprach-zu-Text-Verarbeitung. Dank an Georgi Gerganov und die Mitwirkenden für ihre großartige Arbeit."
         }
       }
     }
@@ -426,7 +427,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Bedienungshilfen-Berechtigungen erforderlich",
-    "permissionsDescription": "Handy benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",
+    "permissionsDescription": "{{appName}} benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",
     "openSettings": "Systemeinstellungen öffnen",
     "dismiss": "Schließen"
   },
@@ -436,7 +437,7 @@
   },
   "appLanguage": {
     "title": "Anwendungssprache",
-    "description": "Sprache der Handy-Oberfläche ändern"
+    "description": "Sprache der {{appName}}-Oberfläche ändern"
   },
   "overlay": {
     "transcribing": "Transkribiere...",
@@ -446,7 +447,7 @@
     "limitWarning": "Aufnahme endet in 30 Sekunden"
   },
   "notifications": {
-    "errorTitle": "Handy",
-    "infoTitle": "Handy"
+    "errorTitle": "{{appName}}",
+    "infoTitle": "{{appName}}"
   }
 }
