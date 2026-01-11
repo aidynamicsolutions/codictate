@@ -153,3 +153,14 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 - **macOS**: Metal acceleration, accessibility permissions required
 - **Windows**: Vulkan acceleration, code signing
 - **Linux**: OpenBLAS + Vulkan, limited Wayland support, overlay disabled by default
+
+## Window Configuration
+
+Main window size is configured in `src-tauri/tauri.conf.json`:
+
+- **Default size:** 1280×800 pixels (fills ~74% of 16" MBP, ~89% of 13" MacBook)
+- **Minimum size:** 1100×700 pixels (allows minor resizing without layout redesign)
+- **Maximizable:** false (window cannot be maximized)
+- **Centered:** macOS centers the window by default on launch
+
+These dimensions follow macOS HIG best practices, targeting 80% screen coverage on the most common MacBook displays (13" Air/Pro at 1440×900 logical resolution).

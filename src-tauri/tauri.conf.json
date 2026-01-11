@@ -15,10 +15,10 @@
       {
         "label": "main",
         "title": "Codictate",
-        "width": 680,
-        "height": 570,
-        "minWidth": 680,
-        "minHeight": 570,
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1100,
+        "minHeight": 700,
         "resizable": true,
         "maximizable": false,
         "visible": false
