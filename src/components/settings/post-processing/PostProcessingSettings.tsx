@@ -3,13 +3,16 @@ import { useTranslation } from "react-i18next";
 import { RefreshCcw } from "lucide-react";
 import { commands } from "@/bindings";
 
-import { SettingsGroup } from "../../ui/SettingsGroup";
-import { SettingContainer } from "../../ui/SettingContainer";
+import { Alert } from "../../ui/Alert";
+import {
+  Dropdown,
+  SettingContainer,
+  SettingsGroup,
+  Textarea,
+} from "@/components/ui";
 import { Button } from "../../ui/Button";
 import { ResetButton } from "../../ui/ResetButton";
 import { Input } from "../../ui/Input";
-import { Dropdown } from "../../ui/Dropdown";
-import { Textarea } from "../../ui/Textarea";
 
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
 import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
@@ -57,28 +60,12 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
         </div>
       </SettingContainer>
 
-      {state.appleIntelligenceUnavailable ? (
-        <div className="p-3 bg-red-500/10 border border-red-500/50">
-          <p className="text-sm text-red-500">
-            {t("settings.postProcessing.api.appleIntelligence.unavailable")}
-          </p>
-        </div>
-      ) : null}
-
       {state.isAppleProvider ? (
-        <SettingContainer
-          title={t("settings.postProcessing.api.appleIntelligence.title")}
-          description={t(
-            "settings.postProcessing.api.appleIntelligence.description",
-          )}
-          descriptionMode="tooltip"
-          layout="stacked"
-          grouped={true}
-        >
-          <DisabledNotice>
-            {t("settings.postProcessing.api.appleIntelligence.requirements")}
-          </DisabledNotice>
-        </SettingContainer>
+        state.appleIntelligenceUnavailable ? (
+          <Alert variant="error" contained>
+            {t("settings.postProcessing.api.appleIntelligence.unavailable")}
+          </Alert>
+        ) : null
       ) : state.isMlxProvider ? (
         <MlxModelSelector
           selectedModelId={state.model}
@@ -130,16 +117,14 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
         </>
       )}
 
-      {/* Hide model dropdown for MLX provider - MlxModelSelector handles model selection */}
-      {!state.isMlxProvider && (
+      {/* Hide model dropdown for Apple and MLX providers - MLX uses MlxModelSelector */}
+      {!state.isAppleProvider && !state.isMlxProvider && (
         <SettingContainer
           title={t("settings.postProcessing.api.model.title")}
           description={
-            state.isAppleProvider
-              ? t("settings.postProcessing.api.model.descriptionApple")
-              : state.isCustomProvider
-                ? t("settings.postProcessing.api.model.descriptionCustom")
-                : t("settings.postProcessing.api.model.descriptionDefault")
+            state.isCustomProvider
+              ? t("settings.postProcessing.api.model.descriptionCustom")
+              : t("settings.postProcessing.api.model.descriptionDefault")
           }
           descriptionMode="tooltip"
           layout="stacked"
@@ -152,13 +137,11 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
               disabled={state.isModelUpdating}
               isLoading={state.isFetchingModels}
               placeholder={
-                state.isAppleProvider
-                  ? t("settings.postProcessing.api.model.placeholderApple")
-                  : state.modelOptions.length > 0
-                    ? t(
-                        "settings.postProcessing.api.model.placeholderWithOptions",
-                      )
-                    : t("settings.postProcessing.api.model.placeholderNoOptions")
+                state.modelOptions.length > 0
+                  ? t(
+                      "settings.postProcessing.api.model.placeholderWithOptions",
+                    )
+                  : t("settings.postProcessing.api.model.placeholderNoOptions")
               }
               onSelect={state.handleModelSelect}
               onCreate={state.handleModelCreate}
@@ -167,7 +150,7 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
             />
             <ResetButton
               onClick={state.handleRefreshModels}
-              disabled={state.isFetchingModels || state.isAppleProvider}
+              disabled={state.isFetchingModels}
               ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
               className="flex h-10 w-10 items-center justify-center"
             >
