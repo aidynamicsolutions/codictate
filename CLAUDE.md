@@ -131,8 +131,27 @@ src/i18n/
 
 - Strict TypeScript, avoid `any` types
 - Functional components with hooks
-- Tailwind CSS for styling
+- Tailwind CSS v4 + shadcn/ui for styling
 - Path aliases: `@/` → `./src/`
+
+## shadcn/ui
+
+UI components use [shadcn/ui](https://ui.shadcn.com/) with Tailwind CSS v4.
+
+**Adding components:**
+
+```bash
+bunx shadcn@latest add button
+bunx shadcn@latest add card
+```
+
+**Key files:**
+
+- `src/App.css` - Tailwind + shadcn color variables (OKLCH), brand colors
+- `src/lib/utils.ts` - `cn()` utility for class merging
+- `components.json` - shadcn CLI config (style: radix-maia, RSC: false)
+
+**Dark mode:** Auto-syncs with system preference via `.dark` class on `<html>` (set in `src/main.tsx`).
 
 ## Commit Guidelines
 
