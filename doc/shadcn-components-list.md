@@ -1,0 +1,75 @@
+## Latest shadcn Components
+
+Below is a concise list of the latest shadcn components, each with a one-line description summarizing its purpose or functionality:
+
+- Accordion – Expandable/collapsible content sections for showing and hiding information.
+- Alert – Displays a callout for user attention.
+- Alert Dialog – Modal dialog for critical messages and confirmations.
+- Aspect Ratio – Displays content within a desired ratio.
+- Avatar – Displays user profile images with fallback support.
+- Badge – Small status or label indicator for UI elements.
+- Breadcrumb – Navigation aid showing the current page’s location in a hierarchy.
+- Button – Standard clickable button for actions and submissions.
+- Button Group – Distinct buttons grouped together.
+- Calendar – Date selection component with month and year navigation.
+- Card – Container for grouping related content and actions.
+- Carousel – Interactive slider for showcasing images or content with swipe and keyboard support[5].
+- Chart – Charts and graphs.
+- Checkbox – Toggleable box for binary choices in forms.
+- Collapsible – An interactive component which expands/collapses a panel.
+- Combobox – Autocomplete input with dropdown selection.
+- Command – Command palette for quick actions and navigation.
+- Context Menu – Right-click or contextual menu for additional options.
+- Data Table – Tabular display of data with sorting and filtering.
+- Date Picker – Input for selecting dates from a calendar view.
+- Dialog – Modal window for dialogs and overlays.
+- Drawer – Slide-in panel for navigation or additional content, optimized for mobile[5].
+- Dropdown Menu – Menu triggered by a button or input for selecting options.
+- Empty – Placeholder for empty states.
+- Field – A wrapper for form fields.
+- Form – Structured input collection with validation and error handling[3].
+- Hover Card – Card that appears on hover for additional details.
+- Input – Standard text input field.
+- Input Group – Input with icons or buttons.
+- Input OTP – Multi-field input for one-time passwords or verification codes[5].
+- Item – Display list items or cards.
+- Kbd – Display keyboard shortcuts.
+- Label – Text label for form controls.
+- Menubar – Horizontal or vertical menu for navigation.
+- Native Select – A wrapper for the native select element.
+- Navigation Menu – Complex navigation structures for apps and sites.
+- Pagination – Controls for navigating between pages of content[5].
+- Popover – Floating panel for displaying additional information.
+- Progress – Progress bar for indicating completion status.
+- Radio Group – Group of radio buttons for single selection.
+- Resizable – Panels or layouts that users can resize interactively[5].
+- Scroll Area – Scrollable container for overflow content.
+- Select – Dropdown selector for picking a value from options.
+- Separator – Visual divider between content sections.
+- Sheet – Overlay panel for forms or additional UI.
+- Sidebar – Vertical navigation or content panel.
+- Skeleton – Placeholder loading state for content.
+- Slider – Range selection with a draggable handle.
+- Sonner – Advanced toast notification system[5].
+- Spinner – A loading spinner.
+- Switch – Toggle switch for binary options.
+- Table – Generic table for displaying structured data.
+- Tabs – Tabbed navigation for switching between views.
+- Textarea – Multi-line text input field.
+- Toast – Temporary notification message.
+- Toggle – Button for toggling between states.
+- Toggle Group – Group of toggle buttons for multi-selection.
+- Tooltip – Small popup for contextual hints or information.
+- Typography – Predefined text styles for headings, paragraphs, etc.[1].
+
+### Notable Recent Additions and Expansions
+
+- Bento Grids – Modular grid layouts for landing pages and dashboards[2].
+- Logo Sections – Prebuilt logo showcases for landing pages[2].
+- Stats Sections – Statistic display blocks for dashboards or landing pages[2].
+- Team Sections – Team member display blocks for landing or about pages[2].
+- Description List – Key-value pair lists for structured data[2].
+- Empty Sections – Placeholder sections for empty states in apps[2].
+- Dashboard Example – Prebuilt dashboard layout for applications[2].
+- Landing Page Example – Complete landing page template[2].
+- Pattern Classes – Utility classes for advanced design patterns[2].

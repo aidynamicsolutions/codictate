@@ -4,7 +4,7 @@ import { Download, Trash2, RotateCcw, X, Loader2, Check, FolderOpen } from "luci
 
 import { useMlxModels } from "@/hooks/useMlxModels";
 import { commands, type MlxModelInfo } from "@/bindings";
-import { Button } from "../ui/Button";
+import { Button } from "@/components/shared/ui/button";
 import { SettingContainer } from "../ui/SettingContainer";
 
 /** Format bytes to human readable size */
@@ -199,7 +199,7 @@ const ModelItem: React.FC<ModelItemProps> = ({
         <div className="flex items-center gap-1">
           {canSelect && (
             <Button
-              variant={isSelected ? "primary" : "secondary"}
+              variant={isSelected ? "default" : "secondary"}
               size="sm"
               onClick={onSelect}
               disabled={isSelected}
@@ -213,7 +213,7 @@ const ModelItem: React.FC<ModelItemProps> = ({
           )}
 
           {canDownload && (
-            <Button variant="primary" size="sm" onClick={onDownload}>
+            <Button variant="default" size="sm" onClick={onDownload}>
               <Download className="h-3.5 w-3.5 mr-1" />
               {t("settings.postProcessing.mlx.download")}
             </Button>
@@ -253,7 +253,7 @@ const ModelItem: React.FC<ModelItemProps> = ({
                 {t("settings.postProcessing.mlx.cancelDelete")}
               </Button>
               <Button
-                variant="primary"
+                variant="default"
                 size="sm"
                 onClick={() => {
                   onDelete();

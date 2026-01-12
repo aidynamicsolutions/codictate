@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../../hooks/useSettings";
-import { Input } from "../ui/Input";
-import { Button } from "../ui/Button";
+import { Input } from "@/components/shared/ui/input";
+import { Button } from "@/components/shared/ui/button";
 import { SettingContainer } from "../ui/SettingContainer";
 
 interface CustomWordsProps {
@@ -61,7 +61,7 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
               onChange={(e) => setNewWord(e.target.value)}
               onKeyDown={handleKeyPress}
               placeholder={t("settings.advanced.customWords.placeholder")}
-              variant="compact"
+              
               disabled={isUpdating("custom_words")}
             />
             <Button
@@ -72,8 +72,8 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
                 newWord.trim().length > 50 ||
                 isUpdating("custom_words")
               }
-              variant="primary"
-              size="md"
+              variant="default"
+              
             >
               {t("settings.advanced.customWords.add")}
             </Button>

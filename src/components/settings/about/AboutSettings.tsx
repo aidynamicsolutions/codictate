@@ -4,7 +4,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingContainer } from "../../ui/SettingContainer";
-import { Button } from "../../ui/Button";
+import { Button } from "@/components/shared/ui/button";
 import { AppDataDirectory } from "../AppDataDirectory";
 import { AppLanguageSelector } from "../AppLanguageSelector";
 
@@ -56,7 +56,7 @@ export const AboutSettings: React.FC = () => {
         >
           <Button
             variant="secondary"
-            size="md"
+            
             onClick={() => openUrl("https://github.com/cjpais/Handy")}
           >
             {t("settings.about.sourceCode.button")}
@@ -68,7 +68,7 @@ export const AboutSettings: React.FC = () => {
           description={t("settings.about.supportDevelopment.description")}
           grouped={true}
         >
-          <Button variant="primary" size="md" onClick={handleDonateClick}>
+          <Button variant="default"  onClick={handleDonateClick}>
             {t("settings.about.supportDevelopment.button")}
           </Button>
         </SettingContainer>

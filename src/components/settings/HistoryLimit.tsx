@@ -1,7 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../../hooks/useSettings";
-import { Input } from "../ui/Input";
+import { Input } from "@/components/shared/ui/input";
 import { SettingContainer } from "../ui/SettingContainer";
 
 interface HistoryLimitProps {
