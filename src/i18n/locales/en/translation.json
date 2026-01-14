@@ -20,6 +20,116 @@
     "recommended": "Recommended",
     "download": "Download",
     "downloading": "Downloading...",
+    "progress": {
+      "welcome": "Welcome",
+      "permissions": "Permissions",
+      "setup": "Set Up",
+      "learn": "Learn"
+    },
+    "welcome": {
+      "title": "What's your name?",
+      "subtitle": "Let's personalize your experience",
+      "namePlaceholder": "Enter your name",
+      "continue": "Continue"
+    },
+    "attribution": {
+      "greeting": "Welcome, {{name}}!",
+      "defaultName": "there",
+      "question": "Where did you hear about us?",
+      "continue": "Continue",
+      "sources": {
+        "social_media": "Social media",
+        "youtube": "YouTube",
+        "newsletter": "Newsletter",
+        "ai_chat": "AI chat",
+        "search_engine": "Search engine",
+        "event": "Event",
+        "friend": "Friend",
+        "colleague": "Colleague",
+        "podcast": "Podcast",
+        "article": "Article",
+        "product_hunt": "Product Hunt",
+        "other": "Other"
+      },
+      "secondaryQuestion": {
+        "social_media": "Which social media?",
+        "search_engine": "Which search engine?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Other"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Other"
+        }
+      },
+      "pleaseSpecify": "Please specify",
+      "otherPlaceholder": "Type your answer..."
+    },
+    "tellUsAboutYou": {
+      "title": "Tell us about yourself",
+      "workQuestion": "What do you do for work?",
+      "levelQuestion": "Tell us more",
+      "continue": "Continue",
+      "workRoles": {
+        "founder_ceo": "Founder/CEO",
+        "consultant": "Consultant",
+        "operations": "Operations",
+        "developer": "Developer",
+        "product": "Product",
+        "data_analysis": "Data Analysis",
+        "sales": "Sales",
+        "marketing": "Marketing",
+        "customer_support": "Customer Support",
+        "recruiting": "Recruiting",
+        "creator": "Creator",
+        "writer": "Writer",
+        "educator": "Educator",
+        "student": "Student",
+        "legal": "Legal",
+        "healthcare": "Healthcare",
+        "other": "Other"
+      },
+      "professionalLevels": {
+        "executive": "Executive",
+        "director": "Director",
+        "manager": "Manager",
+        "individual_contributor": "Individual contributor",
+        "freelancer": "Freelancer",
+        "other": "Other"
+      },
+      "pleaseSpecify": "Please specify",
+      "otherPlaceholder": "Type your answer..."
+    },
+    "permissions": {
+      "title": "Permissions",
+      "subtitle": "We need a few permissions to work properly",
+      "placeholder": "Permission settings will appear here",
+      "continue": "Continue"
+    },
+    "setup": {
+      "title": "Set Up",
+      "subtitle": "Let's configure your speech-to-text settings",
+      "placeholder": "Setup options will appear here",
+      "continue": "Continue"
+    },
+    "learn": {
+      "title": "You're all set!",
+      "subtitle": "Here's how to use the app",
+      "placeholder": "Tutorial content will appear here",
+      "complete": "Get Started"
+    },
     "modelCard": {
       "accuracy": "accuracy",
       "speed": "speed"

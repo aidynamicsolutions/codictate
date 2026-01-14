@@ -1,108 +1,178 @@
 import React, { useState, useEffect } from "react";
-import { useTranslation } from "react-i18next";
-import { commands, type ModelInfo } from "@/bindings";
-import ModelCard from "./ModelCard";
-import HandyTextLogo from "../icons/HandyTextLogo";
+import { useSettings } from "@/hooks/useSettings";
+import WelcomeStep from "./WelcomeStep";
+import AttributionStep from "./AttributionStep";
+import TellUsAboutYouStep from "./TellUsAboutYouStep";
+import PermissionsStep from "./PermissionsStep";
+import SetupStep from "./SetupStep";
+import LearnStep from "./LearnStep";
+import type { OnboardingStep } from "./OnboardingProgress";
 
 interface OnboardingProps {
-  onModelSelected: () => void;
+  onComplete: () => void;
 }
 
-const Onboarding: React.FC<OnboardingProps> = ({ onModelSelected }) => {
-  const { t } = useTranslation();
-  const [availableModels, setAvailableModels] = useState<ModelInfo[]>([]);
-  const [downloading, setDownloading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+const STEP_ORDER: OnboardingStep[] = [
+  "welcome",
+  "attribution",
+  "tellUsAboutYou",
+  "permissions",
+  "setup",
+  "learn",
+];
 
+const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
+  const { settings, updateSetting } = useSettings();
+  const [currentStep, setCurrentStep] = useState<OnboardingStep>("welcome");
+  const [userName, setUserName] = useState<string>("");
+  // Attribution state
+  const [referralSource, setReferralSource] = useState<string>("");
+  const [referralDetail, setReferralDetail] = useState<string>("");
+  const [referralOtherText, setReferralOtherText] = useState<string>("");
+  // Work profile state
+  const [workRole, setWorkRole] = useState<string>("");
+  const [professionalLevel, setProfessionalLevel] = useState<string>("");
+  const [workRoleOther, setWorkRoleOther] = useState<string>("");
+
+  // Initialize state from settings on mount
   useEffect(() => {
-    loadModels();
-  }, []);
-
-  const loadModels = async () => {
-    try {
-      const result = await commands.getAvailableModels();
-      if (result.status === "ok") {
-        // Only show downloadable models for onboarding
-        setAvailableModels(result.data.filter((m) => !m.is_downloaded));
-      } else {
-        setError(t("onboarding.errors.loadModels"));
+    if (settings) {
+      // Resume from saved step
+      const savedStep = settings.onboarding_step ?? 0;
+      if (savedStep > 0 && savedStep <= STEP_ORDER.length) {
+        setCurrentStep(STEP_ORDER[savedStep - 1] || "welcome");
       }
-    } catch (err) {
-      console.error("Failed to load models:", err);
-      setError(t("onboarding.errors.loadModels"));
+
+      // Restore saved data
+      if (settings.user_name) {
+        setUserName(settings.user_name);
+      }
+      // Handle both old array format and new single-choice format
+      if (settings.referral_sources && settings.referral_sources.length > 0) {
+        setReferralSource(settings.referral_sources[0]);
+      }
+      if (settings.referral_details) {
+        const details = settings.referral_details as Record<string, string[]>;
+        const firstSource = Object.keys(details)[0];
+        if (firstSource && details[firstSource]?.length > 0) {
+          setReferralDetail(details[firstSource][0]);
+        }
+      }
+      // Work profile
+      if (settings.work_role) {
+        setWorkRole(settings.work_role);
+      }
+      if (settings.professional_level) {
+        setProfessionalLevel(settings.professional_level);
+      }
+    }
+  }, [settings]);
+
+  const saveProgress = async (step: OnboardingStep) => {
+    const stepIndex = STEP_ORDER.indexOf(step) + 1;
+    await updateSetting("onboarding_step", stepIndex);
+  };
+
+  const goToNextStep = async () => {
+    const currentIndex = STEP_ORDER.indexOf(currentStep);
+    if (currentIndex < STEP_ORDER.length - 1) {
+      const nextStep = STEP_ORDER[currentIndex + 1];
+      setCurrentStep(nextStep);
+      await saveProgress(nextStep);
     }
   };
 
-  const handleDownloadModel = async (modelId: string) => {
-    setDownloading(true);
-    setError(null);
+  const handleWelcomeContinue = async (name: string) => {
+    setUserName(name);
+    await updateSetting("user_name", name || null);
+    await goToNextStep();
+  };
 
-    // Immediately transition to main app - download will continue in footer
-    onModelSelected();
+  const handleAboutYouContinue = async (
+    source: string,
+    detail?: string,
+    otherText?: string
+  ) => {
+    setReferralSource(source);
+    setReferralDetail(detail || "");
+    setReferralOtherText(otherText || "");
 
-    try {
-      const result = await commands.downloadModel(modelId);
-      if (result.status === "error") {
-        console.error("Download failed:", result.error);
-        setError(t("onboarding.errors.downloadModel", { error: result.error }));
-        setDownloading(false);
-      }
-    } catch (err) {
-      console.error("Download failed:", err);
-      setError(t("onboarding.errors.downloadModel", { error: String(err) }));
-      setDownloading(false);
+    // Store as arrays for backward compatibility with settings schema
+    await updateSetting("referral_sources", source ? [source] : []);
+    if (detail) {
+      await updateSetting("referral_details", { [source]: [detail] });
+    } else if (otherText) {
+      await updateSetting("referral_details", { [source]: [otherText] });
+    } else {
+      await updateSetting("referral_details", {});
     }
+    await goToNextStep();
   };
 
-  const getRecommendedBadge = (modelId: string): boolean => {
-    return modelId === "parakeet-tdt-0.6b-v3";
+  const handleTellUsAboutYouContinue = async (
+    role: string,
+    level?: string,
+    otherText?: string
+  ) => {
+    setWorkRole(role);
+    setProfessionalLevel(level || "");
+    setWorkRoleOther(otherText || "");
+
+    await updateSetting("work_role", role || null);
+    await updateSetting("professional_level", level || null);
+    await updateSetting("work_role_other", otherText || null);
+    await goToNextStep();
   };
 
-  return (
-    <div className="h-screen w-screen flex flex-col p-6 gap-4 inset-0">
-      <div className="flex flex-col items-center gap-2 shrink-0">
-        <HandyTextLogo width={200} />
-        <p className="text-text/70 max-w-md font-medium mx-auto">
-          {t("onboarding.subtitle")}
-        </p>
-      </div>
+  const handlePermissionsContinue = async () => {
+    await goToNextStep();
+  };
 
-      <div className="max-w-[600px] w-full mx-auto text-center flex-1 flex flex-col min-h-0">
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 mb-4 shrink-0">
-            <p className="text-red-400 text-sm">{error}</p>
-          </div>
-        )}
+  const handleSetupContinue = async () => {
+    await goToNextStep();
+  };
 
-        {/*<div className="flex flex-col gap-4 bg-background-dark p-4 py-5 w-full rounded-2xl flex-1 overflow-y-auto min-h-0">*/}
-        <div className="flex flex-col gap-4 ">
-          {availableModels
-            .filter((model) => getRecommendedBadge(model.id))
-            .map((model) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                variant="featured"
-                disabled={downloading}
-                onSelect={handleDownloadModel}
-              />
-            ))}
+  const handleLearnComplete = async () => {
+    await updateSetting("onboarding_completed", true);
+    await updateSetting("onboarding_step", STEP_ORDER.length + 1);
+    onComplete();
+  };
 
-          {availableModels
-            .filter((model) => !getRecommendedBadge(model.id))
-            .sort((a, b) => Number(a.size_mb) - Number(b.size_mb))
-            .map((model) => (
-              <ModelCard
-                key={model.id}
-                model={model}
-                disabled={downloading}
-                onSelect={handleDownloadModel}
-              />
-            ))}
-        </div>
-      </div>
-    </div>
-  );
+  // Render current step
+  switch (currentStep) {
+    case "welcome":
+      return (
+        <WelcomeStep onContinue={handleWelcomeContinue} initialName={userName} />
+      );
+    case "attribution":
+      return (
+        <AttributionStep
+          userName={userName}
+          onContinue={handleAboutYouContinue}
+          initialSource={referralSource}
+          initialDetail={referralDetail}
+          initialOtherText={referralOtherText}
+        />
+      );
+    case "tellUsAboutYou":
+      return (
+        <TellUsAboutYouStep
+          onContinue={handleTellUsAboutYouContinue}
+          initialWorkRole={workRole}
+          initialProfessionalLevel={professionalLevel}
+        />
+      );
+    case "permissions":
+      return <PermissionsStep onContinue={handlePermissionsContinue} />;
+    case "setup":
+      return <SetupStep onContinue={handleSetupContinue} />;
+    case "learn":
+      return <LearnStep onComplete={handleLearnComplete} />;
+    default:
+      return (
+        <WelcomeStep onContinue={handleWelcomeContinue} initialName={userName} />
+      );
+  }
 };
 
 export default Onboarding;

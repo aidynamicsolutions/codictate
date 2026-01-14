@@ -60,26 +60,30 @@ function App() {
 
   const checkOnboardingStatus = async () => {
     try {
-      // Always check if they have any models available
-      const result = await commands.hasAnyModelsAvailable();
-      if (result.status === "ok") {
-        setShowOnboarding(!result.data);
-      } else {
-        setShowOnboarding(true);
+      // Check if onboarding was completed from settings
+      const settingsResult = await commands.getAppSettings();
+      if (settingsResult.status === "ok") {
+        const appSettings = settingsResult.data;
+        if (appSettings.onboarding_completed) {
+          setShowOnboarding(false);
+          return;
+        }
       }
+      // If not completed, show onboarding
+      setShowOnboarding(true);
     } catch (error) {
       console.error("Failed to check onboarding status:", error);
       setShowOnboarding(true);
     }
   };
 
-  const handleModelSelected = () => {
-    // Transition to main app - user has started a download
+  const handleOnboardingComplete = () => {
+    // Transition to main app - onboarding is complete
     setShowOnboarding(false);
   };
 
   if (showOnboarding) {
-    return <Onboarding onModelSelected={handleModelSelected} />;
+    return <Onboarding onComplete={handleOnboardingComplete} />;
   }
 
   return (

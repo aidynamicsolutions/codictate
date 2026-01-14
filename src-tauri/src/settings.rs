@@ -285,6 +285,23 @@ pub struct AppSettings {
     pub append_trailing_space: bool,
     #[serde(default = "default_app_language")]
     pub app_language: String,
+    // Onboarding fields - permanently stored
+    #[serde(default)]
+    pub user_name: Option<String>,
+    #[serde(default)]
+    pub onboarding_step: u8,
+    #[serde(default)]
+    pub referral_sources: Vec<String>,
+    #[serde(default)]
+    pub referral_details: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    pub work_role: Option<String>,
+    #[serde(default)]
+    pub work_role_other: Option<String>,
+    #[serde(default)]
+    pub professional_level: Option<String>,
+    #[serde(default)]
+    pub onboarding_completed: bool,
 }
 
 fn default_model() -> String {
@@ -582,6 +599,15 @@ pub fn get_default_settings() -> AppSettings {
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),
+        // Onboarding defaults
+        user_name: None,
+        onboarding_step: 0,
+        referral_sources: Vec::new(),
+        referral_details: HashMap::new(),
+        work_role: None,
+        work_role_other: None,
+        professional_level: None,
+        onboarding_completed: false,
     }
 }
 
