@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/shared/ui/button";
 import { Input } from "@/components/shared/ui/input";
 import OnboardingLayout from "./OnboardingLayout";
+import { MAX_INPUT_LENGTH } from "@/constants";
 
 // Work roles
 const WORK_ROLES = [
@@ -79,6 +80,11 @@ export const TellUsAboutYouStep: React.FC<TellUsAboutYouStepProps> = ({
     }
   };
 
+  const handleOtherTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.slice(0, MAX_INPUT_LENGTH);
+    setOtherText(value);
+  };
+
   const selectProfessionalLevel = (level: string) => {
     if (selectedProfessionalLevel === level) {
       setSelectedProfessionalLevel("");
@@ -143,13 +149,18 @@ export const TellUsAboutYouStep: React.FC<TellUsAboutYouStepProps> = ({
               <p className="text-sm font-medium text-muted-foreground">
                 {t("onboarding.tellUsAboutYou.pleaseSpecify")}
               </p>
-              <Input
-                type="text"
-                value={otherText}
-                onChange={(e) => setOtherText(e.target.value)}
-                placeholder={t("onboarding.tellUsAboutYou.otherPlaceholder")}
-                className="max-w-sm"
-              />
+              <div className="relative max-w-sm">
+                <Input
+                  type="text"
+                  value={otherText}
+                  onChange={handleOtherTextChange}
+                  placeholder={t("onboarding.tellUsAboutYou.otherPlaceholder")}
+                  maxLength={MAX_INPUT_LENGTH}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                  {otherText.length}/{MAX_INPUT_LENGTH}
+                </span>
+              </div>
             </div>
           )}
 

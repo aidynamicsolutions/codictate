@@ -3,6 +3,7 @@ import { useUserProfile } from "@/hooks/useUserProfile";
 import WelcomeStep from "./WelcomeStep";
 import AttributionStep from "./AttributionStep";
 import TellUsAboutYouStep from "./TellUsAboutYouStep";
+import TypingUseCasesStep from "./TypingUseCasesStep";
 import PermissionsStep from "./PermissionsStep";
 import SetupStep from "./SetupStep";
 import LearnStep from "./LearnStep";
@@ -16,6 +17,7 @@ const STEP_ORDER: OnboardingStep[] = [
   "welcome",
   "attribution",
   "tellUsAboutYou",
+  "typingUseCases",
   "permissions",
   "setup",
   "learn",
@@ -33,6 +35,9 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [workRole, setWorkRole] = useState<string>("");
   const [professionalLevel, setProfessionalLevel] = useState<string>("");
   const [workRoleOther, setWorkRoleOther] = useState<string>("");
+  // Typing use cases state
+  const [typingUseCases, setTypingUseCases] = useState<string[]>([]);
+  const [typingUseCasesOther, setTypingUseCasesOther] = useState<string>("");
 
   // Initialize state from profile on mount
   useEffect(() => {
@@ -64,6 +69,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       }
       if (profile.professional_level) {
         setProfessionalLevel(profile.professional_level);
+      }
+      // Typing use cases
+      if (profile.typing_use_cases && profile.typing_use_cases.length > 0) {
+        setTypingUseCases(profile.typing_use_cases);
+      }
+      if (profile.typing_use_cases_other) {
+        setTypingUseCasesOther(profile.typing_use_cases_other);
       }
     }
   }, [profile]);
@@ -124,6 +136,18 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     await goToNextStep();
   };
 
+  const handleTypingUseCasesContinue = async (
+    useCases: string[],
+    otherText?: string
+  ) => {
+    setTypingUseCases(useCases);
+    setTypingUseCasesOther(otherText || "");
+
+    await updateProfile("typing_use_cases", useCases);
+    await updateProfile("typing_use_cases_other", otherText || null);
+    await goToNextStep();
+  };
+
   const handlePermissionsContinue = async () => {
     await goToNextStep();
   };
@@ -160,6 +184,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
           onContinue={handleTellUsAboutYouContinue}
           initialWorkRole={workRole}
           initialProfessionalLevel={professionalLevel}
+        />
+      );
+    case "typingUseCases":
+      return (
+        <TypingUseCasesStep
+          onContinue={handleTypingUseCasesContinue}
+          initialUseCases={typingUseCases}
+          initialOtherText={typingUseCasesOther}
         />
       );
     case "permissions":

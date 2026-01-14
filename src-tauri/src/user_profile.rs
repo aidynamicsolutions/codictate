@@ -42,6 +42,14 @@ pub struct UserProfile {
     /// Professional level (Executive, Director, Manager, etc.)
     #[serde(default)]
     pub professional_level: Option<String>,
+
+    /// Typing use cases (multi-select from onboarding)
+    #[serde(default)]
+    pub typing_use_cases: Vec<String>,
+
+    /// Custom text when "other" typing use case is selected
+    #[serde(default)]
+    pub typing_use_cases_other: Option<String>,
 }
 
 impl Default for UserProfile {
@@ -55,6 +63,8 @@ impl Default for UserProfile {
             work_role: None,
             work_role_other: None,
             professional_level: None,
+            typing_use_cases: Vec::new(),
+            typing_use_cases_other: None,
         }
     }
 }
@@ -161,6 +171,16 @@ pub fn update_user_profile_setting(
         }
         "professional_level" => {
             profile.professional_level = if parsed.is_null() {
+                None
+            } else {
+                parsed.as_str().map(String::from)
+            };
+        }
+        "typing_use_cases" => {
+            profile.typing_use_cases = serde_json::from_value(parsed).unwrap_or_default();
+        }
+        "typing_use_cases_other" => {
+            profile.typing_use_cases_other = if parsed.is_null() {
                 None
             } else {
                 parsed.as_str().map(String::from)

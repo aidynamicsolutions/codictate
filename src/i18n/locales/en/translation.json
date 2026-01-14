@@ -112,6 +112,24 @@
       "pleaseSpecify": "Please specify",
       "otherPlaceholder": "Type your answer..."
     },
+    "typingUseCases": {
+      "title": "Where do you spend your time typing?",
+      "subtitle": "This helps us tailor your experience.",
+      "subtitleHint": "Select all that apply.",
+      "continue": "Continue",
+      "pleaseSpecify": "Please specify",
+      "otherPlaceholder": "Type your answer...",
+      "options": {
+        "ai_chat": "Talking to AI assistants",
+        "messaging": "Messaging & chatting",
+        "coding": "Writing code",
+        "emails": "Composing emails",
+        "documents": "Creating documents",
+        "notes": "Capturing notes",
+        "social_posts": "Social posts & comments",
+        "other": "Something else"
+      }
+    },
     "permissions": {
       "title": "Permissions",
       "subtitle": "We need a few permissions to work properly",

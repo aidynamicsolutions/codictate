@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/shared/ui/button";
 import { Input } from "@/components/shared/ui/input";
 import OnboardingLayout from "./OnboardingLayout";
+import { MAX_INPUT_LENGTH } from "@/constants";
 
 // Primary referral sources
 const PRIMARY_SOURCES = [
@@ -81,6 +82,11 @@ export const AttributionStep: React.FC<AttributionStepProps> = ({
       setSelectedDetail("");
       setOtherText("");
     }
+  };
+
+  const handleOtherTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.slice(0, MAX_INPUT_LENGTH);
+    setOtherText(value);
   };
 
   const selectDetail = (detail: string) => {
@@ -169,13 +175,18 @@ export const AttributionStep: React.FC<AttributionStepProps> = ({
               <p className="text-sm font-medium text-muted-foreground">
                 {t("onboarding.attribution.pleaseSpecify")}
               </p>
-              <Input
-                type="text"
-                value={otherText}
-                onChange={(e) => setOtherText(e.target.value)}
-                placeholder={t("onboarding.attribution.otherPlaceholder")}
-                className="max-w-sm"
-              />
+              <div className="relative max-w-sm">
+                <Input
+                  type="text"
+                  value={otherText}
+                  onChange={handleOtherTextChange}
+                  placeholder={t("onboarding.attribution.otherPlaceholder")}
+                  maxLength={MAX_INPUT_LENGTH}
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                  {otherText.length}/{MAX_INPUT_LENGTH}
+                </span>
+              </div>
             </div>
           )}
 

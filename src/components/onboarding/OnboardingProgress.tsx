@@ -2,7 +2,7 @@ import React from "react";
 import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-export type OnboardingStep = "welcome" | "attribution" | "tellUsAboutYou" | "permissions" | "setup" | "learn";
+export type OnboardingStep = "welcome" | "attribution" | "tellUsAboutYou" | "typingUseCases" | "permissions" | "setup" | "learn";
 
 interface OnboardingProgressProps {
   currentStep: OnboardingStep;
@@ -16,8 +16,8 @@ export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
   const { t } = useTranslation();
 
   const getStepIndex = (step: OnboardingStep) => {
-    // Map "attribution" and "tellUsAboutYou" to "welcome" for progress display (they are part of welcome visually)
-    if (step === "attribution" || step === "tellUsAboutYou") return 0;
+    // Map "attribution", "tellUsAboutYou", and "typingUseCases" to "welcome" for progress display (they are part of welcome visually)
+    if (step === "attribution" || step === "tellUsAboutYou" || step === "typingUseCases") return 0;
     return STEPS.indexOf(step);
   };
 

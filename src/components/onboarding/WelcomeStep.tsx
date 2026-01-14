@@ -4,6 +4,7 @@ import { Button } from "@/components/shared/ui/button";
 import { Input } from "@/components/shared/ui/input";
 import OnboardingLayout from "./OnboardingLayout";
 import { useSettings } from "@/hooks/useSettings";
+import { MAX_INPUT_LENGTH } from "@/constants";
 
 interface WelcomeStepProps {
   onContinue: (name: string) => void;
@@ -33,6 +34,11 @@ export const WelcomeStep: React.FC<WelcomeStepProps> = ({
     }
   };
 
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.slice(0, MAX_INPUT_LENGTH);
+    setName(value);
+  };
+
   return (
     <OnboardingLayout
       currentStep="welcome"
@@ -48,15 +54,21 @@ export const WelcomeStep: React.FC<WelcomeStepProps> = ({
           </div>
 
           <div className="flex flex-col gap-4">
-            <Input
-              type="text"
-              placeholder={t("onboarding.welcome.namePlaceholder")}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={handleKeyDown}
-              className="h-12 text-base"
-              autoFocus
-            />
+            <div className="relative">
+              <Input
+                type="text"
+                placeholder={t("onboarding.welcome.namePlaceholder")}
+                value={name}
+                onChange={handleNameChange}
+                onKeyDown={handleKeyDown}
+                className="h-12 text-base"
+                maxLength={MAX_INPUT_LENGTH}
+                autoFocus
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                {name.length}/{MAX_INPUT_LENGTH}
+              </span>
+            </div>
 
             <Button
               onClick={handleContinue}

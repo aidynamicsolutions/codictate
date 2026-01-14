@@ -900,7 +900,15 @@ work_role_other?: string | null;
 /**
  * Professional level (Executive, Director, Manager, etc.)
  */
-professional_level?: string | null }
+professional_level?: string | null; 
+/**
+ * Typing use cases (multi-select from onboarding)
+ */
+typing_use_cases?: string[]; 
+/**
+ * Custom text when "other" typing use case is selected
+ */
+typing_use_cases_other?: string | null }
 
 /** tauri-specta globals **/
 
