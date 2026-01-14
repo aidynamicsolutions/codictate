@@ -60,11 +60,11 @@ function App() {
 
   const checkOnboardingStatus = async () => {
     try {
-      // Check if onboarding was completed from settings
-      const settingsResult = await commands.getAppSettings();
-      if (settingsResult.status === "ok") {
-        const appSettings = settingsResult.data;
-        if (appSettings.onboarding_completed) {
+      // Check if onboarding was completed from user profile (separate from app settings)
+      const profileResult = await commands.getUserProfileCommand();
+      if (profileResult.status === "ok") {
+        const userProfile = profileResult.data;
+        if (userProfile.onboarding_completed) {
           setShowOnboarding(false);
           return;
         }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useSettings } from "@/hooks/useSettings";
+import { useUserProfile } from "@/hooks/useUserProfile";
 import WelcomeStep from "./WelcomeStep";
 import AttributionStep from "./AttributionStep";
 import TellUsAboutYouStep from "./TellUsAboutYouStep";
@@ -22,7 +22,7 @@ const STEP_ORDER: OnboardingStep[] = [
 ];
 
 const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
-  const { settings, updateSetting } = useSettings();
+  const { profile, updateProfile } = useUserProfile();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("welcome");
   const [userName, setUserName] = useState<string>("");
   // Attribution state
@@ -34,43 +34,43 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [professionalLevel, setProfessionalLevel] = useState<string>("");
   const [workRoleOther, setWorkRoleOther] = useState<string>("");
 
-  // Initialize state from settings on mount
+  // Initialize state from profile on mount
   useEffect(() => {
-    if (settings) {
+    if (profile) {
       // Resume from saved step
-      const savedStep = settings.onboarding_step ?? 0;
+      const savedStep = profile.onboarding_step ?? 0;
       if (savedStep > 0 && savedStep <= STEP_ORDER.length) {
         setCurrentStep(STEP_ORDER[savedStep - 1] || "welcome");
       }
 
       // Restore saved data
-      if (settings.user_name) {
-        setUserName(settings.user_name);
+      if (profile.user_name) {
+        setUserName(profile.user_name);
       }
       // Handle both old array format and new single-choice format
-      if (settings.referral_sources && settings.referral_sources.length > 0) {
-        setReferralSource(settings.referral_sources[0]);
+      if (profile.referral_sources && profile.referral_sources.length > 0) {
+        setReferralSource(profile.referral_sources[0]);
       }
-      if (settings.referral_details) {
-        const details = settings.referral_details as Record<string, string[]>;
+      if (profile.referral_details) {
+        const details = profile.referral_details as Record<string, string[]>;
         const firstSource = Object.keys(details)[0];
         if (firstSource && details[firstSource]?.length > 0) {
           setReferralDetail(details[firstSource][0]);
         }
       }
       // Work profile
-      if (settings.work_role) {
-        setWorkRole(settings.work_role);
+      if (profile.work_role) {
+        setWorkRole(profile.work_role);
       }
-      if (settings.professional_level) {
-        setProfessionalLevel(settings.professional_level);
+      if (profile.professional_level) {
+        setProfessionalLevel(profile.professional_level);
       }
     }
-  }, [settings]);
+  }, [profile]);
 
   const saveProgress = async (step: OnboardingStep) => {
     const stepIndex = STEP_ORDER.indexOf(step) + 1;
-    await updateSetting("onboarding_step", stepIndex);
+    await updateProfile("onboarding_step", stepIndex);
   };
 
   const goToNextStep = async () => {
@@ -84,7 +84,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
   const handleWelcomeContinue = async (name: string) => {
     setUserName(name);
-    await updateSetting("user_name", name || null);
+    await updateProfile("user_name", name || null);
     await goToNextStep();
   };
 
@@ -97,14 +97,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     setReferralDetail(detail || "");
     setReferralOtherText(otherText || "");
 
-    // Store as arrays for backward compatibility with settings schema
-    await updateSetting("referral_sources", source ? [source] : []);
+    // Store as arrays for backward compatibility with profile schema
+    await updateProfile("referral_sources", source ? [source] : []);
     if (detail) {
-      await updateSetting("referral_details", { [source]: [detail] });
+      await updateProfile("referral_details", { [source]: [detail] });
     } else if (otherText) {
-      await updateSetting("referral_details", { [source]: [otherText] });
+      await updateProfile("referral_details", { [source]: [otherText] });
     } else {
-      await updateSetting("referral_details", {});
+      await updateProfile("referral_details", {});
     }
     await goToNextStep();
   };
@@ -118,9 +118,9 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     setProfessionalLevel(level || "");
     setWorkRoleOther(otherText || "");
 
-    await updateSetting("work_role", role || null);
-    await updateSetting("professional_level", level || null);
-    await updateSetting("work_role_other", otherText || null);
+    await updateProfile("work_role", role || null);
+    await updateProfile("professional_level", level || null);
+    await updateProfile("work_role_other", otherText || null);
     await goToNextStep();
   };
 
@@ -133,8 +133,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   };
 
   const handleLearnComplete = async () => {
-    await updateSetting("onboarding_completed", true);
-    await updateSetting("onboarding_step", STEP_ORDER.length + 1);
+    await updateProfile("onboarding_completed", true);
+    await updateProfile("onboarding_step", STEP_ORDER.length + 1);
     onComplete();
   };
 

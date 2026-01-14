@@ -268,6 +268,26 @@ async changeUpdateChecksSetting(enabled: boolean) : Promise<Result<null, string>
     else return { status: "error", error: e  as any };
 }
 },
+async getUserProfileCommand() : Promise<Result<UserProfile, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_user_profile_command") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Update a specific field in the user profile.
+ * The value is a JSON-encoded string.
+ */
+async updateUserProfileSetting(key: string, value: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_user_profile_setting", { key, value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async triggerUpdateCheck() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("trigger_update_check") };
@@ -754,7 +774,7 @@ async mlxOpenModelsDir(modelId: string) : Promise<Result<null, string>> {
 
 /** user-defined types **/
 
-export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk: boolean; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; user_name?: string | null; onboarding_step?: number; referral_sources?: string[]; referral_details?: Partial<{ [key in string]: string[] }>; work_role?: string | null; work_role_other?: string | null; professional_level?: string | null; onboarding_completed?: boolean }
+export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk: boolean; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
@@ -844,6 +864,43 @@ export type PostProcessProvider = { id: string; label: string; base_url: string;
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * User profile data - separate from app settings.
+ * This stores onboarding and user identity information.
+ */
+export type UserProfile = { 
+/**
+ * User's display name (collected during onboarding)
+ */
+user_name?: string | null; 
+/**
+ * Current onboarding step (1-based index)
+ */
+onboarding_step?: number; 
+/**
+ * Whether onboarding has been completed
+ */
+onboarding_completed?: boolean; 
+/**
+ * How the user heard about the app (single source stored as array for compat)
+ */
+referral_sources?: string[]; 
+/**
+ * Secondary details for referral source (e.g., which social media platform)
+ */
+referral_details?: Partial<{ [key in string]: string[] }>; 
+/**
+ * User's work role/profession
+ */
+work_role?: string | null; 
+/**
+ * Custom text when "other" work role is selected
+ */
+work_role_other?: string | null; 
+/**
+ * Professional level (Executive, Director, Manager, etc.)
+ */
+professional_level?: string | null }
 
 /** tauri-specta globals **/
 

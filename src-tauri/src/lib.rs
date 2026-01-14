@@ -18,6 +18,7 @@ mod signal_handle;
 mod tray;
 mod tray_i18n;
 mod tracing_config;
+mod user_profile;
 mod utils;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
@@ -243,6 +244,8 @@ pub fn run() {
         shortcut::change_append_trailing_space_setting,
         shortcut::change_app_language_setting,
         shortcut::change_update_checks_setting,
+        user_profile::get_user_profile_command,
+        user_profile::update_user_profile_setting,
         trigger_update_check,
         commands::cancel_operation,
         commands::get_app_dir_path,
@@ -339,6 +342,8 @@ pub fn run() {
         shortcut::change_append_trailing_space_setting,
         shortcut::change_app_language_setting,
         shortcut::change_update_checks_setting,
+        user_profile::get_user_profile_command,
+        user_profile::update_user_profile_setting,
         trigger_update_check,
         commands::cancel_operation,
         commands::get_app_dir_path,
