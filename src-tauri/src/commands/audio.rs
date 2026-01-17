@@ -200,3 +200,24 @@ pub fn is_recording(app: AppHandle) -> bool {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.is_recording()
 }
+
+/// Start microphone preview mode - opens the mic stream to emit levels without recording
+#[tauri::command]
+#[specta::specta]
+pub fn start_mic_preview(app: AppHandle) -> Result<(), String> {
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    audio_manager
+        .start_microphone_stream()
+        .map_err(|e| format!("Failed to start mic preview: {}", e))
+}
+
+/// Stop microphone preview mode - closes the mic stream
+#[tauri::command]
+#[specta::specta]
+pub fn stop_mic_preview(app: AppHandle) {
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    // Only stop if not currently recording
+    if !audio_manager.is_recording() {
+        audio_manager.stop_microphone_stream();
+    }
+}

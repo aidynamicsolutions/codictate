@@ -5,11 +5,11 @@ Comprehensive documentation of the Codictate onboarding experience.
 ## Flow Overview
 
 ```
-Welcome → Attribution → Tell Us About You → Typing Use Cases → Permissions → Setup → Learn
-   1           2                3                  4               5           6       7
+Welcome → Attribution → Tell Us About You → Typing Use Cases → Permissions → Microphone Check → Hotkey Setup → Learn
+   1           2                3                  4               5              6                 7            8
 ```
 
-Steps 1-4 collect user profile data. Steps 5-7 configure the app.
+Steps 1-4 collect user profile data. Steps 5-8 configure the app.
 
 ---
 
@@ -98,16 +98,49 @@ Requests macOS accessibility and microphone permissions.
 }
 ```
 
-### 6. Setup Step (Placeholder)
+### 6. Microphone Check Step
 
-**Component**: [SetupStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/SetupStep.tsx)
+**Component**: [MicrophoneCheckStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/MicrophoneCheckStep.tsx)
+
+**Features**:
+- Back button to return to Permissions step (fire-and-forget navigation)
+- Left panel: Title "Speak to test your microphone" with subtitle
+- Right panel: Card with live audio level visualization (16 bars)
+- Question: "Do you see red bars moving while you speak?"
+- "No, change microphone" button → opens selection Dialog
+- "Yes" button → proceeds to HotkeySetup step
+
+**Audio Level Visualization**:
+- Uses AGC (Automatic Gain Control) for normalized display
+- Tracks peak levels with attack/release dynamics (0.3s attack, 2s release)
+- Ensures visible bar movement for any input level (like video conferencing apps)
+- Smoothed level visualization to reduce jitter
+
+**Dialog (microphone selection)**:
+- Lists actual microphones (filters out "Default" meta-entry)
+- Selected microphone appears at top of list
+- System default mic shows "(default)" label
+- Polls for new devices every 2 seconds while dialog is open
+- Handles newly connected devices (e.g., AirPods) in real-time
+- Level indicator on selected microphone
+
+**Backend Commands**:
+- `startMicPreview()` - Opens mic stream to emit levels without recording
+- `stopMicPreview()` - Closes mic stream (fire-and-forget to prevent UI blocking)
+- Listens to `mic-level` event from Rust backend
+
+**Note on virtual devices**: Shows all audio devices including virtual ones (BlackHole, Microsoft Teams Audio) as power users may need them for audio routing.
+
+### 7. Hotkey Setup Step (Placeholder)
+
+**Component**: [HotkeySetupStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/HotkeySetupStep.tsx)
 
 **Planned features**:
-- Model selection and download
-- Shortcut configuration
-- Microphone selection
+- Display current shortcut binding
+- Allow user to record new shortcut
+- Visual feedback for shortcut capture
 
-### 7. Learn Step (Placeholder)
+### 8. Learn Step (Placeholder)
 
 **Component**: [LearnStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/LearnStep.tsx)
 

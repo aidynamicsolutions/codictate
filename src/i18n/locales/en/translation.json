@@ -149,10 +149,25 @@
       "retry": "Retry",
       "continue": "Continue"
     },
-    "setup": {
-      "title": "Set Up",
-      "subtitle": "Let's configure your speech-to-text settings",
-      "placeholder": "Setup options will appear here",
+    "microphoneCheck": {
+      "back": "Back",
+      "title": "Speak to test your microphone",
+      "subtitle": "Your computer's built-in mic will ensure optimal transcription.",
+      "question": "Do you see red bars moving while you speak?",
+      "changeMicrophone": "No, change microphone",
+      "yes": "Yes",
+      "dialog": {
+        "title": "Select Microphone",
+        "autoDetect": "Auto-detect",
+        "autoDetectDescription": "Uses the system default microphone",
+        "default": "default"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Back",
+      "title": "Set your shortcut",
+      "subtitle": "Configure your keyboard shortcut to start transcription",
+      "placeholder": "Hotkey configuration will appear here",
       "continue": "Continue"
     },
     "learn": {

@@ -5,7 +5,8 @@ import AttributionStep from "./AttributionStep";
 import TellUsAboutYouStep from "./TellUsAboutYouStep";
 import TypingUseCasesStep from "./TypingUseCasesStep";
 import PermissionsStep from "./PermissionsStep";
-import SetupStep from "./SetupStep";
+import MicrophoneCheckStep from "./MicrophoneCheckStep";
+import HotkeySetupStep from "./HotkeySetupStep";
 import LearnStep from "./LearnStep";
 import type { OnboardingStep } from "./OnboardingProgress";
 
@@ -19,7 +20,8 @@ const STEP_ORDER: OnboardingStep[] = [
   "tellUsAboutYou",
   "typingUseCases",
   "permissions",
-  "setup",
+  "microphoneCheck",
+  "hotkeySetup",
   "learn",
 ];
 
@@ -94,6 +96,15 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     }
   };
 
+  const goToPreviousStep = async () => {
+    const currentIndex = STEP_ORDER.indexOf(currentStep);
+    if (currentIndex > 0) {
+      const prevStep = STEP_ORDER[currentIndex - 1];
+      setCurrentStep(prevStep);
+      await saveProgress(prevStep);
+    }
+  };
+
   const handleWelcomeContinue = async (name: string) => {
     setUserName(name);
     await updateProfile("user_name", name || null);
@@ -152,8 +163,20 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     await goToNextStep();
   };
 
-  const handleSetupContinue = async () => {
+  const handleMicrophoneCheckContinue = async () => {
     await goToNextStep();
+  };
+
+  const handleMicrophoneCheckBack = async () => {
+    await goToPreviousStep();
+  };
+
+  const handleHotkeySetupContinue = async () => {
+    await goToNextStep();
+  };
+
+  const handleHotkeySetupBack = async () => {
+    await goToPreviousStep();
   };
 
   const handleLearnComplete = async () => {
@@ -196,8 +219,20 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       );
     case "permissions":
       return <PermissionsStep onContinue={handlePermissionsContinue} />;
-    case "setup":
-      return <SetupStep onContinue={handleSetupContinue} />;
+    case "microphoneCheck":
+      return (
+        <MicrophoneCheckStep
+          onContinue={handleMicrophoneCheckContinue}
+          onBack={handleMicrophoneCheckBack}
+        />
+      );
+    case "hotkeySetup":
+      return (
+        <HotkeySetupStep
+          onContinue={handleHotkeySetupContinue}
+          onBack={handleHotkeySetupBack}
+        />
+      );
     case "learn":
       return <LearnStep onComplete={handleLearnComplete} />;
     default:

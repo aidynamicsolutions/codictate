@@ -3,6 +3,10 @@ import tsParser from "@typescript-eslint/parser";
 
 export default [
   {
+    // Ignore auto-generated shadcn/ui components (per CLAUDE.md)
+    ignores: ["src/components/shared/ui/**"],
+  },
+  {
     files: ["src/**/*.{ts,tsx}"],
     languageOptions: {
       parser: tsParser,
