@@ -4,13 +4,45 @@ use tauri::{AppHandle, Manager};
 
 /// Wrapper for Enigo to store in Tauri's managed state.
 /// Enigo is wrapped in a Mutex since it requires mutable access.
-pub struct EnigoState(pub Mutex<Enigo>);
+/// The inner Option allows for lazy initialization - Enigo requires accessibility
+/// permissions on macOS, so we defer initialization until permissions are granted.
+pub struct EnigoState(pub Mutex<Option<Enigo>>);
 
 impl EnigoState {
-    pub fn new() -> Result<Self, String> {
-        let enigo = Enigo::new(&Settings::default())
-            .map_err(|e| format!("Failed to initialize Enigo: {}", e))?;
-        Ok(Self(Mutex::new(enigo)))
+    /// Create a new EnigoState, attempting to initialize Enigo.
+    /// If permissions are not granted, the state will be empty (None) but won't crash.
+    pub fn new() -> Self {
+        let enigo = Enigo::new(&Settings::default()).ok();
+        if enigo.is_none() {
+            tracing::warn!("Could not initialize Enigo - accessibility permissions may not be granted");
+        }
+        Self(Mutex::new(enigo))
+    }
+
+    /// Try to initialize Enigo if it hasn't been initialized yet.
+    /// Returns true if Enigo is now available, false otherwise.
+    pub fn try_init(&self) -> bool {
+        let mut guard = self.0.lock().unwrap();
+        if guard.is_some() {
+            return true;
+        }
+
+        match Enigo::new(&Settings::default()) {
+            Ok(enigo) => {
+                tracing::info!("Enigo initialized successfully after permissions granted");
+                *guard = Some(enigo);
+                true
+            }
+            Err(e) => {
+                tracing::warn!("Failed to initialize Enigo: {}", e);
+                false
+            }
+        }
+    }
+
+    /// Check if Enigo is available (permissions are granted)
+    pub fn is_available(&self) -> bool {
+        self.0.lock().map(|guard| guard.is_some()).unwrap_or(false)
     }
 }
 
@@ -18,7 +50,8 @@ impl EnigoState {
 /// Returns None if the state is not available or if getting the location fails.
 pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
     let enigo_state = app_handle.try_state::<EnigoState>()?;
-    let enigo = enigo_state.0.lock().ok()?;
+    let guard = enigo_state.0.lock().ok()?;
+    let enigo = guard.as_ref()?;
     enigo.location().ok()
 }
 

@@ -131,9 +131,22 @@
       }
     },
     "permissions": {
-      "title": "Permissions",
-      "subtitle": "We need a few permissions to work properly",
-      "placeholder": "Permission settings will appear here",
+      "title": "Set up {{appName}} on your computer",
+      "accessibility": {
+        "title": "Allow {{appName}} to insert spoken words",
+        "description": "This lets {{appName}} put your spoken words in the right textbox",
+        "tooltip": "{{appName}} uses this to gather context based on the application you're using, and to access your clipboard temporarily to paste text.",
+        "success": "{{appName}} can now paste text anywhere"
+      },
+      "microphone": {
+        "title": "Allow {{appName}} to use your microphone",
+        "description": "{{appName}} will only access the mic when you are actively using it",
+        "tooltip": "{{appName}} will play a sound and show an animation when the mic is active",
+        "success": "{{appName}} can now hear you"
+      },
+      "allow": "Allow",
+      "checking": "Checking...",
+      "retry": "Retry",
       "continue": "Continue"
     },
     "setup": {

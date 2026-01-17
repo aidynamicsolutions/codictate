@@ -79,7 +79,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     i18n::init(app_handle);
     
     // Initialize the input state (Enigo singleton for keyboard/mouse simulation)
-    let enigo_state = input::EnigoState::new().expect("Failed to initialize input state (Enigo)");
+    // This is lazy-initialized - if accessibility permissions are not granted,
+    // Enigo will be None until permissions are granted and try_init() is called
+    let enigo_state = input::EnigoState::new();
     app_handle.manage(enigo_state);
 
     // Initialize the managers

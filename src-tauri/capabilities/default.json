@@ -8,7 +8,24 @@
   ],
   "permissions": [
     "core:default",
-    "opener:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://*"
+        },
+        {
+          "url": "http://*"
+        },
+        {
+          "url": "mailto:*"
+        },
+        {
+          "url": "x-apple.systempreferences:*"
+        }
+      ]
+    },
+    "opener:allow-reveal-item-in-dir",
     "store:default",
     "updater:default",
     "process:default",
