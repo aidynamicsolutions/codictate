@@ -17,8 +17,8 @@
     "format:check": "prettier --check . && cd src-tauri && cargo fmt -- --check",
     "format:frontend": "prettier --write .",
     "format:backend": "cd src-tauri && cargo fmt",
-    "logs": "tail -f ~/Library/Logs/com.pais.handy/handy*.log",
-    "logs:grep": "grep -E \"$1\" ~/Library/Logs/com.pais.handy/handy*.log | tail -50"
+    "logs": "tail -f ~/Library/Logs/com.pais.codictate/codictate*.log",
+    "logs:grep": "grep -E \"$1\" ~/Library/Logs/com.pais.codictate/codictate*.log | tail -50"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans": "^5.2.10",

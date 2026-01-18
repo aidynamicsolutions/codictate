@@ -17,9 +17,9 @@ bun run logs:grep "session=abc12345"
 
 | Platform | Path |
 |----------|------|
-| macOS | `~/Library/Logs/com.pais.handy/handy.YYYY-MM-DD.log` |
-| Windows | `%APPDATA%\com.pais.handy\logs\handy.YYYY-MM-DD.log` |
-| Linux | `~/.local/share/com.pais.handy/logs/handy.YYYY-MM-DD.log` |
+| macOS | `~/Library/Logs/com.pais.codictate/codictate.YYYY-MM-DD.log` |
+| Windows | `%APPDATA%\com.pais.codictate\logs\codictate.YYYY-MM-DD.log` |
+| Linux | `~/.local/share/com.pais.codictate/logs/codictate.YYYY-MM-DD.log` |
 
 ## Log Format
 
@@ -29,15 +29,15 @@ TIMESTAMP LEVEL TARGET: MESSAGE session="ID" target="COMPONENT"
 
 Example:
 ```
-2026-01-09T16:05:07Z INFO handy_app_lib::tracing_config: Session started session="27d68929" target="fe"
-2026-01-09T16:05:25Z DEBUG handy_app_lib::managers::mlx: Loading model...
+2026-01-09T16:05:07Z INFO codictate_app_lib::tracing_config: Session started session="27d68929" target="fe"
+2026-01-09T16:05:25Z DEBUG codictate_app_lib::managers::mlx: Loading model...
 ```
 
 ## Component Targets
 
 | Target | Component |
 |--------|-----------|
-| `handy_app_lib::*` | Rust backend |
+| `codictate_app_lib::*` | Rust backend |
 | `fe` | Frontend (default) |
 | `fe-history` | Frontend history UI |
 | `fe-updater` | Frontend update checker |
@@ -139,5 +139,5 @@ bun run logs:grep "target=fe"
        └─────────────────►│◄─────────────────┘
                           │
                           ▼
-                  handy.YYYY-MM-DD.log
+                  codictate.YYYY-MM-DD.log
 ```

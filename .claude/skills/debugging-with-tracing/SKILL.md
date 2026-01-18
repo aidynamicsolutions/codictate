@@ -32,13 +32,13 @@ bun run logs:grep "session=abc12345"
 
 ```bash
 # macOS
-~/Library/Logs/com.pais.handy/handy.log
+~/Library/Logs/com.pais.codictate/codictate.log
 
 # Windows
-%APPDATA%\com.pais.handy\logs\handy.log
+%APPDATA%\com.pais.codictate\logs\codictate.log
 
 # Linux
-~/.local/share/com.pais.handy/logs/handy.log
+~/.local/share/com.pais.codictate/logs/codictate.log
 ```
 
 ## Log Targets (Component Prefixes)
@@ -47,7 +47,7 @@ Each log line includes a `target` field identifying the source component:
 
 | Target Pattern | Component |
 |----------------|-----------|
-| `handy_app_lib::*` | Rust backend (e.g., `handy_app_lib::managers::audio`) |
+| `codictate_app_lib::*` | Rust backend (e.g., `codictate_app_lib::managers::audio`) |
 | `fe` | Frontend (default) |
 | `fe-history` | Frontend history component |
 | `fe-updater` | Frontend update checker |
@@ -60,7 +60,7 @@ Each log line includes a `target` field identifying the source component:
 bun run logs:grep "target=fe"
 
 # All backend audio logs
-bun run logs:grep "handy_app_lib::managers::audio"
+bun run logs:grep "codictate_app_lib::managers::audio"
 
 # All MLX sidecar logs
 bun run logs:grep "target=mlx-sidecar"
