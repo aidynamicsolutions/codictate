@@ -568,6 +568,27 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // Paste last transcript shortcut: paste the most recent transcription
+    #[cfg(target_os = "macos")]
+    let paste_last_shortcut = "control+command+v";
+    #[cfg(target_os = "windows")]
+    let paste_last_shortcut = "ctrl+alt+v";
+    #[cfg(target_os = "linux")]
+    let paste_last_shortcut = "ctrl+alt+v";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let paste_last_shortcut = "ctrl+alt+v";
+
+    bindings.insert(
+        "paste_last_transcript".to_string(),
+        ShortcutBinding {
+            id: "paste_last_transcript".to_string(),
+            name: "Paste last transcript".to_string(),
+            description: "Paste the last thing you dictated.".to_string(),
+            default_binding: paste_last_shortcut.to_string(),
+            current_binding: paste_last_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         bindings,
         push_to_talk: true,

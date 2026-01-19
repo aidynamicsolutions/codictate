@@ -511,6 +511,84 @@ impl ShortcutAction for TestAction {
     }
 }
 
+// Paste Last Transcript Action
+struct PasteLastTranscriptAction;
+
+impl ShortcutAction for PasteLastTranscriptAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        debug!("Paste last transcript triggered");
+        
+        // Check if recording is active - don't interfere with recording/transcription flow
+        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+        if audio_manager.is_recording() {
+            debug!("Paste last transcript skipped: recording is active");
+            return;
+        }
+        
+        let app_clone = app.clone();
+        
+        // Spawn async task to get the latest transcription and paste it
+        tauri::async_runtime::spawn(async move {
+            let text = if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
+                let manager = history_manager.inner().clone();
+                match manager.get_history_entries().await {
+                    Ok(entries) => {
+                        if let Some(latest) = entries.first() {
+                            // Prefer post-processed text if available, otherwise use raw transcription
+                            let text = latest
+                                .post_processed_text
+                                .as_ref()
+                                .unwrap_or(&latest.transcription_text)
+                                .clone();
+                            debug!(chars = text.len(), "Retrieved latest transcription for paste");
+                            Some(text)
+                        } else {
+                            info!("No history entries available for paste last transcript");
+                            // Show notification to inform user
+                            crate::notification::show_info(&app_clone, "pasteLastTranscript.noHistory");
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to get history entries: {}", e);
+                        None
+                    }
+                }
+            } else {
+                error!("HistoryManager not available for paste last transcript");
+                None
+            };
+            
+            // If we have text, paste it on the main thread
+            if let Some(text_to_paste) = text {
+                if !text_to_paste.is_empty() {
+                    // Add a delay before pasting to allow the user to release the hotkey modifiers.
+                    // When pressing e.g. Ctrl+Cmd+V, those keys are still held when we try to
+                    // simulate Cmd+V. Without this delay, the target app would receive Ctrl+Cmd+V
+                    // (which does nothing) instead of just Cmd+V.
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                    
+                    let app_for_paste = app_clone.clone();
+                    if let Err(e) = app_clone.run_on_main_thread(move || {
+                        match crate::utils::paste(text_to_paste, app_for_paste) {
+                            Ok(()) => info!("Pasted last transcript successfully"),
+                            Err(e) => error!("Failed to paste last transcript: {}", e),
+                        }
+                    }) {
+                        error!("Failed to run paste on main thread: {:?}", e);
+                    }
+                } else {
+                    debug!("Paste last transcript skipped: transcription text is empty");
+                }
+            }
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Nothing to do on key release
+    }
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -529,6 +607,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "test".to_string(),
         Arc::new(TestAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "paste_last_transcript".to_string(),
+        Arc::new(PasteLastTranscriptAction) as Arc<dyn ShortcutAction>,
     );
     map
 });

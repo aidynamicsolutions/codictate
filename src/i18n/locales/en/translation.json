@@ -275,6 +275,10 @@
             "name": "Hands-free mode",
             "description": "Press to start and stop dictation"
           },
+          "paste_last_transcript": {
+            "name": "Paste last transcript",
+            "description": "Paste the last thing you dictated"
+          },
           "cancel": {
             "name": "Cancel",
             "description": "Cancels the current recording."
@@ -636,5 +640,8 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "pasteLastTranscript": {
+    "noHistory": "No transcription history to paste"
   }
 }

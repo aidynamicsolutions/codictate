@@ -1014,6 +1014,12 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
                         return;
+                    } else if binding_id_for_closure == "paste_last_transcript" {
+                        // Paste last transcript is a one-shot action - always trigger on press
+                        if event.state == ShortcutState::Pressed {
+                            action.start(ah, &binding_id_for_closure, &shortcut_string);
+                        }
+                        return;
                     } else if settings.push_to_talk {
                         if event.state == ShortcutState::Pressed {
                             action.start(ah, &binding_id_for_closure, &shortcut_string);

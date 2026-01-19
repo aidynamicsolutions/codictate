@@ -275,7 +275,7 @@ export const HotkeySetupStep: React.FC<HotkeySetupStepProps> = ({
     try {
       // Use atomic reset that bypasses duplicate checking between the bindings
       // This handles any combination of conflicts (e.g., one set to the other's default)
-      await resetBindings(["transcribe", "transcribe_handsfree"]);
+      await resetBindings(["transcribe", "transcribe_handsfree", "paste_last_transcript"]);
     } catch (error) {
       logError(`Failed to reset bindings: ${error}`, "fe-onboarding");
     }
@@ -379,6 +379,14 @@ export const HotkeySetupStep: React.FC<HotkeySetupStepProps> = ({
                   shortcutId="transcribe_handsfree"
                   title={t("settings.general.shortcut.bindings.transcribe_handsfree.name")}
                   description={t("settings.general.shortcut.bindings.transcribe_handsfree.description")}
+                />
+
+                {/* Paste last transcript shortcut */}
+                <ShortcutCard
+                  key={`paste_last_transcript-${resetKey}`}
+                  shortcutId="paste_last_transcript"
+                  title={t("settings.general.shortcut.bindings.paste_last_transcript.name")}
+                  description={t("settings.general.shortcut.bindings.paste_last_transcript.description")}
                 />
 
                 {/* Divider */}
