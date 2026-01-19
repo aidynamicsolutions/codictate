@@ -283,7 +283,10 @@
         "errors": {
           "restore": "Failed to restore original shortcut",
           "set": "Failed to set shortcut: {{error}}",
-          "reset": "Failed to reset shortcut to original value"
+          "reset": "Failed to reset shortcut to original value",
+          "multipleNonModifierKeys": "Shortcuts can only have one main key. Use a modifier (Ctrl, Shift, Alt, Cmd) with a single key.",
+          "modifierRequired": "Shortcuts must include a modifier key (Ctrl, Shift, Alt, Cmd) or be a function key",
+          "noKeysRecorded": "No keys recorded"
         }
       },
       "language": {

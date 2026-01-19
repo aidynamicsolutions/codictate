@@ -18,13 +18,44 @@ import { useShortcutRecorder } from "@/hooks/useShortcutRecorder";
 import { commands } from "@/bindings";
 import { logError } from "@/utils/logging";
 
+// macOS modifier key symbols mapping (only for allowed modifier keys)
+const MAC_KEY_SYMBOLS: Record<string, string> = {
+  command: "⌘",
+  cmd: "⌘",
+  option: "⌥",
+  opt: "⌥",
+  alt: "⌥",
+  control: "⌃",
+  ctrl: "⌃",
+  shift: "⇧",
+};
+
+// Helper to get the display symbol and text for a key
+const getKeyDisplay = (
+  keyName: string
+): { symbol: string | null; text: string } => {
+  const normalizedKey = keyName.toLowerCase().trim();
+  const symbol = MAC_KEY_SYMBOLS[normalizedKey] || null;
+
+  // Keep "fn" and single letters lowercase, capitalize multi-character key names
+  let text: string;
+  if (normalizedKey === "fn" || normalizedKey.length === 1) {
+    text = normalizedKey;
+  } else {
+    text = keyName.charAt(0).toUpperCase() + keyName.slice(1);
+  }
+
+  return { symbol, text };
+};
+
 // Helper component to render individual key badge
 const KeyBadge: React.FC<{ keyName: string }> = ({ keyName }) => {
-  // Capitalize first letter for display
-  const displayName = keyName.charAt(0).toUpperCase() + keyName.slice(1);
+  const { symbol, text } = getKeyDisplay(keyName);
+
   return (
-    <span className="inline-flex items-center justify-center px-2 py-1 text-sm font-medium bg-muted border border-border rounded min-w-[36px]">
-      {displayName}
+    <span className="inline-flex items-center justify-center gap-1 px-2 py-1 text-sm font-medium bg-muted border border-border rounded min-w-[36px]">
+      {symbol && <span className="text-muted-foreground">{symbol}</span>}
+      <span>{text}</span>
     </span>
   );
 };
@@ -84,6 +115,7 @@ const ShortcutCard: React.FC<ShortcutCardProps> = ({
     },
     requireModifier: true,
     containerRef,
+    t,
   });
 
   // Clear error when input is reset to "Press keys..." state
@@ -101,7 +133,7 @@ const ShortcutCard: React.FC<ShortcutCardProps> = ({
       </div>
       <div className="flex flex-col items-end gap-1.5">
         {/* Spacer to reserve space above the input */}
-        <div className="h-4" />
+        <div className="h-6" />
         <button
           ref={containerRef}
           type="button"
@@ -134,13 +166,13 @@ const ShortcutCard: React.FC<ShortcutCardProps> = ({
             </>
           )}
         </button>
-        {/* Fixed height container for error/warning messages */}
-        <div className="h-4 flex items-center justify-end">
+        {/* Fixed height container for error/warning messages - sized for 3 lines to prevent card resizing */}
+        <div className="h-4 max-w-[280px] mt-1 mb-1 flex items-start justify-end">
           {error && (
-            <span className="text-xs text-destructive select-none">{error}</span>
+            <span className="text-xs text-destructive select-none leading-tight text-right">{error}</span>
           )}
           {warning && !error && (
-            <span className="text-xs text-yellow-600 dark:text-yellow-500 select-none">{warning}</span>
+            <span className="text-xs text-yellow-600 dark:text-yellow-500 select-none leading-tight text-right">{warning}</span>
           )}
         </div>
       </div>

@@ -135,6 +135,9 @@ interface UseShortcutRecorderOptions {
   requireModifier?: boolean;
   /** Container element ref for click-outside detection */
   containerRef?: RefObject<HTMLElement | null>;
+  /** Optional translation function for error messages (accepts key and returns translated string) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  t?: (key: string, defaultValue?: any) => string;
 }
 
 interface UseShortcutRecorderReturn {
@@ -175,7 +178,13 @@ export function useShortcutRecorder(
     onRecordingEnd,
     requireModifier = true,
     containerRef,
+    t,
   } = options;
+
+  // Helper to get translated message or fallback
+  const getMessage = useCallback((key: string, fallback: string) => {
+    return t ? t(`settings.general.shortcut.errors.${key}`, fallback) : fallback;
+  }, [t]);
 
   const [isRecording, setIsRecording] = useState(false);
   const [keyPressed, setKeyPressed] = useState<string[]>([]); // Currently held keys
@@ -220,7 +229,7 @@ export function useShortcutRecorder(
   const validateShortcut = useCallback(
     (keys: string[]): string | null => {
       if (keys.length === 0) {
-        return "No keys recorded";
+        return getMessage("noKeysRecorded", "No keys recorded");
       }
 
       if (!requireModifier) {
@@ -235,24 +244,30 @@ export function useShortcutRecorder(
         keys.length === 1 &&
         STANDALONE_ALLOWED.includes(keys[0].toLowerCase());
 
-      // Check if there's at least one non-modifier key
-      const hasNonModifierKey = keys.some(
+      // Count non-modifier keys
+      const nonModifierKeys = keys.filter(
         (k) => !MODIFIERS.includes(k.toLowerCase())
       );
 
+      // Check for multiple non-modifier keys (e.g., Ctrl+Y+U)
+      // OS-level global shortcuts only support one non-modifier key
+      if (nonModifierKeys.length > 1) {
+        return getMessage("multipleNonModifierKeys", "Shortcuts can only have one main key. Use a modifier (Ctrl, Shift, Alt, Cmd) with a single key.");
+      }
+
       // Modifiers alone (e.g., just "Command") are not valid shortcuts
       // Must have either: a standalone allowed key, OR a modifier + non-modifier key
-      if (!isStandaloneAllowed && hasModifier && !hasNonModifierKey) {
-        return "Shortcuts must include a modifier key (Ctrl, Shift, Alt, Cmd) or be a function key";
+      if (!isStandaloneAllowed && hasModifier && nonModifierKeys.length === 0) {
+        return getMessage("modifierRequired", "Shortcuts must include a modifier key (Ctrl, Shift, Alt, Cmd) or be a function key");
       }
 
       if (!hasModifier && !isStandaloneAllowed) {
-        return "Shortcuts must include a modifier key (Ctrl, Shift, Alt, Cmd) or be a function key";
+        return getMessage("modifierRequired", "Shortcuts must include a modifier key (Ctrl, Shift, Alt, Cmd) or be a function key");
       }
 
       return null;
     },
-    [requireModifier]
+    [requireModifier, getMessage]
   );
 
   const startRecording = useCallback(async () => {

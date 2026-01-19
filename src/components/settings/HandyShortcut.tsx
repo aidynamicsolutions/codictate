@@ -72,6 +72,7 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
     },
     requireModifier: true,
     containerRef,
+    t,
   });
 
   // If still loading, show loading state
