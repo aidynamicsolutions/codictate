@@ -5,6 +5,8 @@ mod audio_feedback;
 pub mod audio_toolkit;
 mod clipboard;
 mod commands;
+#[cfg(target_os = "macos")]
+mod fn_key_monitor;
 mod helpers;
 mod i18n;
 mod input;
@@ -113,6 +115,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Initialize the shortcuts
     shortcut::init_shortcuts(app_handle);
 
+    // Initialize Fn key monitor on macOS for transcription via Fn key
+    #[cfg(target_os = "macos")]
+    {
+        let app_clone = app_handle.clone();
+        // Start Fn key monitor with transcription enabled
+        // This runs in a separate thread, so we spawn it
+        std::thread::spawn(move || {
+            let _ = fn_key_monitor::start_fn_key_monitor(app_clone, true);
+        });
+    }
+
     #[cfg(unix)]
     let signals = Signals::new(&[SIGUSR2]).unwrap();
     // Set up SIGUSR2 signal handler for toggling transcription
@@ -216,6 +229,7 @@ pub fn run() {
     let specta_builder = Builder::<tauri::Wry>::new().commands(collect_commands![
         shortcut::change_binding,
         shortcut::reset_binding,
+        shortcut::reset_bindings,
         shortcut::change_ptt_setting,
         shortcut::change_audio_feedback_setting,
         shortcut::change_audio_feedback_volume_setting,
@@ -309,6 +323,9 @@ pub fn run() {
         commands::mlx::mlx_unload_model,
         commands::mlx::mlx_switch_model,
         commands::mlx::mlx_open_models_dir,
+        // macOS Fn key monitor commands
+        fn_key_monitor::start_fn_key_monitor,
+        fn_key_monitor::stop_fn_key_monitor,
     ]);
 
     // On other platforms, exclude MLX commands
@@ -316,6 +333,7 @@ pub fn run() {
     let specta_builder = Builder::<tauri::Wry>::new().commands(collect_commands![
         shortcut::change_binding,
         shortcut::reset_binding,
+        shortcut::reset_bindings,
         shortcut::change_ptt_setting,
         shortcut::change_audio_feedback_setting,
         shortcut::change_audio_feedback_volume_setting,

@@ -1,4 +1,4 @@
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 use serde::Serialize;
 use specta::Type;
 use std::sync::Arc;
@@ -81,10 +81,196 @@ pub fn change_binding(
         }
     }
 
+    // If this is an fn-based shortcut (fn alone or fn+key), just update settings
+    // fn key is handled by native fn_key_monitor.rs, not Tauri global shortcuts
+    let binding_lower = binding.to_lowercase();
+    if binding_lower == "fn" || binding_lower.starts_with("fn+") || binding_lower.contains("+fn") {
+        // Block reserved system shortcuts - these are intercepted by macOS
+        // and cannot be used as app shortcuts
+        const RESERVED_FN_SHORTCUTS: &[&str] = &[
+            "fn+a",  // Show/hide Dock
+            "fn+c",  // Control Center
+            "fn+d",  // Dictation
+            "fn+e",  // Emoji picker
+            "fn+f",  // Full screen
+            "fn+h",  // Show desktop
+            "fn+m",  // Focus menu bar
+            "fn+n",  // Notification Center
+            "fn+q",  // Quick Note
+        ];
+        
+        if RESERVED_FN_SHORTCUTS.contains(&binding_lower.as_str()) {
+            let error_msg = format!(
+                "Shortcut '{}' is reserved by the system and cannot be used",
+                binding
+            );
+            warn!("change_binding reserved shortcut error: {}", error_msg);
+            return Ok(BindingResponse {
+                success: false,
+                binding: None,
+                error: Some(error_msg),
+            });
+        }
+
+        // Check for duplicates: see if any OTHER binding already uses this shortcut
+        for (other_id, other_binding) in &settings.bindings {
+            if other_id != &id && other_binding.current_binding.to_lowercase() == binding_lower {
+                let error_msg = format!("Shortcut '{}' is already in use", binding);
+                warn!("change_binding duplicate error for fn shortcut: {}", error_msg);
+                return Ok(BindingResponse {
+                    success: false,
+                    binding: None,
+                    error: Some(error_msg),
+                });
+            }
+        }
+
+        if let Some(mut b) = settings.bindings.get(&id).cloned() {
+            // Unregister any existing non-fn shortcut first
+            if let Err(e) = unregister_shortcut(&app, b.clone()) {
+                debug!("No existing shortcut to unregister: {}", e);
+            }
+            b.current_binding = binding;
+            settings.bindings.insert(id.clone(), b.clone());
+            
+            settings::write_settings(&app, settings);
+            return Ok(BindingResponse {
+                success: true,
+                binding: Some(b.clone()),
+                error: None,
+            });
+        }
+    }
+
     // Unregister the existing binding
     if let Err(e) = unregister_shortcut(&app, binding_to_modify.clone()) {
         let error_msg = format!("Failed to unregister shortcut: {}", e);
         error!("change_binding error: {}", error_msg);
+    }
+
+    // Block reserved system shortcuts for macOS (non-fn shortcuts)
+    #[cfg(target_os = "macos")]
+    {
+        const RESERVED_MACOS_SHORTCUTS: &[&str] = &[
+            // App switching and window management
+            "command+tab",              // App switcher
+            "command+space",            // Spotlight
+            "command+q",                // Quit app
+            "command+w",                // Close window
+            "command+h",                // Hide app
+            "command+m",                // Minimize
+            "command+option+escape",    // Force Quit
+            "control+command+q",        // Lock screen
+            // Common editing shortcuts (critical)
+            "command+c",                // Copy
+            "command+v",                // Paste
+            "command+x",                // Cut
+            "command+z",                // Undo
+            "shift+command+z",          // Redo
+            "command+a",                // Select all
+            // Common file operations
+            "command+s",                // Save
+            "command+n",                // New
+            "command+o",                // Open
+            "command+p",                // Print
+            // Screenshots
+            "shift+command+3",          // Screenshot full
+            "shift+command+4",          // Screenshot area
+            "shift+command+5",          // Screenshot menu
+        ];
+        
+        if RESERVED_MACOS_SHORTCUTS.contains(&binding_lower.as_str()) {
+            let error_msg = format!(
+                "Shortcut '{}' is reserved by the system and cannot be used",
+                binding
+            );
+            warn!("change_binding reserved shortcut error (macOS): {}", error_msg);
+            return Ok(BindingResponse {
+                success: false,
+                binding: None,
+                error: Some(error_msg),
+            });
+        }
+    }
+
+    // Block reserved system shortcuts for Windows and Linux
+    // These shortcuts are intercepted by the OS and cannot be reliably used
+    #[cfg(target_os = "windows")]
+    {
+        const RESERVED_WINDOWS_SHORTCUTS: &[&str] = &[
+            // System shortcuts
+            "super+l",          // Lock screen
+            "super+d",          // Show desktop
+            "super+e",          // File Explorer
+            "super+r",          // Run dialog
+            "super+tab",        // Task View
+            "alt+tab",          // App switcher
+            "alt+f4",           // Close app
+            "ctrl+alt+delete",  // Security screen
+            // Common editing shortcuts (critical)
+            "ctrl+c",           // Copy
+            "ctrl+v",           // Paste
+            "ctrl+x",           // Cut
+            "ctrl+z",           // Undo
+            "ctrl+y",           // Redo
+            "ctrl+a",           // Select all
+            // Common file operations
+            "ctrl+s",           // Save
+            "ctrl+n",           // New
+            "ctrl+o",           // Open
+            "ctrl+p",           // Print
+            "ctrl+w",           // Close window
+        ];
+        
+        if RESERVED_WINDOWS_SHORTCUTS.contains(&binding_lower.as_str()) {
+            let error_msg = format!(
+                "Shortcut '{}' is reserved by the system and cannot be used",
+                binding
+            );
+            warn!("change_binding reserved shortcut error (Windows): {}", error_msg);
+            return Ok(BindingResponse {
+                success: false,
+                binding: None,
+                error: Some(error_msg),
+            });
+        }
+    }
+    
+    #[cfg(target_os = "linux")]
+    {
+        const RESERVED_LINUX_SHORTCUTS: &[&str] = &[
+            // System shortcuts
+            "alt+tab",    // App switcher
+            "alt+f4",     // Close app
+            "super+l",    // Lock screen (common in GNOME/KDE)
+            "super+d",    // Show desktop
+            // Common editing shortcuts (critical)
+            "ctrl+c",     // Copy
+            "ctrl+v",     // Paste
+            "ctrl+x",     // Cut
+            "ctrl+z",     // Undo
+            "ctrl+y",     // Redo
+            "ctrl+a",     // Select all
+            // Common file operations
+            "ctrl+s",     // Save
+            "ctrl+n",     // New
+            "ctrl+o",     // Open
+            "ctrl+p",     // Print
+            "ctrl+w",     // Close window
+        ];
+        
+        if RESERVED_LINUX_SHORTCUTS.contains(&binding_lower.as_str()) {
+            let error_msg = format!(
+                "Shortcut '{}' is reserved by the system and cannot be used",
+                binding
+            );
+            warn!("change_binding reserved shortcut error (Linux): {}", error_msg);
+            return Ok(BindingResponse {
+                success: false,
+                binding: None,
+                error: Some(error_msg),
+            });
+        }
     }
 
     // Validate the new shortcut before we touch the current registration
@@ -125,9 +311,74 @@ pub fn change_binding(
 #[tauri::command]
 #[specta::specta]
 pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, String> {
-    let binding = settings::get_stored_binding(&app, &id);
+    // Get the default binding from the code-defined defaults (not from persisted settings)
+    // This ensures that when defaults change in the code, "Reset to default" uses the new defaults
+    let default_settings = settings::get_default_settings();
+    let default_binding = default_settings
+        .bindings
+        .get(&id)
+        .ok_or_else(|| format!("No default binding found for id '{}'", id))?;
 
-    return change_binding(app, id, binding.default_binding);
+    // Also update the stored default_binding field to keep it in sync with the code
+    let mut current_settings = settings::get_settings(&app);
+    if let Some(stored_binding) = current_settings.bindings.get_mut(&id) {
+        stored_binding.default_binding = default_binding.default_binding.clone();
+        settings::write_settings(&app, current_settings);
+    }
+
+    // Now change to the default binding
+    change_binding(app, id, default_binding.default_binding.clone())
+}
+
+/// Reset multiple bindings atomically to their defaults.
+/// This bypasses duplicate checking between the bindings being reset,
+/// which solves the issue where resetting A then B fails if A's default
+/// conflicts with B's current value.
+#[tauri::command]
+#[specta::specta]
+pub fn reset_bindings(app: AppHandle, ids: Vec<String>) -> Result<Vec<BindingResponse>, String> {
+    let default_settings = settings::get_default_settings();
+    let mut current_settings = settings::get_settings(&app);
+    let mut responses = Vec::new();
+
+    // First pass: collect all the defaults and update settings atomically
+    for id in &ids {
+        let default_binding = default_settings
+            .bindings
+            .get(id)
+            .ok_or_else(|| format!("No default binding found for id '{}'", id))?;
+
+        if let Some(stored_binding) = current_settings.bindings.get_mut(id) {
+            // Unregister any existing non-fn shortcut
+            if let Err(e) = unregister_shortcut(&app, stored_binding.clone()) {
+                debug!("No existing shortcut to unregister for {}: {}", id, e);
+            }
+
+            // Update to the default value
+            stored_binding.default_binding = default_binding.default_binding.clone();
+            stored_binding.current_binding = default_binding.default_binding.clone();
+
+            responses.push(BindingResponse {
+                success: true,
+                binding: Some(stored_binding.clone()),
+                error: None,
+            });
+        } else {
+            responses.push(BindingResponse {
+                success: false,
+                binding: None,
+                error: Some(format!("Binding '{}' not found", id)),
+            });
+        }
+    }
+
+    // Save all changes at once
+    settings::write_settings(&app, current_settings);
+
+    // Log what we did
+    debug!("[reset_bindings] Reset {} bindings atomically", ids.len());
+
+    Ok(responses)
 }
 
 #[tauri::command]

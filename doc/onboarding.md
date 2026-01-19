@@ -131,14 +131,40 @@ Requests macOS accessibility and microphone permissions.
 
 **Note on virtual devices**: Shows all audio devices including virtual ones (BlackHole, Microsoft Teams Audio) as power users may need them for audio routing.
 
-### 7. Hotkey Setup Step (Placeholder)
+### 7. Hotkey Setup Step
 
 **Component**: [HotkeySetupStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/HotkeySetupStep.tsx)
 
-**Planned features**:
-- Display current shortcut binding
-- Allow user to record new shortcut
-- Visual feedback for shortcut capture
+> **See also**: [Hotkey Shortcut Documentation](file:///Users/tiger/Dev/opensource/speechGen/Handy/doc/hotkeyshortcut.md) for detailed technical documentation with ASCII diagrams.
+
+**Features**:
+- Displays Push to Talk (`fn`) and Hands-free mode (`fn+space`) shortcuts
+- Each shortcut has inline recording via `ShortcutCard` component
+- Uses shared hook: [useShortcutRecorder.ts](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/hooks/useShortcutRecorder.ts)
+- Native macOS Fn key detection via Tauri events (`fn-key-down`, `fn-key-up`)
+- ESC cancels recording
+- Modifier key sorting for consistent display
+
+**Mode Detection**:
+- 150ms delay before push-to-talk starts (allows time to detect fn+space)
+- If Space pressed within 150ms → hands-free mode
+- If 150ms expires → push-to-talk mode
+- Late fn+space (after PTT started) → cancels PTT and starts hands-free
+
+**Shortcut Recording Hook**:
+- Handles ESC to cancel, filters auto-repeat events
+- Validates shortcuts (requires modifier or standalone F-key/fn)
+- Shows warning for reserved system shortcuts
+- Shows error for duplicates or invalid combinations
+- Uses `isRecordingRef` and `recordedKeysRef` for synchronous access in async callbacks
+- `saveInProgress` ref prevents duplicate concurrent saves
+
+**Reset to Default**: Uses `resetBindings` (plural) backend command to atomically reset multiple shortcuts. See [hotkeyshortcut.md](file:///Users/tiger/Dev/opensource/speechGen/Handy/doc/hotkeyshortcut.md#reset-to-default).
+
+**Reserved Shortcut Blocking** (backend, [shortcut.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/shortcut.rs)):
+- macOS: `fn+a/c/d/e/f/h/m/n/q`, `cmd+c/v/x/z/a/s/n/o/p/w/q/h/m/tab/space`
+- Windows: `super+l/d/e/r/tab`, `alt+tab/f4`, `ctrl+c/v/x/z/y/a/s/n/o/p/w`
+- Linux: `alt+tab/f4`, `super+l/d`, `ctrl+c/v/x/z/y/a/s/n/o/p/w`
 
 ### 8. Learn Step (Placeholder)
 

@@ -519,7 +519,7 @@ pub fn get_default_settings() -> AppSettings {
     #[cfg(target_os = "windows")]
     let default_shortcut = "ctrl+space";
     #[cfg(target_os = "macos")]
-    let default_shortcut = "option+space";
+    let default_shortcut = "fn";
     #[cfg(target_os = "linux")]
     let default_shortcut = "ctrl+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -544,6 +544,27 @@ pub fn get_default_settings() -> AppSettings {
             description: "Cancels the current recording.".to_string(),
             default_binding: "escape".to_string(),
             current_binding: "escape".to_string(),
+        },
+    );
+
+    // Hands-free shortcut: toggle mode (press once to start, press again to stop)
+    #[cfg(target_os = "macos")]
+    let handsfree_shortcut = "fn+space";
+    #[cfg(target_os = "windows")]
+    let handsfree_shortcut = "ctrl+shift+space";
+    #[cfg(target_os = "linux")]
+    let handsfree_shortcut = "ctrl+shift+space";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let handsfree_shortcut = "alt+shift+space";
+
+    bindings.insert(
+        "transcribe_handsfree".to_string(),
+        ShortcutBinding {
+            id: "transcribe_handsfree".to_string(),
+            name: "Hands-free mode".to_string(),
+            description: "Press to start and stop dictation.".to_string(),
+            default_binding: handsfree_shortcut.to_string(),
+            current_binding: handsfree_shortcut.to_string(),
         },
     );
 
@@ -624,10 +645,21 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
                 let mut updated = false;
 
                 // Merge default bindings into existing settings
-                for (key, value) in default_settings.bindings {
-                    if !settings.bindings.contains_key(&key) {
+                for (key, default_value) in default_settings.bindings {
+                    if let Some(existing) = settings.bindings.get_mut(&key) {
+                        // Update the default_binding if it changed in code
+                        // This ensures "Reset to default" always uses the latest code default
+                        if existing.default_binding != default_value.default_binding {
+                            debug!(
+                                "Updating default_binding for '{}': '{}' -> '{}'",
+                                key, existing.default_binding, default_value.default_binding
+                            );
+                            existing.default_binding = default_value.default_binding;
+                            updated = true;
+                        }
+                    } else {
                         debug!("Adding missing binding: {}", key);
-                        settings.bindings.insert(key, value);
+                        settings.bindings.insert(key, default_value);
                         updated = true;
                     }
                 }
@@ -690,6 +722,10 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
         .expect("Failed to initialize store");
 
     store.set("settings", serde_json::to_value(&settings).unwrap());
+    // Ensure changes are persisted to disk immediately
+    if let Err(e) = store.save() {
+        tracing::error!("Failed to save settings to disk: {}", e);
+    }
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
@@ -698,13 +734,6 @@ pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
     settings.bindings
 }
 
-pub fn get_stored_binding(app: &AppHandle, id: &str) -> ShortcutBinding {
-    let bindings = get_bindings(app);
-
-    let binding = bindings.get(id).unwrap().clone();
-
-    binding
-}
 
 pub fn get_history_limit(app: &AppHandle) -> usize {
     let settings = get_settings(app);

@@ -97,6 +97,8 @@ windows = { version = "0.61.3", features = [
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
+core-graphics = "0.25"
+core-foundation = "0.10"
 
 # MLX Local AI Provider - Apple Silicon only (macOS aarch64)
 # Uses Python sidecar with mlx-lm, hf-hub for model downloads

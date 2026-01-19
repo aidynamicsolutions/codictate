@@ -165,10 +165,28 @@
     },
     "hotkeySetup": {
       "back": "Back",
-      "title": "Set your shortcut",
-      "subtitle": "Configure your keyboard shortcut to start transcription",
-      "placeholder": "Hotkey configuration will appear here",
-      "continue": "Continue"
+      "title": "Press the keyboard shortcut to test it out",
+      "subtitle": "We recommend the",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "key at the bottom left of the keyboard.",
+      "question": "Does the button turn red while pressing it?",
+      "changeShortcut": "No, change shortcut",
+      "yes": "Yes",
+      "continue": "Continue",
+      "modal": {
+        "title": "Change hotkeys",
+        "subtitle": "Customize how you interact with {{appName}}",
+        "pushToTalk": {
+          "title": "Push to talk",
+          "description": "Hold to say something short"
+        },
+        "handsFree": {
+          "title": "Hands-free mode",
+          "description": "Press to start and stop dictation"
+        },
+        "addAnother": "Add another",
+        "resetToDefault": "Reset to default"
+      }
     },
     "learn": {
       "title": "You're all set!",
@@ -250,8 +268,12 @@
         "pressKeys": "Press keys...",
         "bindings": {
           "transcribe": {
-            "name": "Transcribe",
-            "description": "Converts your speech into text."
+            "name": "Push to talk",
+            "description": "Hold to say something short"
+          },
+          "transcribe_handsfree": {
+            "name": "Hands-free mode",
+            "description": "Press to start and stop dictation"
           },
           "cancel": {
             "name": "Cancel",
@@ -583,6 +605,8 @@
     "off": "Off",
     "yes": "Yes",
     "no": "No",
+    "space": "Space",
+    "optionKey": "⌥",
     "noOptionsFound": "No options found"
   },
   "accessibility": {

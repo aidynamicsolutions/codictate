@@ -21,6 +21,20 @@ async resetBinding(id: string) : Promise<Result<BindingResponse, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Reset multiple bindings atomically to their defaults.
+ * This bypasses duplicate checking between the bindings being reset,
+ * which solves the issue where resetting A then B fails if A's default
+ * conflicts with B's current value.
+ */
+async resetBindings(ids: string[]) : Promise<Result<BindingResponse[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_bindings", { ids }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePttSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_ptt_setting", { enabled }) };
@@ -774,6 +788,31 @@ async mlxSwitchModel(modelId: string) : Promise<Result<null, string>> {
 async mlxOpenModelsDir(modelId: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("mlx_open_models_dir", { modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Start Fn key monitoring using CGEventTap
+ * This sets up an event tap to detect Fn key presses via kCGEventFlagsChanged events
+ * When enable_transcription is true, pressing Fn will trigger the transcribe action
+ * If the monitor is already active, this will update the transcription flag without restarting
+ */
+async startFnKeyMonitor(enableTranscription: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("start_fn_key_monitor", { enableTranscription }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Stop Fn key monitoring
+ */
+async stopFnKeyMonitor() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_fn_key_monitor") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

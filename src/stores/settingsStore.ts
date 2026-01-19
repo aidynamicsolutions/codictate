@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import type { AppSettings as Settings, AudioDevice } from "@/bindings";
 import { commands } from "@/bindings";
+import { logError } from "@/utils/logging";
 
 interface SettingsStore {
   settings: Settings | null;
@@ -26,6 +27,7 @@ interface SettingsStore {
   refreshOutputDevices: () => Promise<void>;
   updateBinding: (id: string, binding: string) => Promise<void>;
   resetBinding: (id: string) => Promise<void>;
+  resetBindings: (ids: string[]) => Promise<void>;
   getSetting: <K extends keyof Settings>(key: K) => Settings[K] | undefined;
   isUpdatingKey: (key: string) => boolean;
   playTestSound: (soundType: "start" | "stop") => Promise<void>;
@@ -292,20 +294,23 @@ export const useSettingsStore = create<SettingsStore>()(
 
       try {
         // Optimistic update
-        set((state) => ({
-          settings: state.settings
-            ? {
-                ...state.settings,
-                bindings: {
-                  ...state.settings.bindings,
-                  [id]: {
-                    ...state.settings.bindings[id]!,
-                    current_binding: binding,
+        set((state) => {
+          const newState = {
+            settings: state.settings
+              ? {
+                  ...state.settings,
+                  bindings: {
+                    ...state.settings.bindings,
+                    [id]: {
+                      ...state.settings.bindings[id]!,
+                      current_binding: binding,
+                    },
                   },
-                },
-              }
-            : null,
-        }));
+                }
+              : null,
+          };
+          return newState;
+        });
 
         const result = await commands.changeBinding(id, binding);
 
@@ -339,6 +344,9 @@ export const useSettingsStore = create<SettingsStore>()(
           }));
         }
 
+        // Refresh settings from backend to ensure we're in sync
+        await get().refreshSettings();
+
         // Re-throw to let the caller know it failed
         throw error;
       } finally {
@@ -358,6 +366,23 @@ export const useSettingsStore = create<SettingsStore>()(
         await refreshSettings();
       } catch (error) {
         console.error(`Failed to reset binding ${id}:`, error);
+      } finally {
+        setUpdating(updateKey, false);
+      }
+    },
+
+    // Reset multiple bindings atomically (avoids conflicts between them)
+    resetBindings: async (ids) => {
+      const { setUpdating, refreshSettings } = get();
+      const updateKey = "bindings_reset";
+
+      setUpdating(updateKey, true);
+
+      try {
+        await commands.resetBindings(ids);
+        await refreshSettings();
+      } catch (error) {
+        logError(`Failed to reset bindings ${ids.join(", ")}: ${error}`, "fe-settings");
       } finally {
         setUpdating(updateKey, false);
       }

@@ -74,7 +74,21 @@ Handy is a cross-platform desktop speech-to-text app built with Tauri 2.x (Rust 
   - `vad/` - Voice Activity Detection (Silero VAD)
 - `commands/` - Tauri command handlers for frontend communication
 - `shortcut.rs` - Global keyboard shortcut handling
+- `fn_key_monitor.rs` - Native macOS Fn/Globe key detection (cannot use Tauri global shortcuts for fn)
 - `settings.rs` - Application settings management
+
+### Keyboard Shortcuts
+
+**Fn key on macOS**: The Fn/Globe key cannot be captured via Tauri's global shortcut API. It's handled natively in `fn_key_monitor.rs` using `CGEventTap`, emitting `fn-key-down`/`fn-key-up` Tauri events.
+
+**Reserved shortcuts**: Common system shortcuts are blocked in `shortcut.rs` to prevent users from accidentally overriding copy/paste etc. Includes:
+- macOS: `fn+a/c/d/e/f/h/m/n/q`, `cmd+c/v/x/z/a/s/tab/space/q`
+- Windows/Linux: `ctrl+c/v/x/z/a/s`, `alt+tab/f4`, `super+l/d`
+
+**Shortcut recording**: Use the shared `useShortcutRecorder` hook (`src/hooks/useShortcutRecorder.ts`) for recording shortcuts. Key patterns:
+- Uses refs (`isRecordingRef`, `recordedKeysRef`, `saveInProgress`) for synchronous access in async callbacks
+- Avoid calling async functions from within `setState` updaters
+- Use `resetBindings` (plural) to atomically reset multiple shortcuts
 
 ### Frontend Structure (src/)
 
