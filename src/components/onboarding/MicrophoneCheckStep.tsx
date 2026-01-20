@@ -338,7 +338,7 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
               </div>
 
               {/* Action buttons */}
-              <div className="flex items-center justify-center gap-3">
+              <div className="flex items-center justify-end gap-3">
 
                 <Button
                   variant="outline"
@@ -348,7 +348,7 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
                   {t("onboarding.microphoneCheck.changeMicrophone")}
                 </Button>
 
-                <Button onClick={handleContinue}>
+                <Button onClick={handleContinue} className="min-w-[80px]">
                   {t("onboarding.microphoneCheck.yes")}
                 </Button>
               </div>

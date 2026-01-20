@@ -338,12 +338,12 @@ export const HotkeySetupStep: React.FC<HotkeySetupStepProps> = ({
               </div>
 
               {/* Action buttons */}
-              <div className="flex items-center justify-center gap-3">
+              <div className="flex items-center justify-end gap-3">
                 <Button variant="outline" onClick={() => setIsModalOpen(true)}>
                   {t("onboarding.hotkeySetup.changeShortcut")}
                 </Button>
 
-                <Button onClick={handleContinue}>
+                <Button onClick={handleContinue} className="min-w-[80px]">
                   {t("onboarding.hotkeySetup.yes")}
                 </Button>
               </div>

@@ -28,6 +28,9 @@ import {
   getLanguageLabel,
 } from "@/lib/constants/languageData";
 
+// Maximum number of languages user can select (prevents UI overflow and improves UX)
+const MAX_SELECTED_LANGUAGES = 8;
+
 interface LanguageSelectStepProps {
   onContinue: () => void;
   onBack: () => void;
@@ -178,6 +181,9 @@ export const LanguageSelectStep: React.FC<LanguageSelectStepProps> = ({
     setIsModalOpen(false);
   };
 
+  // Check if selection limit is reached
+  const isAtLimit = pendingLanguages.length >= MAX_SELECTED_LANGUAGES;
+
   // Toggle language selection in modal
   const handleToggleLanguage = (code: string) => {
     setPendingLanguages((prev) => {
@@ -188,7 +194,10 @@ export const LanguageSelectStep: React.FC<LanguageSelectStepProps> = ({
         }
         return prev;
       } else {
-        // Add language
+        // Add language only if under the limit
+        if (prev.length >= MAX_SELECTED_LANGUAGES) {
+          return prev;
+        }
         return [...prev, code];
       }
     });
@@ -269,7 +278,9 @@ export const LanguageSelectStep: React.FC<LanguageSelectStepProps> = ({
               <div className="flex flex-col gap-6">
                 {/* Section title */}
                 <p className="text-center text-foreground font-medium">
-                  {t("onboarding.languageSelect.yourSelectedLanguage")}
+                  {selectedLanguage === "auto" || savedLanguages.length <= 1
+                    ? t("onboarding.languageSelect.yourSelectedLanguage")
+                    : t("onboarding.languageSelect.yourSelectedLanguages")}
                 </p>
 
                 {/* Language chips area */}
@@ -313,11 +324,11 @@ export const LanguageSelectStep: React.FC<LanguageSelectStepProps> = ({
                 </div>
 
                 {/* Action buttons */}
-                <div className="flex items-center justify-center gap-3">
+                <div className="flex items-center justify-end gap-3">
                   <Button variant="outline" onClick={handleOpenModal}>
                     {t("onboarding.languageSelect.changeLanguages")}
                   </Button>
-                  <Button onClick={handleContinue}>
+                  <Button onClick={handleContinue} className="min-w-[80px]">
                     {t("onboarding.languageSelect.continue")}
                   </Button>
                 </div>
@@ -383,26 +394,39 @@ export const LanguageSelectStep: React.FC<LanguageSelectStepProps> = ({
                       <div
                         className={`grid grid-cols-3 gap-2 pr-4 ${autoDetect ? "opacity-60" : ""}`}
                       >
-                        {filteredLanguages.map((lang) => (
-                          <LanguageGridItem
-                            key={lang.code}
-                            code={lang.code}
-                            label={lang.label}
-                            flag={lang.flag}
-                            isSelected={pendingLanguages.includes(lang.code)}
-                            isDisabled={autoDetect}
-                            onClick={() => handleToggleLanguage(lang.code)}
-                          />
-                        ))}
+                        {filteredLanguages.map((lang) => {
+                          const isSelected = pendingLanguages.includes(lang.code);
+                          // Disable if auto-detect is on OR if limit reached and not already selected
+                          const isDisabled = autoDetect || (isAtLimit && !isSelected);
+                          return (
+                            <LanguageGridItem
+                              key={lang.code}
+                              code={lang.code}
+                              label={lang.label}
+                              flag={lang.flag}
+                              isSelected={isSelected}
+                              isDisabled={isDisabled}
+                              onClick={() => handleToggleLanguage(lang.code)}
+                            />
+                          );
+                        })}
                       </div>
                     </ScrollArea>
                   </div>
 
                   {/* Right: Selected panel */}
                   <div className="w-48 flex flex-col">
-                    <h4 className="text-sm font-medium text-foreground mb-3">
-                      {t("onboarding.languageSelect.modal.selected")}
-                    </h4>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-sm font-medium text-foreground">
+                        {t("onboarding.languageSelect.modal.selected")}
+                      </h4>
+                      {!autoDetect && (
+                        <span className={`text-xs ${isAtLimit ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                          {pendingLanguages.length}/{MAX_SELECTED_LANGUAGES}
+                        </span>
+                      )}
+                    </div>
+
 
                     {autoDetect ? (
                       <div className="flex items-center gap-2 text-sm text-muted-foreground">

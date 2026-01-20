@@ -194,6 +194,7 @@
       "subtitle": "{{appName}} works in 100 languages.",
       "description": "Select the languages you speak or let {{appName}} detect them automatically.",
       "yourSelectedLanguage": "Your selected language",
+      "yourSelectedLanguages": "Your selected languages",
       "changeLanguages": "Change languages",
       "continue": "Continue",
       "makeActiveHint": "Make this the default active language",
@@ -205,7 +206,8 @@
         "autoDetectMessage": "Auto-detect is on. {{appName}} will try to detect the language you are speaking.",
         "selected": "Selected",
         "languagesCount": "{{count}} languages",
-        "saveAndClose": "Save and close"
+        "saveAndClose": "Save and close",
+        "maxReached": "Maximum {{max}} languages allowed"
       }
     },
     "learn": {
