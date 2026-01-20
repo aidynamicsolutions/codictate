@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/shared/ui/button";
 import { Input } from "@/components/shared/ui/input";
 import OnboardingLayout from "./OnboardingLayout";
@@ -44,6 +45,7 @@ type ProfessionalLevel = (typeof PROFESSIONAL_LEVELS)[number];
 
 interface TellUsAboutYouStepProps {
   onContinue: (workRole: string, professionalLevel?: string, otherText?: string) => void;
+  onBack?: () => void;
   initialWorkRole?: string;
   initialProfessionalLevel?: string;
   initialOtherText?: string;
@@ -51,6 +53,7 @@ interface TellUsAboutYouStepProps {
 
 export const TellUsAboutYouStep: React.FC<TellUsAboutYouStepProps> = ({
   onContinue,
+  onBack,
   initialWorkRole = "",
   initialProfessionalLevel = "",
   initialOtherText = "",
@@ -116,11 +119,25 @@ export const TellUsAboutYouStep: React.FC<TellUsAboutYouStepProps> = ({
     <OnboardingLayout
       currentStep="tellUsAboutYou"
       leftContent={
-        <div className="flex flex-col gap-8">
-          {/* Title */}
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
-            {t("onboarding.tellUsAboutYou.title")}
-          </h1>
+        <div className="flex flex-col h-full">
+          {/* Back button - positioned at top */}
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit mb-auto"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {t("onboarding.tellUsAboutYou.back")}
+            </button>
+          )}
+
+          {/* Content centered vertically */}
+          <div className="flex flex-col gap-8 my-auto">
+            {/* Title */}
+            <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
+              {t("onboarding.tellUsAboutYou.title")}
+            </h1>
 
           {/* Work Role Section */}
           <div className="flex flex-col gap-3">
@@ -186,12 +203,13 @@ export const TellUsAboutYouStep: React.FC<TellUsAboutYouStepProps> = ({
               </div>
             </div>
           )}
+          </div>
 
+          {/* Continue button at bottom */}
           <Button
             onClick={handleContinue}
             size="lg"
-            className="mt-2 w-fit"
-            disabled={!selectedWorkRole}
+            className="mt-auto w-fit"
           >
             {t("onboarding.tellUsAboutYou.continue")}
           </Button>

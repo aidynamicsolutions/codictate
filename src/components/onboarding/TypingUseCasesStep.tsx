@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/shared/ui/button";
 import { Input } from "@/components/shared/ui/input";
 import OnboardingLayout from "./OnboardingLayout";
@@ -21,12 +22,14 @@ type TypingUseCase = (typeof TYPING_USE_CASES)[number];
 
 interface TypingUseCasesStepProps {
   onContinue: (useCases: string[], otherText?: string) => void;
+  onBack?: () => void;
   initialUseCases?: string[];
   initialOtherText?: string;
 }
 
 export const TypingUseCasesStep: React.FC<TypingUseCasesStepProps> = ({
   onContinue,
+  onBack,
   initialUseCases = [],
   initialOtherText = "",
 }) => {
@@ -78,21 +81,35 @@ export const TypingUseCasesStep: React.FC<TypingUseCasesStepProps> = ({
     <OnboardingLayout
       currentStep="typingUseCases"
       leftContent={
-        <div className="flex flex-col gap-8">
-          {/* Title */}
-          <div className="flex flex-col gap-8">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
-              {t("onboarding.typingUseCases.title")}
-            </h1>
-            <div className="flex flex-col gap-0">
-              <p className="text-base text-muted-foreground">
-                {t("onboarding.typingUseCases.subtitle")}
-              </p>
-              <p className="text-base text-muted-foreground">
-                {t("onboarding.typingUseCases.subtitleHint")}
-              </p>
+        <div className="flex flex-col h-full">
+          {/* Back button - positioned at top */}
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit mb-auto"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {t("onboarding.typingUseCases.back")}
+            </button>
+          )}
+
+          {/* Content centered vertically */}
+          <div className="flex flex-col gap-8 my-auto">
+            {/* Title */}
+            <div className="flex flex-col gap-8">
+              <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
+                {t("onboarding.typingUseCases.title")}
+              </h1>
+              <div className="flex flex-col gap-0">
+                <p className="text-base text-muted-foreground">
+                  {t("onboarding.typingUseCases.subtitle")}
+                </p>
+                <p className="text-base text-muted-foreground">
+                  {t("onboarding.typingUseCases.subtitleHint")}
+                </p>
+              </div>
             </div>
-          </div>
 
           {/* Use Cases Selection */}
           <div className="flex flex-col gap-3">
@@ -131,13 +148,13 @@ export const TypingUseCasesStep: React.FC<TypingUseCasesStepProps> = ({
                 </span>
               </div>
             </div>
-          )}
+          )}          </div>
 
+          {/* Continue button at bottom */}
           <Button
             onClick={handleContinue}
             size="lg"
-            className="mt-2 w-fit"
-            disabled={selectedUseCases.length === 0}
+            className="mt-auto w-fit"
           >
             {t("onboarding.typingUseCases.continue")}
           </Button>

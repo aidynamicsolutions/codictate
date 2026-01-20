@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, Check, Info } from "lucide-react";
+import { Loader2, Check, Info, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/shared/ui/button";
 import {
   Tooltip,
@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@/components/shared/ui/tooltip";
 import OnboardingLayout from "./OnboardingLayout";
+import SkipConfirmationModal from "./SkipConfirmationModal";
 import {
   checkAccessibilityPermission,
   requestAccessibilityPermission,
@@ -30,6 +31,7 @@ const SYSTEM_SETTINGS_URLS = {
 
 interface PermissionsStepProps {
   onContinue: () => void;
+  onBack?: () => void;
 }
 
 interface PermissionCardProps {
@@ -119,6 +121,7 @@ const PermissionCard: React.FC<PermissionCardProps> = ({
 
 export const PermissionsStep: React.FC<PermissionsStepProps> = ({
   onContinue,
+  onBack,
 }) => {
   const { t } = useTranslation();
 
@@ -127,6 +130,9 @@ export const PermissionsStep: React.FC<PermissionsStepProps> = ({
     useState<PermissionStatus>("idle");
   const [microphoneStatus, setMicrophoneStatus] =
     useState<PermissionStatus>("idle");
+
+  // Skip confirmation modal state
+  const [showSkipModal, setShowSkipModal] = useState(false);
 
   // Retry flags (shown after timeout)
   const [accessibilityShowRetry, setAccessibilityShowRetry] = useState(false);
@@ -305,10 +311,25 @@ export const PermissionsStep: React.FC<PermissionsStepProps> = ({
   const videoSource = getVideoSource();
 
   return (
+    <>
     <OnboardingLayout
       currentStep="permissions"
       leftContent={
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col h-full">
+          {/* Back button - positioned at top */}
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit mb-auto"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {t("onboarding.permissions.back")}
+            </button>
+          )}
+
+          {/* Content centered vertically */}
+          <div className="flex flex-col gap-6 my-auto">
           <div className="flex flex-col gap-2 mb-8">
             <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl max-w-[380px]">
               {t("onboarding.permissions.title", { appName: t("appName") })}
@@ -356,12 +377,19 @@ export const PermissionsStep: React.FC<PermissionsStepProps> = ({
             retryText={t("onboarding.permissions.retry")}
             showRetry={microphoneShowRetry}
           />
+          </div>
 
+          {/* Continue button at bottom */}
           <Button
-            onClick={onContinue}
+            onClick={() => {
+              if (canContinue) {
+                onContinue();
+              } else {
+                setShowSkipModal(true);
+              }
+            }}
             size="lg"
-            className="mt-4 w-fit"
-            disabled={!canContinue}
+            className="mt-auto w-fit"
           >
             {t("onboarding.permissions.continue")}
           </Button>
@@ -385,6 +413,18 @@ export const PermissionsStep: React.FC<PermissionsStepProps> = ({
         </div>
       }
     />
+
+    {/* Skip confirmation modal */}
+    <SkipConfirmationModal
+      open={showSkipModal}
+      onOpenChange={setShowSkipModal}
+      onConfirm={() => {
+        setShowSkipModal(false);
+        onContinue();
+      }}
+      onCancel={() => setShowSkipModal(false)}
+    />
+    </>
   );
 };
 

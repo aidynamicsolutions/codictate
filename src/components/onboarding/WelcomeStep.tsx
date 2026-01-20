@@ -43,41 +43,45 @@ export const WelcomeStep: React.FC<WelcomeStepProps> = ({
     <OnboardingLayout
       currentStep="welcome"
       leftContent={
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
-              {t("onboarding.welcome.title")}
-            </h1>
-            <p className="text-muted-foreground">
-              {t("onboarding.welcome.subtitle")}
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-4">
-            <div className="relative">
-              <Input
-                type="text"
-                placeholder={t("onboarding.welcome.namePlaceholder")}
-                value={name}
-                onChange={handleNameChange}
-                onKeyDown={handleKeyDown}
-                className="h-12 text-base"
-                maxLength={MAX_INPUT_LENGTH}
-                autoFocus
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                {name.length}/{MAX_INPUT_LENGTH}
-              </span>
+        <div className="flex flex-col h-full">
+          {/* Content centered vertically */}
+          <div className="flex flex-col gap-6 my-auto">
+            <div className="flex flex-col gap-2">
+              <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
+                {t("onboarding.welcome.title")}
+              </h1>
+              <p className="text-muted-foreground">
+                {t("onboarding.welcome.subtitle")}
+              </p>
             </div>
 
-            <Button
-              onClick={handleContinue}
-              size="lg"
-              className="w-fit"
-            >
-              {t("onboarding.welcome.continue")}
-            </Button>
+            <div className="flex flex-col gap-4">
+              <div className="relative">
+                <Input
+                  type="text"
+                  placeholder={t("onboarding.welcome.namePlaceholder")}
+                  value={name}
+                  onChange={handleNameChange}
+                  onKeyDown={handleKeyDown}
+                  className="h-12 text-base"
+                  maxLength={MAX_INPUT_LENGTH}
+                  autoFocus
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                  {name.length}/{MAX_INPUT_LENGTH}
+                </span>
+              </div>
+            </div>
           </div>
+
+          {/* Continue button at bottom */}
+          <Button
+            onClick={handleContinue}
+            size="lg"
+            className="mt-auto w-fit"
+          >
+            {t("onboarding.welcome.continue")}
+          </Button>
         </div>
       }
       rightContent={

@@ -37,6 +37,7 @@
       "defaultName": "there",
       "question": "Where did you hear about us?",
       "continue": "Continue",
+      "back": "Back",
       "sources": {
         "social_media": "Social media",
         "youtube": "YouTube",
@@ -82,6 +83,7 @@
       "workQuestion": "What do you do for work?",
       "levelQuestion": "Tell us more",
       "continue": "Continue",
+      "back": "Back",
       "workRoles": {
         "founder_ceo": "Founder/CEO",
         "consultant": "Consultant",
@@ -117,6 +119,7 @@
       "subtitle": "This helps us tailor your experience.",
       "subtitleHint": "Select all that apply.",
       "continue": "Continue",
+      "back": "Back",
       "pleaseSpecify": "Please specify",
       "otherPlaceholder": "Type your answer...",
       "options": {
@@ -147,7 +150,14 @@
       "allow": "Allow",
       "checking": "Checking...",
       "retry": "Retry",
-      "continue": "Continue"
+      "continue": "Continue",
+      "back": "Back",
+      "skipModal": {
+        "title": "Permissions Required",
+        "description": "{{appName}} works best with both permissions enabled. You can continue without them, but some features may be limited.",
+        "continueAnyway": "Continue Anyway",
+        "goBack": "Go Back"
+      }
     },
     "microphoneCheck": {
       "back": "Back",
@@ -214,7 +224,8 @@
       "title": "You're all set!",
       "subtitle": "Here's how to use the app",
       "placeholder": "Tutorial content will appear here",
-      "complete": "Get Started"
+      "complete": "Get Started",
+      "back": "Back"
     },
     "modelCard": {
       "accuracy": "accuracy",

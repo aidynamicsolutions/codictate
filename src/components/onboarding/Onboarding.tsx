@@ -165,6 +165,10 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     await goToNextStep();
   };
 
+  const handlePermissionsBack = async () => {
+    await goToPreviousStep();
+  };
+
   const handleMicrophoneCheckContinue = async () => {
     await goToNextStep();
   };
@@ -195,6 +199,22 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     onComplete();
   };
 
+  const handleLearnBack = async () => {
+    await goToPreviousStep();
+  };
+
+  const handleAttributionBack = async () => {
+    await goToPreviousStep();
+  };
+
+  const handleTellUsAboutYouBack = async () => {
+    await goToPreviousStep();
+  };
+
+  const handleTypingUseCasesBack = async () => {
+    await goToPreviousStep();
+  };
+
   // Render current step
   switch (currentStep) {
     case "welcome":
@@ -206,6 +226,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         <AttributionStep
           userName={userName}
           onContinue={handleAboutYouContinue}
+          onBack={handleAttributionBack}
           initialSource={referralSource}
           initialDetail={referralDetail}
           initialOtherText={referralOtherText}
@@ -215,6 +236,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       return (
         <TellUsAboutYouStep
           onContinue={handleTellUsAboutYouContinue}
+          onBack={handleTellUsAboutYouBack}
           initialWorkRole={workRole}
           initialProfessionalLevel={professionalLevel}
         />
@@ -223,12 +245,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       return (
         <TypingUseCasesStep
           onContinue={handleTypingUseCasesContinue}
+          onBack={handleTypingUseCasesBack}
           initialUseCases={typingUseCases}
           initialOtherText={typingUseCasesOther}
         />
       );
     case "permissions":
-      return <PermissionsStep onContinue={handlePermissionsContinue} />;
+      return <PermissionsStep onContinue={handlePermissionsContinue} onBack={handlePermissionsBack} />;
     case "microphoneCheck":
       return (
         <MicrophoneCheckStep
@@ -251,7 +274,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         />
       );
     case "learn":
-      return <LearnStep onComplete={handleLearnComplete} />;
+      return <LearnStep onComplete={handleLearnComplete} onBack={handleLearnBack} />;
     default:
       return (
         <WelcomeStep onContinue={handleWelcomeContinue} initialName={userName} />

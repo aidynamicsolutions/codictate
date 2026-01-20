@@ -8,6 +8,7 @@ import {
   Facebook,
   Linkedin,
   AtSign,
+  ArrowLeft,
 } from "lucide-react";
 import { Button } from "@/components/shared/ui/button";
 import { Input } from "@/components/shared/ui/input";
@@ -48,6 +49,7 @@ type PrimarySource = (typeof PRIMARY_SOURCES)[number];
 interface AttributionStepProps {
   userName: string;
   onContinue: (source: string, detail?: string, otherText?: string) => void;
+  onBack?: () => void;
   initialSource?: string;
   initialDetail?: string;
   initialOtherText?: string;
@@ -56,6 +58,7 @@ interface AttributionStepProps {
 export const AttributionStep: React.FC<AttributionStepProps> = ({
   userName,
   onContinue,
+  onBack,
   initialSource = "",
   initialDetail = "",
   initialOtherText = "",
@@ -119,82 +122,97 @@ export const AttributionStep: React.FC<AttributionStepProps> = ({
     <OnboardingLayout
       currentStep="attribution"
       leftContent={
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
-              {t("onboarding.attribution.greeting", { name: displayName })}
-            </h1>
-            <p className="text-muted-foreground">
-              {t("onboarding.attribution.question")}
-            </p>
-          </div>
-
-          {/* Primary sources - single choice */}
-          <div className="flex flex-wrap gap-2">
-            {PRIMARY_SOURCES.map((source) => {
-              const isSelected = selectedSource === source;
-              return (
-                <button
-                  key={source}
-                  onClick={() => selectSource(source)}
-                  className={getButtonClass(isSelected)}
-                >
-                  {t(`onboarding.attribution.sources.${source}`)}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Secondary options for social media - single choice with icons */}
-          {showSocialMediaOptions && (
-            <div className="flex flex-col gap-3">
-              <p className="text-sm font-medium text-muted-foreground">
-                {t("onboarding.attribution.secondaryQuestion.social_media")}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {SOCIAL_MEDIA_OPTIONS.map(({ id, icon: Icon }) => {
-                  const isSelected = selectedDetail === id;
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => selectDetail(id)}
-                      className={`flex items-center gap-2 ${getButtonClass(isSelected)}`}
-                    >
-                      {Icon && <Icon className="h-4 w-4" />}
-                      {t(`onboarding.attribution.details.social_media.${id}`)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+        <div className="flex flex-col h-full">
+          {/* Back button - positioned at top */}
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit mb-auto"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              {t("onboarding.attribution.back")}
+            </button>
           )}
 
-          {/* Other input field */}
-          {showOtherInput && (
+          {/* Content centered vertically */}
+          <div className="flex flex-col gap-6 my-auto">
             <div className="flex flex-col gap-2">
-              <p className="text-sm font-medium text-muted-foreground">
-                {t("onboarding.attribution.pleaseSpecify")}
+              <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
+                {t("onboarding.attribution.greeting", { name: displayName })}
+              </h1>
+              <p className="text-muted-foreground">
+                {t("onboarding.attribution.question")}
               </p>
-              <div className="relative max-w-sm">
-                <Input
-                  type="text"
-                  value={otherText}
-                  onChange={handleOtherTextChange}
-                  placeholder={t("onboarding.attribution.otherPlaceholder")}
-                  maxLength={MAX_INPUT_LENGTH}
-                />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                  {otherText.length}/{MAX_INPUT_LENGTH}
-                </span>
-              </div>
             </div>
-          )}
 
+            {/* Primary sources - single choice */}
+            <div className="flex flex-wrap gap-2">
+              {PRIMARY_SOURCES.map((source) => {
+                const isSelected = selectedSource === source;
+                return (
+                  <button
+                    key={source}
+                    onClick={() => selectSource(source)}
+                    className={getButtonClass(isSelected)}
+                  >
+                    {t(`onboarding.attribution.sources.${source}`)}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Secondary options for social media - single choice with icons */}
+            {showSocialMediaOptions && (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm font-medium text-muted-foreground">
+                  {t("onboarding.attribution.secondaryQuestion.social_media")}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {SOCIAL_MEDIA_OPTIONS.map(({ id, icon: Icon }) => {
+                    const isSelected = selectedDetail === id;
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => selectDetail(id)}
+                        className={`flex items-center gap-2 ${getButtonClass(isSelected)}`}
+                      >
+                        {Icon && <Icon className="h-4 w-4" />}
+                        {t(`onboarding.attribution.details.social_media.${id}`)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Other input field */}
+            {showOtherInput && (
+              <div className="flex flex-col gap-2">
+                <p className="text-sm font-medium text-muted-foreground">
+                  {t("onboarding.attribution.pleaseSpecify")}
+                </p>
+                <div className="relative max-w-sm">
+                  <Input
+                    type="text"
+                    value={otherText}
+                    onChange={handleOtherTextChange}
+                    placeholder={t("onboarding.attribution.otherPlaceholder")}
+                    maxLength={MAX_INPUT_LENGTH}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                    {otherText.length}/{MAX_INPUT_LENGTH}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Continue button at bottom */}
           <Button
             onClick={handleContinue}
             size="lg"
-            className="mt-4 w-fit"
-            disabled={!selectedSource}
+            className="mt-auto w-fit"
           >
             {t("onboarding.attribution.continue")}
           </Button>
@@ -212,3 +230,4 @@ export const AttributionStep: React.FC<AttributionStepProps> = ({
 };
 
 export default AttributionStep;
+
