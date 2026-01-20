@@ -188,6 +188,26 @@
         "resetToDefault": "Reset to default"
       }
     },
+    "languageSelect": {
+      "back": "Back",
+      "title": "Set the language(s) you speak",
+      "subtitle": "{{appName}} works in 100 languages.",
+      "description": "Select the languages you speak or let {{appName}} detect them automatically.",
+      "yourSelectedLanguage": "Your selected language",
+      "changeLanguages": "Change languages",
+      "continue": "Continue",
+      "makeActiveHint": "Make this the default active language",
+      "modal": {
+        "title": "Languages",
+        "subtitle": "Select the languages you want to use with {{appName}}",
+        "searchPlaceholder": "Search for any languages",
+        "autoDetect": "Auto-detect",
+        "autoDetectMessage": "Auto-detect is on. {{appName}} will try to detect the language you are speaking.",
+        "selected": "Selected",
+        "languagesCount": "{{count}} languages",
+        "saveAndClose": "Save and close"
+      }
+    },
     "learn": {
       "title": "You're all set!",
       "subtitle": "Here's how to use the app",

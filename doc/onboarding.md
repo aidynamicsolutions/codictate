@@ -5,11 +5,11 @@ Comprehensive documentation of the Codictate onboarding experience.
 ## Flow Overview
 
 ```
-Welcome → Attribution → Tell Us About You → Typing Use Cases → Permissions → Microphone Check → Hotkey Setup → Learn
-   1           2                3                  4               5              6                 7            8
+Welcome → Attribution → Tell Us About You → Typing Use Cases → Permissions → Microphone Check → Hotkey Setup → Language Select → Learn
+   1           2                3                  4               5              6                 7                8            9
 ```
 
-Steps 1-4 collect user profile data. Steps 5-8 configure the app.
+Steps 1-4 collect user profile data. Steps 5-9 configure the app.
 
 ---
 
@@ -166,7 +166,29 @@ Requests macOS accessibility and microphone permissions.
 - Windows: `super+l/d/e/r/tab`, `alt+tab/f4`, `ctrl+c/v/x/z/y/a/s/n/o/p/w`
 - Linux: `alt+tab/f4`, `super+l/d`, `ctrl+c/v/x/z/y/a/s/n/o/p/w`
 
-### 8. Learn Step (Placeholder)
+### 8. Language Select Step
+
+**Component**: [LanguageSelectStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/LanguageSelectStep.tsx)
+
+**Features**:
+- Multi-language selection with one active language
+- 100 Whisper-supported languages with emoji flags
+- Searchable modal with 3-column grid layout
+- Auto-detect toggle (uses Whisper's automatic language detection)
+- Active language appears leftmost with highlighted style
+- Clicking inactive language makes it active (reorders)
+- Tooltip on hover: "Make this the default active language"
+
+**Backend Settings**:
+- `selected_language: String` - Active language code or "auto"
+- `saved_languages: Vec<String>` - User's preferred language list
+
+**Language Data**: [languageData.ts](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/lib/constants/languageData.ts)
+- `WhisperLanguageCode` union type for compile-time safety
+- All 100 Whisper languages with ISO 639-1 codes and emoji flags
+- Helper functions: `getLanguageByCode`, `getLanguageFlag`, `getLanguageLabel` (returns `undefined` for "auto" to use i18n)
+
+### 9. Learn Step (Placeholder)
 
 **Component**: [LearnStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/LearnStep.tsx)
 
@@ -230,7 +252,9 @@ All strings in [translation.json](file:///Users/tiger/Dev/opensource/speechGen/H
 - `onboarding.tellUsAboutYou.*`
 - `onboarding.typingUseCases.*`
 - `onboarding.permissions.*`
-- `onboarding.setup.*`
+- `onboarding.microphoneCheck.*`
+- `onboarding.hotkeySetup.*`
+- `onboarding.languageSelect.*`
 - `onboarding.learn.*`
 
 ---

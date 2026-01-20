@@ -7,6 +7,7 @@ import TypingUseCasesStep from "./TypingUseCasesStep";
 import PermissionsStep from "./PermissionsStep";
 import MicrophoneCheckStep from "./MicrophoneCheckStep";
 import HotkeySetupStep from "./HotkeySetupStep";
+import LanguageSelectStep from "./LanguageSelectStep";
 import LearnStep from "./LearnStep";
 import type { OnboardingStep } from "./OnboardingProgress";
 
@@ -22,6 +23,7 @@ const STEP_ORDER: OnboardingStep[] = [
   "permissions",
   "microphoneCheck",
   "hotkeySetup",
+  "languageSelect",
   "learn",
 ];
 
@@ -179,6 +181,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     await goToPreviousStep();
   };
 
+  const handleLanguageSelectContinue = async () => {
+    await goToNextStep();
+  };
+
+  const handleLanguageSelectBack = async () => {
+    await goToPreviousStep();
+  };
+
   const handleLearnComplete = async () => {
     await updateProfile("onboarding_completed", true);
     await updateProfile("onboarding_step", STEP_ORDER.length + 1);
@@ -231,6 +241,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         <HotkeySetupStep
           onContinue={handleHotkeySetupContinue}
           onBack={handleHotkeySetupBack}
+        />
+      );
+    case "languageSelect":
+      return (
+        <LanguageSelectStep
+          onContinue={handleLanguageSelectContinue}
+          onBack={handleLanguageSelectBack}
         />
       );
     case "learn":

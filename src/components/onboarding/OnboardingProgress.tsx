@@ -2,7 +2,7 @@ import React from "react";
 import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-export type OnboardingStep = "welcome" | "attribution" | "tellUsAboutYou" | "typingUseCases" | "permissions" | "microphoneCheck" | "hotkeySetup" | "learn";
+export type OnboardingStep = "welcome" | "attribution" | "tellUsAboutYou" | "typingUseCases" | "permissions" | "microphoneCheck" | "hotkeySetup" | "languageSelect" | "learn";
 
 interface OnboardingProgressProps {
   currentStep: OnboardingStep;
@@ -12,7 +12,7 @@ const STEPS: OnboardingStep[] = ["welcome", "permissions", "microphoneCheck", "l
 
 // Map step IDs to their display label keys (for steps where the label differs from the ID)
 const STEP_LABELS: Partial<Record<OnboardingStep, string>> = {
-  microphoneCheck: "setup", // microphoneCheck and hotkeySetup both display as "Set Up"
+  microphoneCheck: "setup", // microphoneCheck, hotkeySetup, and languageSelect all display as "Set Up"
 };
 
 export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
@@ -23,8 +23,8 @@ export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
   const getStepIndex = (step: OnboardingStep) => {
     // Map "attribution", "tellUsAboutYou", and "typingUseCases" to "welcome" for progress display (they are part of welcome visually)
     if (step === "attribution" || step === "tellUsAboutYou" || step === "typingUseCases") return 0;
-    // Map "microphoneCheck" and "hotkeySetup" to "setup" (index 2) for progress display
-    if (step === "microphoneCheck" || step === "hotkeySetup") return 2;
+    // Map "microphoneCheck", "hotkeySetup", and "languageSelect" to "setup" (index 2) for progress display
+    if (step === "microphoneCheck" || step === "hotkeySetup" || step === "languageSelect") return 2;
     // Map "learn" to its index
     if (step === "learn") return 3;
     return STEPS.indexOf(step);
