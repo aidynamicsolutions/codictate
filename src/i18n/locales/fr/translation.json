@@ -54,6 +54,33 @@
         "description": "Very fast, English only. Handles accents well."
       }
     },
+    "learn": {
+      "title": "Appuyez sur le raccourci clavier pour utiliser Codictate",
+      "subtitle": "Maintenez la touche",
+      "subtitleEnd": "appuyée, parlez, puis relâchez pour insérer le texte dicté.",
+      "back": "Retour",
+      "skip": "Passer",
+      "complete": "Continuer",
+      "slackTitle": "Slack",
+      "botName": "Alex",
+      "you": "Vous",
+      "inputPlaceholder": "Maintenez la touche fn et commencez à parler...",
+      "botMessages": {
+        "greeting": "Salut {{name}}, est-ce que Codictate fonctionne pour vous ?"
+      },
+      "cannedResponses": [
+        "Super ! 🎉 Vous venez d'utiliser le push-to-talk. Maintenant essayez le mode mains libres - appuyez sur fn+Espace pour commencer, parlez, puis appuyez à nouveau sur fn+Espace pour arrêter.",
+        "Parfait ! Vous commencez à maîtriser ! Essayez encore une fois - plus vous pratiquez, plus cela devient naturel.",
+        "Excellent travail ! Vous pouvez utiliser Codictate partout où vous tapez - emails, messages, documents, code... les possibilités sont infinies !",
+        "Vous êtes un naturel ! N'hésitez pas à continuer à pratiquer, ou appuyez sur Continuer quand vous êtes prêt à utiliser Codictate.",
+        "Vous maîtrisez ! Prêt à commencer ?",
+        "Ça a l'air bien ! Cliquez sur Continuer quand vous êtes prêt.",
+        "Super ! Vous êtes prêt à utiliser Codictate comme un pro.",
+        "Bon travail ! Appuyez sur Continuer pour terminer la configuration.",
+        "Vous êtes un expert maintenant ! 🚀",
+        "Parfait ! Allons-y. Appuyez sur Continuer pour terminer la configuration."
+      ]
+    },
     "errors": {
       "loadModels": "Échec du chargement des modèles disponibles",
       "downloadModel": "Échec du téléchargement du modèle : {{error}}"

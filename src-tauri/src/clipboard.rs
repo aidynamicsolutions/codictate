@@ -363,7 +363,21 @@ fn paste_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
 
 pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let settings = get_settings(&app_handle);
-    let paste_method = settings.paste_method;
+    
+    // Check if onboarding paste override is enabled
+    // This works around WebView not receiving CGEvent-simulated Cmd+V keystrokes
+    let onboarding_override = app_handle
+        .try_state::<crate::OnboardingPasteOverride>()
+        .and_then(|state| state.lock().ok().map(|v| *v))
+        .unwrap_or(false);
+    
+    // Use Direct paste method if onboarding override is enabled
+    let paste_method = if onboarding_override {
+        info!("Using Direct paste method (onboarding override)");
+        crate::settings::PasteMethod::Direct
+    } else {
+        settings.paste_method
+    };
 
     // Append trailing space if setting is enabled
     let text = if settings.append_trailing_space {

@@ -54,6 +54,33 @@
         "description": "Very fast, English only. Handles accents well."
       }
     },
+    "learn": {
+      "title": "按下键盘快捷键以使用 Codictate",
+      "subtitle": "按住",
+      "subtitleEnd": "键，说话后松开即可插入语音文字。",
+      "back": "返回",
+      "skip": "跳过",
+      "complete": "继续",
+      "slackTitle": "Slack",
+      "botName": "Alex",
+      "you": "你",
+      "inputPlaceholder": "按住 fn 键并开始说话...",
+      "botMessages": {
+        "greeting": "你好 {{name}}，Codictate 对你有用吗？"
+      },
+      "cannedResponses": [
+        "太棒了！🎉 你刚刚使用了按住说话模式。现在试试免提模式 - 按 fn+空格开始，说话，然后再按 fn+空格停止。",
+        "完美！你越来越熟练了！再试一次 - 练习越多，就会越自然。",
+        "干得漂亮！你可以在任何需要打字的地方使用 Codictate - 邮件、消息、文档、代码...可能性是无限的！",
+        "你真是天生的！可以继续练习，或者准备好使用 Codictate 时点击继续。",
+        "你做到了！准备好开始了吗？",
+        "看起来不错！准备好后点击继续。",
+        "太好了！你已经准备好像专业人士一样使用 Codictate 了。",
+        "干得好！点击继续完成设置。",
+        "你现在是专家了！🚀",
+        "完美！让我们开始吧。点击继续完成设置。"
+      ]
+    },
     "errors": {
       "loadModels": "无法加载可用模型",
       "downloadModel": "模型下载失败: {{error}}"

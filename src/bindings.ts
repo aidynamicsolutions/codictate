@@ -391,6 +391,14 @@ async checkAppleIntelligenceAvailable() : Promise<boolean> {
 async logFromFrontend(level: string, sessionId: string | null, target: string, message: string) : Promise<void> {
     await TAURI_INVOKE("log_from_frontend", { level, sessionId, target, message });
 },
+/**
+ * Set the onboarding paste override.
+ * When true, forces Direct paste method to work around WebView not receiving
+ * CGEvent-simulated Cmd+V keystrokes from the same process.
+ */
+async setOnboardingPasteOverride(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_onboarding_paste_override", { enabled });
+},
 async getAvailableModels() : Promise<Result<ModelInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_models") };

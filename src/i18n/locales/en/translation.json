@@ -221,11 +221,31 @@
       }
     },
     "learn": {
-      "title": "You're all set!",
-      "subtitle": "Here's how to use the app",
-      "placeholder": "Tutorial content will appear here",
-      "complete": "Get Started",
-      "back": "Back"
+      "title": "Press the keyboard shortcut to use Codictate",
+      "subtitle": "Hold down on the",
+      "subtitleEnd": "key, speak, and let go to insert spoken text.",
+      "back": "Back",
+      "skip": "Skip",
+      "complete": "Continue",
+      "slackTitle": "Slack",
+      "botName": "Alex",
+      "you": "You",
+      "inputPlaceholder": "Hold down on the fn key and start speaking...",
+      "botMessages": {
+        "greeting": "Hey {{name}}, is Codictate working for you?"
+      },
+      "cannedResponses": [
+        "That's great to hear! 🎉 You just used push-to-talk. Now try hands-free mode - press fn+Space to start, speak, then press fn+Space again to stop.",
+        "Perfect! You're getting the hang of it! Try one more time - the more you practice, the more natural it becomes.",
+        "Awesome work! You can use Codictate anywhere you type - emails, messages, documents, code... the possibilities are endless!",
+        "You're a natural! Feel free to keep practicing, or press Continue when you're ready to start using Codictate.",
+        "You've got this! Ready to get started?",
+        "Looking good! Click Continue whenever you're ready.",
+        "Nice! You're all set to use Codictate like a pro.",
+        "Great job! Press Continue to finish setup.",
+        "You're an expert now! 🚀",
+        "Perfect! Let's get you started. Press continue to finish setup."
+      ]
     },
     "modelCard": {
       "accuracy": "accuracy",

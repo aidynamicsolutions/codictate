@@ -274,7 +274,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         />
       );
     case "learn":
-      return <LearnStep onComplete={handleLearnComplete} onBack={handleLearnBack} />;
+      return (
+        <LearnStep
+          onComplete={handleLearnComplete}
+          onBack={handleLearnBack}
+          onSkip={handleLearnComplete}
+          userName={userName}
+        />
+      );
     default:
       return (
         <WelcomeStep onContinue={handleWelcomeContinue} initialName={userName} />

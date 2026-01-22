@@ -54,6 +54,33 @@
         "description": "Very fast, English only. Handles accents well."
       }
     },
+    "learn": {
+      "title": "Drücke das Tastenkürzel, um Codictate zu verwenden",
+      "subtitle": "Halte die",
+      "subtitleEnd": "-Taste gedrückt, sprich und lasse sie los, um den gesprochenen Text einzufügen.",
+      "back": "Zurück",
+      "skip": "Überspringen",
+      "complete": "Weiter",
+      "slackTitle": "Slack",
+      "botName": "Alex",
+      "you": "Du",
+      "inputPlaceholder": "Halte die fn-Taste gedrückt und beginne zu sprechen...",
+      "botMessages": {
+        "greeting": "Hey {{name}}, funktioniert Codictate bei dir?"
+      },
+      "cannedResponses": [
+        "Super! 🎉 Du hast gerade Push-to-Talk verwendet. Probiere jetzt den Freisprechmodus - drücke fn+Leertaste zum Starten, sprich, dann drücke fn+Leertaste erneut zum Stoppen.",
+        "Perfekt! Du bekommst den Dreh raus! Versuch es noch einmal - je mehr du übst, desto natürlicher wird es.",
+        "Tolle Arbeit! Du kannst Codictate überall verwenden, wo du tippst - E-Mails, Nachrichten, Dokumente, Code... die Möglichkeiten sind endlos!",
+        "Du bist ein Naturtalent! Übe ruhig weiter, oder drücke Weiter, wenn du bereit bist, Codictate zu nutzen.",
+        "Du schaffst das! Bereit loszulegen?",
+        "Sieht gut aus! Klicke auf Weiter, wenn du bereit bist.",
+        "Super! Du bist bereit, Codictate wie ein Profi zu nutzen.",
+        "Gute Arbeit! Drücke Weiter, um die Einrichtung abzuschließen.",
+        "Du bist jetzt ein Experte! 🚀",
+        "Perfekt! Lass uns loslegen. Drücke Weiter, um die Einrichtung abzuschließen."
+      ]
+    },
     "errors": {
       "loadModels": "Verfügbare Modelle konnten nicht geladen werden",
       "downloadModel": "Modell konnte nicht heruntergeladen werden: {{error}}"

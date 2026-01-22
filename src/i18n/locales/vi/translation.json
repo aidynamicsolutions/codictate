@@ -54,6 +54,33 @@
         "description": "Very fast, English only. Handles accents well."
       }
     },
+    "learn": {
+      "title": "Nhấn phím tắt để sử dụng Codictate",
+      "subtitle": "Giữ phím",
+      "subtitleEnd": ", nói và thả ra để chèn văn bản đã nói.",
+      "back": "Quay lại",
+      "skip": "Bỏ qua",
+      "complete": "Tiếp tục",
+      "slackTitle": "Slack",
+      "botName": "Alex",
+      "you": "Bạn",
+      "inputPlaceholder": "Giữ phím fn và bắt đầu nói...",
+      "botMessages": {
+        "greeting": "Chào {{name}}, Codictate có hoạt động tốt với bạn không?"
+      },
+      "cannedResponses": [
+        "Tuyệt vời! 🎉 Bạn vừa sử dụng chế độ nhấn để nói. Giờ hãy thử chế độ rảnh tay - nhấn fn+Space để bắt đầu, nói, rồi nhấn fn+Space lần nữa để dừng.",
+        "Hoàn hảo! Bạn đang làm quen rất nhanh! Thử thêm một lần nữa - càng luyện tập, bạn sẽ càng thấy tự nhiên.",
+        "Làm tốt lắm! Bạn có thể sử dụng Codictate ở bất kỳ đâu bạn gõ - email, tin nhắn, tài liệu, code... khả năng là vô tận!",
+        "Bạn thật tài năng! Hãy tiếp tục luyện tập, hoặc nhấn Tiếp tục khi bạn sẵn sàng sử dụng Codictate.",
+        "Bạn làm được rồi! Sẵn sàng bắt đầu chưa?",
+        "Trông tuyệt lắm! Nhấn Tiếp tục khi bạn sẵn sàng.",
+        "Tuyệt! Bạn đã sẵn sàng sử dụng Codictate như một chuyên gia.",
+        "Làm tốt lắm! Nhấn Tiếp tục để hoàn tất cài đặt.",
+        "Bạn đã là chuyên gia rồi! 🚀",
+        "Hoàn hảo! Hãy bắt đầu thôi. Nhấn Tiếp tục để hoàn tất cài đặt."
+      ]
+    },
     "errors": {
       "loadModels": "Không thể tải các mô hình có sẵn",
       "downloadModel": "Không thể tải mô hình: {{error}}"

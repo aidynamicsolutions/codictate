@@ -54,6 +54,33 @@
         "description": "Very fast, English only. Handles accents well."
       }
     },
+    "learn": {
+      "title": "Presiona el atajo de teclado para usar Codictate",
+      "subtitle": "Mantén presionada la tecla",
+      "subtitleEnd": ", habla y suéltala para insertar el texto hablado.",
+      "back": "Atrás",
+      "skip": "Omitir",
+      "complete": "Continuar",
+      "slackTitle": "Slack",
+      "botName": "Alex",
+      "you": "Tú",
+      "inputPlaceholder": "Mantén presionada la tecla fn y comienza a hablar...",
+      "botMessages": {
+        "greeting": "Hola {{name}}, ¿Codictate te está funcionando?"
+      },
+      "cannedResponses": [
+        "¡Qué bien! 🎉 Acabas de usar push-to-talk. Ahora prueba el modo manos libres: presiona fn+Espacio para comenzar, habla y presiona fn+Espacio otra vez para detenerte.",
+        "¡Perfecto! ¡Ya le estás agarrando el truco! Intenta una vez más, cuanto más practiques, más natural se vuelve.",
+        "¡Excelente trabajo! Puedes usar Codictate en cualquier lugar donde escribas: correos, mensajes, documentos, código... ¡las posibilidades son infinitas!",
+        "¡Eres un natural! Siéntete libre de seguir practicando, o presiona Continuar cuando estés listo para comenzar a usar Codictate.",
+        "¡Ya lo tienes! ¿Listo para comenzar?",
+        "¡Se ve bien! Haz clic en Continuar cuando estés listo.",
+        "¡Genial! Estás listo para usar Codictate como un profesional.",
+        "¡Buen trabajo! Presiona Continuar para finalizar la configuración.",
+        "¡Ya eres un experto! 🚀",
+        "¡Perfecto! Vamos a empezar. Presiona Continuar para finalizar la configuración."
+      ]
+    },
     "errors": {
       "loadModels": "Error al cargar los modelos disponibles",
       "downloadModel": "Error al descargar el modelo: {{error}}"

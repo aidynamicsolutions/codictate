@@ -52,6 +52,33 @@
         "description": "Very fast, English only. Handles accents well."
       }
     },
+    "learn": {
+      "title": "Pressione o atalho de teclado para usar o Codictate",
+      "subtitle": "Segure a tecla",
+      "subtitleEnd": ", fale e solte para inserir o texto falado.",
+      "back": "Voltar",
+      "skip": "Pular",
+      "complete": "Continuar",
+      "slackTitle": "Slack",
+      "botName": "Alex",
+      "you": "Você",
+      "inputPlaceholder": "Segure a tecla fn e comece a falar...",
+      "botMessages": {
+        "greeting": "Olá {{name}}, o Codictate está funcionando para você?"
+      },
+      "cannedResponses": [
+        "Que ótimo! 🎉 Você acabou de usar o push-to-talk. Agora experimente o modo mãos livres - pressione fn+Espaço para começar, fale e pressione fn+Espaço novamente para parar.",
+        "Perfeito! Você está pegando o jeito! Tente mais uma vez - quanto mais você pratica, mais natural se torna.",
+        "Excelente trabalho! Você pode usar o Codictate em qualquer lugar que digitar - emails, mensagens, documentos, código... as possibilidades são infinitas!",
+        "Você é um talento natural! Fique à vontade para continuar praticando, ou pressione Continuar quando estiver pronto para começar a usar o Codictate.",
+        "Você conseguiu! Pronto para começar?",
+        "Está ótimo! Clique em Continuar quando estiver pronto.",
+        "Incrível! Você está pronto para usar o Codictate como um profissional.",
+        "Bom trabalho! Pressione Continuar para finalizar a configuração.",
+        "Você já é um especialista! 🚀",
+        "Perfeito! Vamos começar. Pressione Continuar para finalizar a configuração."
+      ]
+    },
     "errors": {
       "loadModels": "Falha ao carregar modelos disponíveis",
       "downloadModel": "Falha ao baixar modelo: {{error}}"

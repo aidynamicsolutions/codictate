@@ -54,6 +54,33 @@
         "description": "Very fast, English only. Handles accents well."
       }
     },
+    "learn": {
+      "title": "Naciśnij skrót klawiaturowy, aby używać Codictate",
+      "subtitle": "Przytrzymaj klawisz",
+      "subtitleEnd": ", mów i puść, aby wstawić mówiony tekst.",
+      "back": "Wstecz",
+      "skip": "Pomiń",
+      "complete": "Kontynuuj",
+      "slackTitle": "Slack",
+      "botName": "Alex",
+      "you": "Ty",
+      "inputPlaceholder": "Przytrzymaj klawisz fn i zacznij mówić...",
+      "botMessages": {
+        "greeting": "Hej {{name}}, czy Codictate działa u Ciebie?"
+      },
+      "cannedResponses": [
+        "Świetnie! 🎉 Właśnie użyłeś trybu naciśnij-aby-mówić. Teraz spróbuj trybu bez użycia rąk - naciśnij fn+Spacja, aby rozpocząć, mów, a następnie naciśnij ponownie fn+Spacja, aby zatrzymać.",
+        "Doskonale! Łapiesz to! Spróbuj jeszcze raz - im więcej ćwiczysz, tym bardziej to staje się naturalne.",
+        "Świetna robota! Możesz używać Codictate wszędzie, gdzie piszesz - emaile, wiadomości, dokumenty, kod... możliwości są nieograniczone!",
+        "Jesteś naturalnym talentem! Możesz dalej ćwiczyć lub naciśnij Kontynuuj, gdy będziesz gotowy, aby zacząć używać Codictate.",
+        "Dasz radę! Gotowy, żeby zacząć?",
+        "Wygląda dobrze! Kliknij Kontynuuj, gdy będziesz gotowy.",
+        "Super! Jesteś gotowy, żeby używać Codictate jak profesjonalista.",
+        "Świetna robota! Naciśnij Kontynuuj, aby zakończyć konfigurację.",
+        "Jesteś teraz ekspertem! 🚀",
+        "Doskonale! Zaczynajmy. Naciśnij Kontynuuj, aby zakończyć konfigurację."
+      ]
+    },
     "errors": {
       "loadModels": "Nie udało się wczytać dostępnych modeli",
       "downloadModel": "Nie udało się pobrać modelu: {{error}}"

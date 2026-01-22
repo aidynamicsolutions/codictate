@@ -55,6 +55,11 @@ struct ShortcutToggleStates {
 
 type ManagedToggleState = Mutex<ShortcutToggleStates>;
 
+/// Global state to override paste method during onboarding.
+/// When true, forces Direct paste method to work around WebView not receiving
+/// CGEvent-simulated Cmd+V keystrokes from the same process.
+pub type OnboardingPasteOverride = Mutex<bool>;
+
 fn show_main_window(app: &AppHandle) {
     if let Some(main_window) = app.get_webview_window("main") {
         // First, ensure the window is visible
@@ -275,6 +280,7 @@ pub fn run() {
         commands::open_app_data_dir,
         commands::check_apple_intelligence_available,
         commands::log_from_frontend,
+        commands::set_onboarding_paste_override,
         commands::models::get_available_models,
         commands::models::get_model_info,
         commands::models::download_model,
@@ -382,6 +388,7 @@ pub fn run() {
         commands::open_app_data_dir,
         commands::check_apple_intelligence_available,
         commands::log_from_frontend,
+        commands::set_onboarding_paste_override,
         commands::models::get_available_models,
         commands::models::get_model_info,
         commands::models::download_model,
@@ -458,6 +465,7 @@ pub fn run() {
             Some(vec![]),
         ))
         .manage(Mutex::new(ShortcutToggleStates::default()))
+        .manage(Mutex::new(false) as OnboardingPasteOverride)
         .setup(move |app| {
             // Initialize tracing with log directory
             let log_dir = app.path().app_log_dir()

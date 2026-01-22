@@ -152,3 +152,18 @@ pub fn log_from_frontend(
         &message,
     );
 }
+
+/// Set the onboarding paste override.
+/// When true, forces Direct paste method to work around WebView not receiving
+/// CGEvent-simulated Cmd+V keystrokes from the same process.
+#[specta::specta]
+#[tauri::command]
+pub fn set_onboarding_paste_override(app: AppHandle, enabled: bool) {
+    use crate::OnboardingPasteOverride;
+    if let Some(state) = app.try_state::<OnboardingPasteOverride>() {
+        if let Ok(mut override_enabled) = state.lock() {
+            *override_enabled = enabled;
+            tracing::info!("Onboarding paste override set to: {}", enabled);
+        }
+    }
+}

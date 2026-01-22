@@ -188,13 +188,29 @@ Requests macOS accessibility and microphone permissions.
 - All 100 Whisper languages with ISO 639-1 codes and emoji flags
 - Helper functions: `getLanguageByCode`, `getLanguageFlag`, `getLanguageLabel` (returns `undefined` for "auto" to use i18n)
 
-### 9. Learn Step (Placeholder)
+### 9. Learn Step
 
 **Component**: [LearnStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/LearnStep.tsx)
 
-**Planned features**:
-- Tutorial on app usage
-- Demo of transcription flow
+Interactive Slack-style chat UI where users practice transcription hotkeys.
+
+**Features**:
+- Bot "Alex" with avatar greets user by name
+- User avatar shows initials derived from `userName`
+- Canned responses guide user through push-to-talk (`fn`) and hands-free (`fn+Space`) modes
+- Typing indicator with 1.5-2.5s delay before bot responses
+- Focused input field receives transcribed text from backend
+- Skip button jumps to completion; Continue button available after conversation
+
+**Paste Override Workaround**:
+WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
+- `OnboardingPasteOverride` managed state in `lib.rs`
+- `set_onboarding_paste_override` command called on mount/unmount
+- `clipboard.rs` uses Direct paste (character-by-character) when override enabled
+
+**Files**:
+- Bot avatar: `/src-tauri/resources/botAvatar.png`
+- i18n keys: `onboarding.learn.*`
 
 ---
 
