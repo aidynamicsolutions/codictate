@@ -9,14 +9,25 @@ use tauri::{AppHandle, Manager};
 pub struct EnigoState(pub Mutex<Option<Enigo>>);
 
 impl EnigoState {
-    /// Create a new EnigoState, attempting to initialize Enigo.
-    /// If permissions are not granted, the state will be empty (None) but won't crash.
+    /// Create a new EnigoState with conditional initialization.
+    /// If accessibility permissions are already granted, initialize Enigo immediately.
+    /// Otherwise, defer initialization to avoid triggering macOS accessibility dialog on startup.
     pub fn new() -> Self {
-        let enigo = Enigo::new(&Settings::default()).ok();
-        if enigo.is_none() {
-            tracing::warn!("Could not initialize Enigo - accessibility permissions may not be granted");
+        // Only initialize Enigo if accessibility permission is already granted
+        // This avoids triggering the macOS system dialog on fresh app launch
+        if crate::permissions::check_accessibility_permission() {
+            match Enigo::new(&Settings::default()) {
+                Ok(enigo) => {
+                    tracing::debug!("Enigo initialized at startup (permissions already granted)");
+                    return Self(Mutex::new(Some(enigo)));
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to initialize Enigo despite permissions: {}", e);
+                }
+            }
         }
-        Self(Mutex::new(enigo))
+        // Permissions not granted - defer initialization to avoid system dialog
+        Self(Mutex::new(None))
     }
 
     /// Try to initialize Enigo if it hasn't been initialized yet.

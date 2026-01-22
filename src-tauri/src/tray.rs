@@ -65,14 +65,23 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
 
     let icon_path = get_icon_path(theme, icon.clone());
 
-    let _ = tray.set_icon(Some(
-        Image::from_path(
-            app.path()
-                .resolve(icon_path, tauri::path::BaseDirectory::Resource)
-                .expect("failed to resolve"),
-        )
-        .expect("failed to set icon"),
-    ));
+    // Use graceful error handling instead of expect() to prevent panics
+    // Panics in the TapDisabled callback thread can cause keyboard/mouse lockup
+    match app.path().resolve(icon_path, tauri::path::BaseDirectory::Resource) {
+        Ok(resolved_path) => {
+            match Image::from_path(&resolved_path) {
+                Ok(image) => {
+                    let _ = tray.set_icon(Some(image));
+                }
+                Err(e) => {
+                    tracing::error!("Failed to load tray icon from {:?}: {}", resolved_path, e);
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to resolve tray icon path '{}': {}", icon_path, e);
+        }
+    }
 
     // Update menu based on state
     // For Idle state, spawn the menu update in a background task to avoid blocking

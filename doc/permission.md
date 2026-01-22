@@ -1,0 +1,149 @@
+# Permission Architecture
+
+This document describes macOS permission handling in Codictate.
+
+## Permissions Required
+
+| Permission | Purpose | Check API |
+|------------|---------|-----------| 
+| **Accessibility** | Fn/Globe key capture, paste via Cmd+V, direct text input | `AXIsProcessTrusted()` |
+| **Microphone** | Audio recording | `AVCaptureDevice.authorizationStatus` |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        User Action                              │
+│                    (press Fn to record)                         │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               fn_key_monitor.rs (Event Tap)                     │
+│  • CGEventTap at HID level captures Fn key                      │
+│  • Requires Accessibility permission                            │
+│  • TapDisabledByTimeout → permission revoked                    │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               audio.rs → try_start_recording()                  │
+│  • Calls check_microphone_permission() BEFORE recording         │
+│  • Denied → emit event + notification, return false             │
+│  • Authorized → proceed with recording                          │
+└─────────────────────────────────┬───────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   permissions.rs                                │
+│  • check_accessibility_permission() → AXIsProcessTrusted        │
+│  • check_microphone_permission() → AVCaptureDevice via objc2    │
+│  • open_accessibility_settings() → deep-link                    │
+│  • open_microphone_settings() → deep-link                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Files
+
+| File | Responsibility |
+|------|----------------|
+| `permissions.rs` | Low-level permission check APIs + open settings commands |
+| `fn_key_monitor.rs` | Accessibility permission handling + TapDisabled recovery |
+| `audio.rs` | Microphone permission check before recording |
+| `tray.rs` | Tray icon state management (Idle, Recording, Transcribing) |
+| `input.rs` | Enigo initialization (lazy if no accessibility permission) |
+| `PermissionBanner.tsx` | Generic component: modal + banner + focus re-check + event listener |
+| `AccessibilityPermissions.tsx` | Wrapper using PermissionBanner, restarts Fn monitor on grant |
+| `MicrophonePermissions.tsx` | Wrapper using PermissionBanner, waits for accessibility first |
+| `PermissionModal.tsx` | Unified modal dialog for permission requests |
+
+## Startup Flow (No Permissions)
+
+```
+App Launch
+    │
+    ├─► input.rs: EnigoState::new()
+    │   └─► check_accessibility_permission()
+    │       ├─► GRANTED: Initialize Enigo immediately
+    │       └─► NOT GRANTED: Skip (no system dialog triggered)
+    │
+    ├─► fn_key_monitor.rs: start_fn_key_monitor()
+    │   └─► check_accessibility_permission()
+    │       └─► NOT GRANTED: Return error (no system dialog)
+    │
+    └─► Frontend: AccessibilityPermissions.tsx
+        └─► checkAccessibilityPermission()
+            └─► NOT GRANTED: Show custom modal (not system dialog)
+```
+
+## Revocation Handling
+
+### Accessibility (Fn key stops working)
+
+1. **Primary**: 500ms polling of `AXIsProcessTrusted()` (very cheap call)
+2. **Backup**: `TapDisabledByTimeout` event (can be delayed 5-10s by macOS)
+3. On detection:
+   - Reset flags, stop run loop
+   - Show main window (bring to foreground)
+   - Emit `accessibility-permission-lost` event
+   - `PermissionBanner` shows modal with "Open Settings" button
+
+### Microphone (recording fails)
+
+1. Permission checked in `fn_key_monitor.rs` BEFORE overlay shows
+2. Uses `AVCaptureDevice.authorizationStatus(for: .audio)` via objc2
+3. Denied → show in-app modal dialog with "Open Settings" button
+
+## Permission Revocation Flow
+
+```
+ ┌──────────────────────┐     ┌──────────────────────┐
+ │   macOS Revokes      │     │   User Presses Fn    │
+ │   Accessibility      │     │   (Mic Denied)       │
+ └──────────┬───────────┘     └──────────┬───────────┘
+            │                            │
+            ▼                            ▼
+ ┌──────────────────────┐     ┌──────────────────────┐
+ │ fn_key_monitor.rs    │     │ fn_key_monitor.rs    │
+ │ (500ms poll detects) │     │ (check_microphone_   │
+ │                      │     │  permission())       │
+ └──────────┬───────────┘     └──────────┬───────────┘
+            │                            │
+            ├────────────────────────────┤
+            ▼                            ▼
+ ┌────────────────────────────────────────────────┐
+ │  Emit Event → Frontend Shows Modal             │
+ │  "accessibility-permission-lost" /             │
+ │  "microphone-permission-denied"                │
+ └───────────────────────┬────────────────────────┘
+                         │
+                         ▼
+                ┌──────────────┐
+                │ User clicks  │
+                │ "Open        │
+                │ Settings"    │
+                └──────┬───────┘
+                       │
+                       ▼
+                ┌──────────────┐
+                │ Deep-link to │
+                │ System Prefs │
+                └──────────────┘
+```
+
+## Key Learnings
+
+- **No system notification API**: Apple provides no way to observe permission revocation
+- **macOS delays TapDisabled**: Tap is disabled immediately, but event sent seconds later
+- **500ms polling chosen**: Prioritizes minimal keyboard lockup over minimal CPU usage
+- **cpal can't detect mic denial**: macOS opens devices with silenced audio
+- **objc2 for FFI**: Raw `objc_msgSend` crashes on ARM64; use `msg_send!` macro
+- **"soun" media type**: AVMediaTypeAudio = `NSString::from_str("soun")`
+- **Callback must be fast**: Heavy work in TapDisabled callback causes keyboard lockup
+- **Accessibility for Enigo**: Paste simulation (Cmd+V) requires accessibility permission
+- **Avoid system dialog**: Don't call `prompt_accessibility_permission()` or `Enigo::new()` without checking permission first
+- **Graceful error handling**: Use `match` not `expect()` in tray icon code to avoid panics
+- **Focus-based re-check**: Use window focus event to detect permission grant (user returns from Settings)
+- **Restart Fn monitor on grant**: Call `startFnKeyMonitor(true)` when permission transitions from denied to granted
+- **DRY with PermissionBanner**: Shared component handles modal, banner, event, and focus for both permission types
+- **Accessibility-first priority**: Microphone UI only renders when accessibility is already granted

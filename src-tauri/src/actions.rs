@@ -255,6 +255,25 @@ impl ShortcutAction for TranscribeAction {
         use tauri::Emitter;
         let _ = app.emit("session-started", &session_id);
         
+        // Check microphone permission BEFORE showing any UI
+        // This prevents the overlay from appearing when permission is denied
+        #[cfg(target_os = "macos")]
+        {
+            use crate::permissions::{check_microphone_permission, MicrophonePermission};
+            
+            if check_microphone_permission() == MicrophonePermission::Denied {
+                error!("Microphone permission denied, cannot start recording");
+                
+                // Show the main window so the permission dialog modal can be seen
+                // (the app usually runs in the background)
+                crate::show_main_window(app);
+                
+                // Emit event to frontend to show permission dialog
+                let _ = app.emit("microphone-permission-denied", ());
+                return; // Don't show overlay or start recording
+            }
+        }
+        
         let start_time = Instant::now();
         info!("Recording started for binding: {}", binding_id);
 

@@ -1,7 +1,9 @@
 {
+  "appName": "Codictate",
   "tray": {
     "settings": "设置...",
     "checkUpdates": "检查更新...",
+    "copyLastRecording": "复制上次录音",
     "quit": "退出",
     "cancel": "取消"
   },
@@ -46,6 +48,10 @@
       "parakeet-tdt-0.6b-v3": {
         "name": "Parakeet V3",
         "description": "快速且准确"
+      },
+      "moonshine-base": {
+        "name": "Moonshine Base",
+        "description": "Very fast, English only. Handles accents well."
       }
     },
     "errors": {
@@ -54,7 +60,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "欢迎使用 Handy！",
+    "welcome": "Welcome to {{appName}}!",
     "downloadPrompt": "请下载以下模型以开始转录。",
     "availableModels": "可用模型",
     "downloadModels": "下载模型",
@@ -80,7 +86,7 @@
     "general": {
       "title": "通用",
       "shortcut": {
-        "title": "Handy 快捷键",
+        "title": "{{appName}} 快捷键",
         "description": "配置启动语音转文字录制的键盘快捷键",
         "loading": "加载快捷键中...",
         "none": "未配置快捷键",
@@ -146,7 +152,7 @@
       },
       "autostart": {
         "label": "开机启动",
-        "description": "登录计算机时自动启动 Handy。"
+        "description": "登录计算机时自动启动 {{appName}}。"
       },
       "overlay": {
         "title": "悬浮窗位置",
@@ -306,7 +312,7 @@
       },
       "updateChecks": {
         "label": "检查更新",
-        "description": "自动检查 Handy 的新版本"
+        "description": "自动检查 {{appName}} 的新版本"
       },
       "soundTheme": {
         "label": "声音主题",
@@ -361,11 +367,11 @@
       "title": "关于",
       "version": {
         "title": "版本",
-        "description": "Handy 的当前版本"
+        "description": "{{appName}} 的当前版本"
       },
       "appDataDirectory": {
         "title": "应用数据目录",
-        "description": "Handy 存储数据的位置"
+        "description": "{{appName}} 存储数据的位置"
       },
       "sourceCode": {
         "title": "源代码",
@@ -374,7 +380,7 @@
       },
       "supportDevelopment": {
         "title": "支持开发",
-        "description": "帮助我们继续开发 Handy",
+        "description": "帮助我们继续开发 {{appName}}",
         "button": "捐赠"
       },
       "acknowledgments": {
@@ -382,7 +388,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "OpenAI Whisper 自动语音识别模型的高性能推理",
-          "details": "Handy 使用 Whisper.cpp 进行快速的本地语音转文字处理。感谢 Georgi Gerganov 和贡献者们的出色工作。"
+          "details": "{{appName}} 使用 Whisper.cpp 进行快速的本地语音转文字处理。感谢 Georgi Gerganov 和贡献者们的出色工作。"
         }
       }
     }
@@ -425,7 +431,7 @@
   },
   "accessibility": {
     "permissionsRequired": "需要辅助功能权限",
-    "permissionsDescription": "Handy 需要辅助功能权限才能输入转录的文字。",
+    "permissionsDescription": "{{appName}} 需要辅助功能权限才能输入转录的文字。",
     "openSettings": "打开系统设置",
     "dismiss": "关闭"
   },
@@ -435,7 +441,7 @@
   },
   "appLanguage": {
     "title": "应用语言",
-    "description": "更改 Handy 界面的语言"
+    "description": "更改 {{appName}} 界面的语言"
   },
   "overlay": {
     "transcribing": "正在转录...",
@@ -443,5 +449,9 @@
   },
   "recording": {
     "limitWarning": "录音将在 30 秒后结束"
+  },
+  "notifications": {
+    "errorTitle": "{{appName}}",
+    "infoTitle": "{{appName}}"
   }
 }

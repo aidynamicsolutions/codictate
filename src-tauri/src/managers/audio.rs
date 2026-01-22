@@ -341,6 +341,10 @@ impl AudioRecordingManager {
     /* ---------- recording --------------------------------------------------- */
 
     pub fn try_start_recording(&self, binding_id: &str, session_id: &str) -> bool {
+        // Note: Microphone permission is checked in TranscribeAction::start() before
+        // the overlay is shown. This allows for better UX - we can show a modal dialog
+        // instead of the overlay when permission is denied.
+        
         let mut state = self.state.lock().unwrap();
 
         if let RecordingState::Idle = *state {

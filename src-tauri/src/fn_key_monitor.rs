@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 /// Delay before starting push-to-talk (ms) - allows time to detect fn+space
 const PTT_DELAY_MS: u64 = 150;
@@ -57,6 +57,14 @@ static PTT_STARTED: AtomicBool = AtomicBool::new(false);
 /// Timestamp counter to correlate Fn press events with delayed PTT start
 /// This prevents stale timers from triggering if Fn was released and pressed again
 static FN_PRESS_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Flag to signal the permission check thread to stop
+static PERMISSION_CHECK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Interval for periodic permission checks (in milliseconds)
+/// Using a short interval (500ms) to minimize keyboard lockup when permission is revoked.
+/// Note: Checking AXIsProcessTrusted() is very cheap (just reads a flag), so frequent polling is fine.
+const PERMISSION_CHECK_INTERVAL_MS: u64 = 500;
 
 /// Helper to get the app handle safely
 fn get_app_handle() -> Option<AppHandle> {
@@ -102,8 +110,11 @@ fn stop_stored_run_loop() {
 #[tauri::command]
 #[specta::specta]
 pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Result<(), String> {
+    debug!("start_fn_key_monitor called (enable_transcription: {})", enable_transcription);
+    
     // If already monitoring, just update the transcription flag
     if FN_MONITORING_ACTIVE.load(Ordering::SeqCst) {
+        debug!("Monitor already active, just updating transcription flag");
         FN_TRANSCRIPTION_ENABLED.swap(enable_transcription, Ordering::SeqCst);
         return Ok(());
     }
@@ -112,8 +123,23 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
     set_app_handle(Some(app.clone()));
     FN_TRANSCRIPTION_ENABLED.store(enable_transcription, Ordering::SeqCst);
 
+    // Check accessibility permission before starting
+    debug!("Checking accessibility permission...");
+    if !crate::permissions::check_accessibility_permission() {
+        warn!("Accessibility permission not granted, cannot start Fn key monitor");
+        // Don't show system prompt - let the frontend modal handle permission requests
+        // This provides a better UX with our custom modal instead of the macOS system dialog
+        return Err("Accessibility permission not granted. Please enable it in System Settings.".to_string());
+    }
+    debug!("Accessibility permission granted, proceeding to start event tap");
+
+    // Start periodic permission checking
+    start_permission_check_thread(app.clone());
+
+    debug!("Spawning event tap thread...");
     // Spawn the event tap on a separate thread to avoid blocking
     std::thread::spawn(move || {
+        debug!("Event tap thread started, creating CGEventTap...");
         // Create the event tap to listen for FlagsChanged and KeyDown events
         // 
         // We need both event types because the Fn/Globe key generates:
@@ -134,8 +160,53 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
             vec![
                 CGEventType::FlagsChanged,
                 CGEventType::KeyDown,  // Needed to block Globe key and detect fn+space
+                // NOTE: TapDisabledByTimeout and TapDisabledByUserInput are NOT included here.
+                // They are auto-delivered to the callback when the tap is disabled by the system.
+                // Including them causes integer overflow because their enum values (0xFFFFFFFE, 0xFFFFFFFF)
+                // are too large for the bitmask calculation in core-graphics.
             ],
             |_proxy, event_type, event| {
+                // Handle tap disabled events FIRST - this is critical for preventing keyboard lockup
+                // When macOS revokes accessibility permissions, it sends TapDisabledByTimeout
+                if matches!(event_type, CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput) {
+                    warn!("Event tap was disabled by system (event type: {:?}). Stopping Fn key monitor.", event_type);
+                    
+                    // CRITICAL: Do minimal work in callback to avoid blocking the event tap!
+                    // Set flags immediately, then spawn thread for heavy work.
+                    
+                    // Stop the permission check thread FIRST to prevent duplicate notifications
+                    PERMISSION_CHECK_ACTIVE.store(false, Ordering::SeqCst);
+                    
+                    // Reset all state flags before stopping
+                    FN_MONITORING_ACTIVE.store(false, Ordering::SeqCst);
+                    FN_KEY_WAS_PRESSED.store(false, Ordering::SeqCst);
+                    FN_TRANSCRIPTION_ENABLED.store(false, Ordering::SeqCst);
+                    FN_SPACE_TRIGGERED.store(false, Ordering::SeqCst);
+                    PTT_STARTED.store(false, Ordering::SeqCst);
+                    
+                    // Stop the run loop immediately - this is the key to releasing the event tap
+                    stop_stored_run_loop();
+                    
+                    // Get app handle for the notification thread (if available)
+                    let app_opt = get_app_handle();
+                    
+                    // Clear app handle immediately
+                    set_app_handle(None);
+                    
+                    // Spawn a thread to handle UI (don't block the callback)
+                    std::thread::spawn(move || {
+                        if let Some(app) = app_opt {
+                            // Show the main window so the modal is visible
+                            crate::show_main_window(&app);
+                            // Emit event to frontend (modal handles UX)
+                            let _ = app.emit("accessibility-permission-lost", ());
+                        }
+                    });
+                    
+                    // Return immediately - don't block the event tap
+                    return CallbackResult::Keep;
+                }
+                
                 let flags = event.get_flags();
                 let fn_pressed = flags.contains(CGEventFlags::CGEventFlagSecondaryFn);
                 
@@ -243,6 +314,49 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
     Ok(())
 }
 
+/// Start a background thread that periodically checks accessibility permission
+/// If permission is revoked, it will stop the Fn key monitor and notify the user
+fn start_permission_check_thread(app: AppHandle) {
+    PERMISSION_CHECK_ACTIVE.store(true, Ordering::SeqCst);
+    
+    std::thread::spawn(move || {
+        debug!("Permission check thread started (interval: {}ms)", PERMISSION_CHECK_INTERVAL_MS);
+        
+        while PERMISSION_CHECK_ACTIVE.load(Ordering::SeqCst) {
+            // Sleep first, then check (we already checked at startup)
+            std::thread::sleep(Duration::from_millis(PERMISSION_CHECK_INTERVAL_MS));
+            
+            // Check if we should still be running
+            if !PERMISSION_CHECK_ACTIVE.load(Ordering::SeqCst) {
+                break;
+            }
+            
+            // Check permission
+            if !crate::permissions::check_accessibility_permission() {
+                // Double-check that we should still send notification
+                // (TapDisabled handler may have already handled this)
+                if !PERMISSION_CHECK_ACTIVE.load(Ordering::SeqCst) {
+                    debug!("Permission check thread: TapDisabled handler already notified user, skipping");
+                    break;
+                }
+                
+                warn!("Accessibility permission was revoked! Stopping Fn key monitor.");
+                
+                // Show the main window so the modal is visible
+                crate::show_main_window(&app);
+                // Emit event to frontend (modal handles UX)
+                let _ = app.emit("accessibility-permission-lost", ());
+                
+                // Stop the Fn key monitor
+                let _ = stop_fn_key_monitor();
+                break;
+            }
+        }
+        
+        debug!("Permission check thread exiting");
+    });
+}
+
 /// Handle a FlagsChanged event and check for Fn key state
 fn handle_flags_changed_event(event: &CGEvent) {
     let flags = event.get_flags();
@@ -307,6 +421,23 @@ fn handle_fn_pressed(app: &AppHandle) {
                 return;
             }
             
+            // Check microphone permission BEFORE starting recording
+            // This must happen before setting PTT_STARTED to prevent
+            // the "Transcribing..." overlay from appearing on fn release
+            #[cfg(target_os = "macos")]
+            {
+                use crate::permissions::{check_microphone_permission, MicrophonePermission};
+                use tauri::Emitter;
+                
+                if check_microphone_permission() == MicrophonePermission::Denied {
+                    warn!("Microphone permission denied, showing permission dialog");
+                    // Show the main window and emit event for permission dialog
+                    crate::show_main_window(&app_clone);
+                    let _ = app_clone.emit("microphone-permission-denied", ());
+                    return; // Don't set PTT_STARTED or start recording
+                }
+            }
+            
             // All checks passed - start push-to-talk recording
             debug!("Delay expired, starting push-to-talk recording");
             PTT_STARTED.store(true, Ordering::SeqCst);
@@ -357,6 +488,21 @@ fn handle_fn_released(app: &AppHandle) {
 fn handle_handsfree_toggle(app: &AppHandle) {
     const BINDING_ID: &str = "transcribe_handsfree";
     
+    // Check microphone permission BEFORE modifying toggle state
+    // This prevents the toggle from getting into an inconsistent state
+    #[cfg(target_os = "macos")]
+    {
+        use crate::permissions::{check_microphone_permission, MicrophonePermission};
+        use tauri::Emitter;
+        
+        if check_microphone_permission() == MicrophonePermission::Denied {
+            warn!("Microphone permission denied, showing permission dialog");
+            crate::show_main_window(app);
+            let _ = app.emit("microphone-permission-denied", ());
+            return;
+        }
+    }
+    
     if let Some(action) = ACTION_MAP.get(BINDING_ID) {
         // Use toggle state to determine whether to start or stop
         let toggle_state_manager = app.state::<ManagedToggleState>();
@@ -399,6 +545,9 @@ pub fn stop_fn_key_monitor() -> Result<(), String> {
 
     // Stop the event tap thread's run loop (stored during start_fn_key_monitor)
     stop_stored_run_loop();
+
+    // Stop the permission check thread
+    PERMISSION_CHECK_ACTIVE.store(false, Ordering::SeqCst);
 
     // Reset all state flags
     FN_MONITORING_ACTIVE.store(false, Ordering::SeqCst);

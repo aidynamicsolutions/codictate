@@ -189,6 +189,14 @@ Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
 - **Windows**: Vulkan acceleration, code signing
 - **Linux**: OpenBLAS + Vulkan, limited Wayland support, overlay disabled by default
 
+## macOS Permissions
+
+See `doc/permission.md` for full architecture. Key learnings:
+
+- **Microphone check**: Use `objc2` crate with `msg_send!` macro. Raw `objc_msgSend` FFI crashes on ARM64.
+- **cpal limitation**: The audio library cannot detect permission denial—macOS still opens devices but silences audio.
+- **TapDisabled callbacks**: Keep fast. Heavy work (notifications, i18n) causes keyboard lockup. Spawn a thread instead.
+
 ## Window Configuration
 
 Main window size is configured in `src-tauri/tauri.conf.json`:

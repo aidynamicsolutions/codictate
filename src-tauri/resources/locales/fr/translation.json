@@ -1,8 +1,9 @@
 {
-  "_comment": "French translation for Handy. Contribute at: https://github.com/cjpais/Handy",
+  "appName": "Codictate",
   "tray": {
     "settings": "Paramètres...",
     "checkUpdates": "Rechercher des mises à jour...",
+    "copyLastRecording": "Copier le dernier enregistrement",
     "quit": "Quitter",
     "cancel": "Annuler"
   },
@@ -47,6 +48,10 @@
       "parakeet-tdt-0.6b-v3": {
         "name": "Parakeet V3",
         "description": "Rapide et précis"
+      },
+      "moonshine-base": {
+        "name": "Moonshine Base",
+        "description": "Very fast, English only. Handles accents well."
       }
     },
     "errors": {
@@ -55,7 +60,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Bienvenue sur Handy !",
+    "welcome": "Welcome to {{appName}}!",
     "downloadPrompt": "Téléchargez un modèle ci-dessous pour commencer la transcription.",
     "availableModels": "Modèles Disponibles",
     "downloadModels": "Télécharger des Modèles",
@@ -81,7 +86,7 @@
     "general": {
       "title": "Général",
       "shortcut": {
-        "title": "Raccourcis Handy",
+        "title": "Raccourcis {{appName}}",
         "description": "Configurer les raccourcis clavier pour déclencher l'enregistrement de la reconnaissance vocale",
         "loading": "Chargement des raccourcis...",
         "none": "Aucun raccourci configuré",
@@ -147,7 +152,7 @@
       },
       "autostart": {
         "label": "Lancer au démarrage",
-        "description": "Démarrer automatiquement Handy lorsque vous vous connectez à votre ordinateur."
+        "description": "Démarrer automatiquement {{appName}} lorsque vous vous connectez à votre ordinateur."
       },
       "overlay": {
         "title": "Position de la fenêtre d'enregistrement",
@@ -260,6 +265,28 @@
         "cancel": "Annuler",
         "selectToEdit": "Sélectionnez un prompt ci-dessus pour voir et modifier ses détails.",
         "createFirst": "Cliquez sur 'Créer un nouveau prompt' ci-dessus pour créer votre premier prompt de post-traitement."
+      },
+      "mlx": {
+        "title": "Modèle IA Local",
+        "description": "Sélectionnez un modèle pour le traitement hors ligne. Tous les modèles sont quantifiés sur 4 bits pour une inférence efficace sur Apple Silicon.",
+        "recommended": "Recommandé",
+        "download": "Télécharger",
+        "downloading": "Téléchargement...",
+        "cancel": "Annuler",
+        "retry": "Réessayer",
+        "select": "Sélectionner",
+        "cancelDelete": "Annuler",
+        "confirmDelete": "Supprimer",
+        "notDownloaded": "Non téléchargé",
+        "downloaded": "Téléchargé",
+        "ready": "Prêt",
+        "loading": "Chargement...",
+        "failed": "Échec",
+        "size": "Taille",
+        "ram": "RAM",
+        "notAvailable": "L'IA locale nécessite un Mac Apple Silicon",
+        "default": "Par défaut",
+        "showInFinder": "Afficher dans le Finder"
       }
     },
     "history": {
@@ -285,7 +312,7 @@
       },
       "updateChecks": {
         "label": "Vérifier les mises à jour",
-        "description": "Vérifier automatiquement les nouvelles versions de Handy"
+        "description": "Vérifier automatiquement les nouvelles versions de {{appName}}"
       },
       "soundTheme": {
         "label": "Thème sonore",
@@ -340,11 +367,11 @@
       "title": "À propos",
       "version": {
         "title": "Version",
-        "description": "Version actuelle de Handy"
+        "description": "Version actuelle de {{appName}}"
       },
       "appDataDirectory": {
         "title": "Emplacement des données de l'application",
-        "description": "Emplacement où Handy stocke ses données"
+        "description": "Emplacement où {{appName}} stocke ses données"
       },
       "sourceCode": {
         "title": "Code source",
@@ -353,7 +380,7 @@
       },
       "supportDevelopment": {
         "title": "Soutenir le développement",
-        "description": "Aidez-nous à continuer à construire Handy",
+        "description": "Aidez-nous à continuer à construire {{appName}}",
         "button": "Faire un don"
       },
       "acknowledgments": {
@@ -361,7 +388,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "Inférence haute performance du modèle de reconnaissance vocale automatique Whisper d'OpenAI",
-          "details": "Handy utilise Whisper.cpp pour un traitement rapide et local de la parole en texte. Merci au travail incroyable de Georgi Gerganov et des contributeurs."
+          "details": "{{appName}} utilise Whisper.cpp pour un traitement rapide et local de la parole en texte. Merci au travail incroyable de Georgi Gerganov et des contributeurs."
         }
       }
     }
@@ -404,7 +431,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Autorisations d'accessibilité requises",
-    "permissionsDescription": "Handy a besoin des autorisations d'accessibilité pour taper le texte transcrit.",
+    "permissionsDescription": "{{appName}} a besoin des autorisations d'accessibilité pour taper le texte transcrit.",
     "openSettings": "Ouvrir les Préférences Système",
     "dismiss": "Ignorer"
   },
@@ -414,7 +441,7 @@
   },
   "appLanguage": {
     "title": "Langue de l'application",
-    "description": "Changer la langue de l'interface de Handy"
+    "description": "Changer la langue de l'interface de {{appName}}"
   },
   "overlay": {
     "transcribing": "Transcription...",
@@ -422,5 +449,9 @@
   },
   "recording": {
     "limitWarning": "L'enregistrement se termine dans 30 secondes"
+  },
+  "notifications": {
+    "errorTitle": "{{appName}}",
+    "infoTitle": "{{appName}}"
   }
 }

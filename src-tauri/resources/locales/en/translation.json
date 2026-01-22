@@ -1,7 +1,9 @@
 {
+  "appName": "Codictate",
   "tray": {
     "settings": "Settings...",
     "checkUpdates": "Check for Updates...",
+    "copyLastRecording": "Copy Last Recording",
     "quit": "Quit",
     "cancel": "Cancel"
   },
@@ -18,6 +20,213 @@
     "recommended": "Recommended",
     "download": "Download",
     "downloading": "Downloading...",
+    "progress": {
+      "welcome": "Welcome",
+      "permissions": "Permissions",
+      "setup": "Set Up",
+      "learn": "Learn"
+    },
+    "welcome": {
+      "title": "What's your name?",
+      "subtitle": "Let's personalize your experience",
+      "namePlaceholder": "Enter your name",
+      "continue": "Continue"
+    },
+    "attribution": {
+      "greeting": "Welcome, {{name}}!",
+      "defaultName": "there",
+      "question": "Where did you hear about us?",
+      "continue": "Continue",
+      "back": "Back",
+      "sources": {
+        "social_media": "Social media",
+        "youtube": "YouTube",
+        "newsletter": "Newsletter",
+        "ai_chat": "AI chat",
+        "search_engine": "Search engine",
+        "event": "Event",
+        "friend": "Friend",
+        "colleague": "Colleague",
+        "podcast": "Podcast",
+        "article": "Article",
+        "product_hunt": "Product Hunt",
+        "other": "Other"
+      },
+      "secondaryQuestion": {
+        "social_media": "Which social media?",
+        "search_engine": "Which search engine?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Other"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Other"
+        }
+      },
+      "pleaseSpecify": "Please specify",
+      "otherPlaceholder": "Type your answer..."
+    },
+    "tellUsAboutYou": {
+      "title": "Tell us about yourself",
+      "workQuestion": "What do you do for work?",
+      "levelQuestion": "Tell us more",
+      "continue": "Continue",
+      "back": "Back",
+      "workRoles": {
+        "founder_ceo": "Founder/CEO",
+        "consultant": "Consultant",
+        "operations": "Operations",
+        "developer": "Developer",
+        "product": "Product",
+        "data_analysis": "Data Analysis",
+        "sales": "Sales",
+        "marketing": "Marketing",
+        "customer_support": "Customer Support",
+        "recruiting": "Recruiting",
+        "creator": "Creator",
+        "writer": "Writer",
+        "educator": "Educator",
+        "student": "Student",
+        "legal": "Legal",
+        "healthcare": "Healthcare",
+        "other": "Other"
+      },
+      "professionalLevels": {
+        "executive": "Executive",
+        "director": "Director",
+        "manager": "Manager",
+        "individual_contributor": "Individual contributor",
+        "freelancer": "Freelancer",
+        "other": "Other"
+      },
+      "pleaseSpecify": "Please specify",
+      "otherPlaceholder": "Type your answer..."
+    },
+    "typingUseCases": {
+      "title": "Where do you spend your time typing?",
+      "subtitle": "This helps us tailor your experience.",
+      "subtitleHint": "Select all that apply.",
+      "continue": "Continue",
+      "back": "Back",
+      "pleaseSpecify": "Please specify",
+      "otherPlaceholder": "Type your answer...",
+      "options": {
+        "ai_chat": "Talking to AI assistants",
+        "messaging": "Messaging & chatting",
+        "coding": "Writing code",
+        "emails": "Composing emails",
+        "documents": "Creating documents",
+        "notes": "Capturing notes",
+        "social_posts": "Social posts & comments",
+        "other": "Something else"
+      }
+    },
+    "permissions": {
+      "title": "Set up {{appName}} on your computer",
+      "accessibility": {
+        "title": "Allow {{appName}} to insert spoken words",
+        "description": "This lets {{appName}} put your spoken words in the right textbox",
+        "tooltip": "{{appName}} uses this to gather context based on the application you're using, and to access your clipboard temporarily to paste text.",
+        "success": "{{appName}} can now paste text anywhere"
+      },
+      "microphone": {
+        "title": "Allow {{appName}} to use your microphone",
+        "description": "{{appName}} will only access the mic when you are actively using it",
+        "tooltip": "{{appName}} will play a sound and show an animation when the mic is active",
+        "success": "{{appName}} can now hear you"
+      },
+      "allow": "Allow",
+      "checking": "Checking...",
+      "retry": "Retry",
+      "continue": "Continue",
+      "back": "Back",
+      "skipModal": {
+        "title": "Permissions Required",
+        "description": "{{appName}} works best with both permissions enabled. You can continue without them, but some features may be limited.",
+        "continueAnyway": "Continue Anyway",
+        "goBack": "Go Back"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Back",
+      "title": "Speak to test your microphone",
+      "subtitle": "Your computer's built-in mic will ensure optimal transcription.",
+      "question": "Do you see red bars moving while you speak?",
+      "changeMicrophone": "No, change microphone",
+      "yes": "Yes",
+      "dialog": {
+        "title": "Select Microphone",
+        "autoDetect": "Auto-detect",
+        "autoDetectDescription": "Uses the system default microphone",
+        "default": "default"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Back",
+      "title": "Press the keyboard shortcut to test it out",
+      "subtitle": "We recommend the",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "key at the bottom left of the keyboard.",
+      "question": "Does the button turn red while pressing it?",
+      "changeShortcut": "No, change shortcut",
+      "yes": "Yes",
+      "continue": "Continue",
+      "modal": {
+        "title": "Change hotkeys",
+        "subtitle": "Customize how you interact with {{appName}}",
+        "pushToTalk": {
+          "title": "Push to talk",
+          "description": "Hold to say something short"
+        },
+        "handsFree": {
+          "title": "Hands-free mode",
+          "description": "Press to start and stop dictation"
+        },
+        "addAnother": "Add another",
+        "resetToDefault": "Reset to default"
+      }
+    },
+    "languageSelect": {
+      "back": "Back",
+      "title": "Set the language(s) you speak",
+      "subtitle": "{{appName}} works in 100 languages.",
+      "description": "Select the languages you speak or let {{appName}} detect them automatically.",
+      "yourSelectedLanguage": "Your selected language",
+      "yourSelectedLanguages": "Your selected languages",
+      "changeLanguages": "Change languages",
+      "continue": "Continue",
+      "makeActiveHint": "Make this the default active language",
+      "modal": {
+        "title": "Languages",
+        "subtitle": "Select the languages you want to use with {{appName}}",
+        "searchPlaceholder": "Search for any languages",
+        "autoDetect": "Auto-detect",
+        "autoDetectMessage": "Auto-detect is on. {{appName}} will try to detect the language you are speaking.",
+        "selected": "Selected",
+        "languagesCount": "{{count}} languages",
+        "saveAndClose": "Save and close",
+        "maxReached": "Maximum {{max}} languages allowed"
+      }
+    },
+    "learn": {
+      "title": "You're all set!",
+      "subtitle": "Here's how to use the app",
+      "placeholder": "Tutorial content will appear here",
+      "complete": "Get Started",
+      "back": "Back"
+    },
     "modelCard": {
       "accuracy": "accuracy",
       "speed": "speed"
@@ -46,6 +255,10 @@
       "parakeet-tdt-0.6b-v3": {
         "name": "Parakeet V3",
         "description": "Fast and accurate"
+      },
+      "moonshine-base": {
+        "name": "Moonshine Base",
+        "description": "Very fast, English only. Handles accents well."
       }
     },
     "errors": {
@@ -54,7 +267,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to Handy!",
+    "welcome": "Welcome to {{appName}}!",
     "downloadPrompt": "Download a model below to get started with transcription.",
     "availableModels": "Available Models",
     "downloadModels": "Download Models",
@@ -80,7 +293,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "Handy Shortcuts",
+        "title": "{{appName}} Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -88,8 +301,16 @@
         "pressKeys": "Press keys...",
         "bindings": {
           "transcribe": {
-            "name": "Transcribe",
-            "description": "Converts your speech into text."
+            "name": "Push to talk",
+            "description": "Hold to say something short"
+          },
+          "transcribe_handsfree": {
+            "name": "Hands-free mode",
+            "description": "Press to start and stop dictation"
+          },
+          "paste_last_transcript": {
+            "name": "Paste last transcript",
+            "description": "Paste the last thing you dictated"
           },
           "cancel": {
             "name": "Cancel",
@@ -99,7 +320,10 @@
         "errors": {
           "restore": "Failed to restore original shortcut",
           "set": "Failed to set shortcut: {{error}}",
-          "reset": "Failed to reset shortcut to original value"
+          "reset": "Failed to reset shortcut to original value",
+          "multipleNonModifierKeys": "Shortcuts can only have one main key. Use a modifier (Ctrl, Shift, Alt, Cmd) with a single key.",
+          "modifierRequired": "Shortcuts must include a modifier key (Ctrl, Shift, Alt, Cmd) or be a function key",
+          "noKeysRecorded": "No keys recorded"
         }
       },
       "language": {
@@ -146,7 +370,7 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Handy when you log in to your computer."
+        "description": "Automatically start {{appName}} when you log in to your computer."
       },
       "overlay": {
         "title": "Overlay Position",
@@ -306,7 +530,7 @@
       },
       "updateChecks": {
         "label": "Check for Updates",
-        "description": "Automatically check for new versions of Handy"
+        "description": "Automatically check for new versions of {{appName}}"
       },
       "soundTheme": {
         "label": "Sound Theme",
@@ -361,11 +585,11 @@
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of Handy"
+        "description": "Current version of {{appName}}"
       },
       "appDataDirectory": {
         "title": "App Data Directory",
-        "description": "Location where Handy stores its data"
+        "description": "Location where {{appName}} stores its data"
       },
       "sourceCode": {
         "title": "Source Code",
@@ -374,7 +598,7 @@
       },
       "supportDevelopment": {
         "title": "Support Development",
-        "description": "Help us continue building Handy",
+        "description": "Help us continue building {{appName}}",
         "button": "Donate"
       },
       "acknowledgments": {
@@ -382,7 +606,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "High-performance inference of OpenAI's Whisper automatic speech recognition model",
-          "details": "Handy uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
+          "details": "{{appName}} uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
     }
@@ -421,11 +645,13 @@
     "off": "Off",
     "yes": "Yes",
     "no": "No",
+    "space": "Space",
+    "optionKey": "⌥",
     "noOptionsFound": "No options found"
   },
   "accessibility": {
     "permissionsRequired": "Accessibility Permissions Required",
-    "permissionsDescription": "Handy needs accessibility permissions to type transcribed text.",
+    "permissionsDescription": "{{appName}} needs accessibility permissions to type transcribed text.",
     "openSettings": "Open System Settings",
     "dismiss": "Dismiss"
   },
@@ -435,7 +661,7 @@
   },
   "appLanguage": {
     "title": "Application Language",
-    "description": "Change the language of the Handy interface"
+    "description": "Change the language of the {{appName}} interface"
   },
   "overlay": {
     "transcribing": "Transcribing...",
@@ -443,5 +669,20 @@
   },
   "recording": {
     "limitWarning": "Recording ends in 30 seconds"
+  },
+  "notifications": {
+    "errorTitle": "{{appName}}",
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "permissions": {
+    "accessibilityLost": "Accessibility permission was revoked. Auto-paste is disabled. Please re-enable in System Settings > Privacy & Security > Accessibility.",
+    "accessibilityLostTitle": "Accessibility Permission Required",
+    "microphoneDenied": "Microphone access was denied. Please grant permission in System Settings > Privacy & Security > Microphone.",
+    "microphoneDeniedTitle": "Microphone Permission Required",
+    "openSettings": "Open Settings"
+  },
+  "pasteLastTranscript": {
+    "noHistory": "No transcription history to paste"
   }
 }

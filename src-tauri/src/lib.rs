@@ -14,6 +14,7 @@ mod llm_client;
 mod managers;
 mod notification;
 mod overlay;
+mod permissions;
 mod settings;
 mod shortcut;
 mod signal_handle;
@@ -326,6 +327,9 @@ pub fn run() {
         // macOS Fn key monitor commands
         fn_key_monitor::start_fn_key_monitor,
         fn_key_monitor::stop_fn_key_monitor,
+        // Permission commands
+        permissions::open_accessibility_settings,
+        permissions::open_microphone_settings,
     ]);
 
     // On other platforms, exclude MLX commands
@@ -415,6 +419,9 @@ pub fn run() {
         commands::history::update_history_limit,
         commands::history::update_recording_retention_period,
         helpers::clamshell::is_laptop,
+        // Permission commands
+        permissions::open_accessibility_settings,
+        permissions::open_microphone_settings,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

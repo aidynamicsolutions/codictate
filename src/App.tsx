@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Toaster } from "sonner";
-import { useTranslation } from "react-i18next";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
+import MicrophonePermissions from "./components/MicrophonePermissions";
 import Footer from "./components/footer";
 import Onboarding from "./components/onboarding";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
@@ -17,7 +17,6 @@ const renderSettingsContent = (section: SidebarSection) => {
 };
 
 function App() {
-  const { t } = useTranslation();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("general");
@@ -32,6 +31,8 @@ function App() {
   useEffect(() => {
     checkOnboardingStatus();
   }, []);
+
+  // Note: Permission event listeners are now handled by AccessibilityPermissions and MicrophonePermissions components
 
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
@@ -111,6 +112,7 @@ function App() {
           <div className="flex-1 overflow-y-auto">
             <div className="flex flex-col items-center p-4 gap-4">
               <AccessibilityPermissions />
+              <MicrophonePermissions />
               {renderSettingsContent(currentSection)}
             </div>
           </div>

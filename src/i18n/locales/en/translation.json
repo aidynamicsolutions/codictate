@@ -655,6 +655,12 @@
     "openSettings": "Open System Settings",
     "dismiss": "Dismiss"
   },
+  "microphone": {
+    "permissionsRequired": "Microphone Permission Required",
+    "permissionsDescription": "{{appName}} needs microphone access to transcribe your speech.",
+    "openSettings": "Open System Settings",
+    "dismiss": "Dismiss"
+  },
   "errors": {
     "loadDirectory": "Error loading directory: {{error}}",
     "postProcessFailed": "Post-processing failed. Using original transcription."
@@ -672,7 +678,28 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "permissions": {
+    "accessibilityLost": "Accessibility permission was revoked. Auto-paste is disabled. Please re-enable in System Settings > Privacy & Security > Accessibility.",
+    "accessibilityLostTitle": "Accessibility Permission Required",
+    "microphoneDenied": "Microphone access was denied. Please grant permission in System Settings > Privacy & Security > Microphone.",
+    "microphoneDeniedTitle": "Microphone Permission Required",
+    "openSettings": "Open Settings",
+    "modal": {
+      "accessibility": {
+        "title": "Accessibility Permission Required",
+        "description": "Codictate needs Accessibility permission to detect keyboard shortcuts and paste transcriptions. Please re-enable it in System Settings.",
+        "openSettings": "Open System Settings"
+      },
+      "microphone": {
+        "title": "Microphone Access Required",
+        "description": "Codictate needs microphone access to transcribe your speech. Please enable it in System Settings.",
+        "openSettings": "Open System Settings"
+      },
+      "dismiss": "Dismiss"
+    }
   },
   "pasteLastTranscript": {
     "noHistory": "No transcription history to paste"
