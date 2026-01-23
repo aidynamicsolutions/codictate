@@ -3,7 +3,8 @@
     "settings": "Configurações...",
     "checkUpdates": "Verificar Atualizações...",
     "quit": "Sair",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "copyLastRecording": "Copiar última gravação"
   },
   "sidebar": {
     "general": "Geral",
@@ -18,6 +19,206 @@
     "recommended": "Recomendado",
     "download": "Baixar",
     "downloading": "Baixando...",
+    "progress": {
+      "welcome": "Bem-vindo",
+      "permissions": "Permissões",
+      "setup": "Configuração",
+      "learn": "Aprender"
+    },
+    "welcome": {
+      "title": "Qual é o seu nome?",
+      "subtitle": "Vamos personalizar sua experiência",
+      "namePlaceholder": "Digite seu nome",
+      "continue": "Continuar"
+    },
+    "attribution": {
+      "greeting": "Bem-vindo, {{name}}!",
+      "defaultName": "amigo",
+      "question": "Como você nos conheceu?",
+      "continue": "Continuar",
+      "back": "Voltar",
+      "sources": {
+        "social_media": "Redes sociais",
+        "youtube": "YouTube",
+        "newsletter": "Newsletter",
+        "ai_chat": "Chat IA",
+        "search_engine": "Motor de busca",
+        "event": "Evento",
+        "friend": "Amigo",
+        "colleague": "Colega",
+        "podcast": "Podcast",
+        "article": "Artigo",
+        "product_hunt": "Product Hunt",
+        "other": "Outro"
+      },
+      "secondaryQuestion": {
+        "social_media": "Qual rede social?",
+        "search_engine": "Qual motor de busca?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Outro"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Outro"
+        }
+      },
+      "pleaseSpecify": "Por favor, especifique",
+      "otherPlaceholder": "Digite sua resposta..."
+    },
+    "tellUsAboutYou": {
+      "title": "Conte-nos sobre você",
+      "workQuestion": "O que você faz?",
+      "levelQuestion": "Conte-nos mais",
+      "continue": "Continuar",
+      "back": "Voltar",
+      "workRoles": {
+        "founder_ceo": "Fundador/CEO",
+        "consultant": "Consultor",
+        "operations": "Operações",
+        "developer": "Desenvolvedor",
+        "product": "Produto",
+        "data_analysis": "Análise de Dados",
+        "sales": "Vendas",
+        "marketing": "Marketing",
+        "customer_support": "Suporte ao Cliente",
+        "recruiting": "Recrutamento",
+        "creator": "Criador",
+        "writer": "Escritor",
+        "educator": "Educador",
+        "student": "Estudante",
+        "legal": "Jurídico",
+        "healthcare": "Saúde",
+        "other": "Outro"
+      },
+      "professionalLevels": {
+        "executive": "Executivo",
+        "director": "Diretor",
+        "manager": "Gerente",
+        "individual_contributor": "Especialista",
+        "freelancer": "Freelancer",
+        "other": "Outro"
+      },
+      "pleaseSpecify": "Por favor, especifique",
+      "otherPlaceholder": "Digite sua resposta..."
+    },
+    "typingUseCases": {
+      "title": "Onde você passa seu tempo digitando?",
+      "subtitle": "Isso nos ajuda a personalizar sua experiência.",
+      "subtitleHint": "Selecione todas que se aplicam.",
+      "continue": "Continuar",
+      "back": "Voltar",
+      "pleaseSpecify": "Por favor, especifique",
+      "otherPlaceholder": "Digite sua resposta...",
+      "options": {
+        "ai_chat": "Conversando com assistentes IA",
+        "messaging": "Mensagens e chat",
+        "coding": "Escrevendo código",
+        "emails": "Escrevendo emails",
+        "documents": "Criando documentos",
+        "notes": "Fazendo anotações",
+        "social_posts": "Posts e comentários em redes sociais",
+        "other": "Outra coisa"
+      }
+    },
+    "permissions": {
+      "title": "Configure {{appName}} no seu computador",
+      "accessibility": {
+        "title": "Permita que {{appName}} insira palavras faladas",
+        "description": "Isso permite que {{appName}} coloque suas palavras faladas no campo de texto correto",
+        "tooltip": "{{appName}} usa isso para obter contexto do aplicativo que você está usando e acessar temporariamente a área de transferência para colar texto.",
+        "success": "{{appName}} agora pode colar texto em qualquer lugar"
+      },
+      "microphone": {
+        "title": "Permita que {{appName}} use seu microfone",
+        "description": "{{appName}} só acessará o microfone quando você estiver usando ativamente",
+        "tooltip": "{{appName}} reproduzirá um som e mostrará uma animação quando o microfone estiver ativo",
+        "success": "{{appName}} agora pode ouvir você"
+      },
+      "allow": "Permitir",
+      "checking": "Verificando...",
+      "retry": "Tentar novamente",
+      "continue": "Continuar",
+      "back": "Voltar",
+      "skipModal": {
+        "title": "Permissões Necessárias",
+        "description": "{{appName}} funciona melhor com ambas as permissões habilitadas. Você pode continuar sem elas, mas alguns recursos podem ser limitados.",
+        "continueAnyway": "Continuar mesmo assim",
+        "goBack": "Voltar"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Voltar",
+      "title": "Fale para testar seu microfone",
+      "subtitle": "O microfone embutido do seu computador garantirá transcrição ideal.",
+      "question": "Você vê barras vermelhas se movendo enquanto fala?",
+      "changeMicrophone": "Não, mudar microfone",
+      "yes": "Sim",
+      "dialog": {
+        "title": "Selecionar Microfone",
+        "autoDetect": "Auto-detectar",
+        "autoDetectDescription": "Usa o microfone padrão do sistema",
+        "default": "padrão"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Voltar",
+      "title": "Pressione o atalho de teclado para testar",
+      "subtitle": "Recomendamos a tecla",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "no canto inferior esquerdo do teclado.",
+      "question": "O botão fica vermelho enquanto você pressiona?",
+      "changeShortcut": "Não, mudar atalho",
+      "yes": "Sim",
+      "continue": "Continuar",
+      "modal": {
+        "title": "Mudar atalhos",
+        "subtitle": "Personalize como você interage com {{appName}}",
+        "pushToTalk": {
+          "title": "Pressionar para falar",
+          "description": "Segure para dizer algo curto"
+        },
+        "handsFree": {
+          "title": "Modo mãos livres",
+          "description": "Pressione para iniciar e parar o ditado"
+        },
+        "addAnother": "Adicionar outro",
+        "resetToDefault": "Restaurar padrão"
+      }
+    },
+    "languageSelect": {
+      "back": "Voltar",
+      "title": "Defina o(s) idioma(s) que você fala",
+      "subtitle": "{{appName}} funciona em 100 idiomas.",
+      "description": "Selecione os idiomas que você fala ou deixe {{appName}} detectá-los automaticamente.",
+      "yourSelectedLanguage": "Seu idioma selecionado",
+      "yourSelectedLanguages": "Seus idiomas selecionados",
+      "changeLanguages": "Mudar idiomas",
+      "continue": "Continuar",
+      "makeActiveHint": "Tornar este o idioma ativo padrão",
+      "modal": {
+        "title": "Idiomas",
+        "subtitle": "Selecione os idiomas que você quer usar com {{appName}}",
+        "searchPlaceholder": "Buscar idiomas",
+        "autoDetect": "Auto-detectar",
+        "autoDetectMessage": "A auto-detecção está ativada. {{appName}} tentará detectar o idioma que você está falando.",
+        "selected": "Selecionado",
+        "languagesCount": "{{count}} idiomas",
+        "saveAndClose": "Salvar e fechar",
+        "maxReached": "Máximo {{max}} idiomas permitidos"
+      }
+    },
     "modelCard": {
       "accuracy": "precisão",
       "speed": "velocidade"
@@ -49,7 +250,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "Muito rápido, apenas inglês. Lida bem com sotaques."
       }
     },
     "learn": {
@@ -114,7 +315,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Bem-vindo ao Handy!",
+    "welcome": "Bem-vindo ao {{appName}}!",
     "downloadPrompt": "Baixe um modelo abaixo para começar a transcrever.",
     "availableModels": "Modelos Disponíveis",
     "downloadModels": "Baixar Modelos",
@@ -148,18 +349,29 @@
         "pressKeys": "Pressione as teclas...",
         "bindings": {
           "transcribe": {
-            "name": "Transcrever",
-            "description": "Converte sua fala em texto."
+            "name": "Pressionar para falar",
+            "description": "Segure para dizer algo curto"
           },
           "cancel": {
             "name": "Cancelar",
             "description": "Cancela a gravação atual."
+          },
+          "transcribe_handsfree": {
+            "name": "Modo mãos livres",
+            "description": "Pressione para iniciar e parar o ditado"
+          },
+          "paste_last_transcript": {
+            "name": "Colar última transcrição",
+            "description": "Cola o texto que você acabou de ditar"
           }
         },
         "errors": {
           "restore": "Falha ao restaurar atalho original",
           "set": "Falha ao definir atalho: {{error}}",
-          "reset": "Falha ao redefinir atalho para o valor original"
+          "reset": "Falha ao redefinir atalho para o valor original",
+          "multipleNonModifierKeys": "O atalho só pode ter uma tecla principal. Use teclas modificadoras (Ctrl, Shift, Alt, Cmd) com uma única tecla.",
+          "modifierRequired": "O atalho deve incluir uma tecla modificadora (Ctrl, Shift, Alt, Cmd) ou ser uma tecla de função",
+          "noKeysRecorded": "Nenhuma tecla registrada"
         }
       },
       "language": {
@@ -459,7 +671,9 @@
     "off": "Desligado",
     "yes": "Sim",
     "no": "Não",
-    "noOptionsFound": "Nenhuma opção encontrada"
+    "noOptionsFound": "Nenhuma opção encontrada",
+    "space": "Espaço",
+    "optionKey": "⌥"
   },
   "accessibility": {
     "permissionsRequired": "Permissões de Acessibilidade Necessárias",
@@ -476,5 +690,40 @@
   },
   "overlay": {
     "transcribing": "Transcrevendo..."
-  }
+  },
+  "microphone": {
+    "permissionsRequired": "Permissão de microfone necessária",
+    "permissionsDescription": "{{appName}} precisa de acesso ao microfone para transcrever sua voz.",
+    "openSettings": "Abrir Configurações do Sistema",
+    "dismiss": "Dispensar"
+  },
+  "permissions": {
+    "accessibilityLost": "A permissão de acessibilidade foi revogada. A colagem automática está desabilitada. Por favor, reative em Configurações do Sistema > Privacidade e Segurança > Acessibilidade.",
+    "accessibilityLostTitle": "Permissão de Acessibilidade necessária",
+    "microphoneDenied": "A permissão do microfone foi negada. Por favor, conceda a permissão em Configurações do Sistema > Privacidade e Segurança > Microfone.",
+    "microphoneDeniedTitle": "Permissão de Microfone necessária",
+    "openSettings": "Abrir Configurações",
+    "modal": {
+      "accessibility": {
+        "title": "Permissão de Acessibilidade necessária",
+        "description": "Codictate precisa de permissões de Acessibilidade para detectar atalhos de teclado e colar transcrições. Por favor, ative nas Configurações do Sistema.",
+        "openSettings": "Abrir Configurações do Sistema"
+      },
+      "microphone": {
+        "title": "Permissão de Microfone necessária",
+        "description": "Codictate precisa de acesso ao microfone para transcrever sua voz. Por favor, ative nas Configurações do Sistema.",
+        "openSettings": "Abrir Configurações do Sistema"
+      },
+      "dismiss": "Dispensar"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "Sem histórico de transcrição para colar"
+  },
+  "notifications": {
+    "errorTitle": "{{appName}}",
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "appName": "Codictate"
 }

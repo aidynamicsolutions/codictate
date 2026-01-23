@@ -20,6 +20,206 @@
     "recommended": "Рекомендуется",
     "download": "Скачать",
     "downloading": "Загрузка...",
+    "progress": {
+      "welcome": "Добро пожаловать",
+      "permissions": "Разрешения",
+      "setup": "Настройка",
+      "learn": "Обучение"
+    },
+    "welcome": {
+      "title": "Как вас зовут?",
+      "subtitle": "Давайте персонализируем ваш опыт",
+      "namePlaceholder": "Введите ваше имя",
+      "continue": "Продолжить"
+    },
+    "attribution": {
+      "greeting": "Добро пожаловать, {{name}}!",
+      "defaultName": "друг",
+      "question": "Как вы узнали о нас?",
+      "continue": "Продолжить",
+      "back": "Назад",
+      "sources": {
+        "social_media": "Социальные сети",
+        "youtube": "YouTube",
+        "newsletter": "Рассылка",
+        "ai_chat": "AI-чат",
+        "search_engine": "Поисковик",
+        "event": "Мероприятие",
+        "friend": "Друг",
+        "colleague": "Коллега",
+        "podcast": "Подкаст",
+        "article": "Статья",
+        "product_hunt": "Product Hunt",
+        "other": "Другое"
+      },
+      "secondaryQuestion": {
+        "social_media": "Какая социальная сеть?",
+        "search_engine": "Какой поисковик?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Другое"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Другое"
+        }
+      },
+      "pleaseSpecify": "Уточните",
+      "otherPlaceholder": "Введите ваш ответ..."
+    },
+    "tellUsAboutYou": {
+      "title": "Расскажите о себе",
+      "workQuestion": "Чем вы занимаетесь?",
+      "levelQuestion": "Расскажите подробнее",
+      "continue": "Продолжить",
+      "back": "Назад",
+      "workRoles": {
+        "founder_ceo": "Основатель/CEO",
+        "consultant": "Консультант",
+        "operations": "Операционная деятельность",
+        "developer": "Разработчик",
+        "product": "Продукт",
+        "data_analysis": "Аналитика данных",
+        "sales": "Продажи",
+        "marketing": "Маркетинг",
+        "customer_support": "Поддержка клиентов",
+        "recruiting": "Рекрутинг",
+        "creator": "Создатель контента",
+        "writer": "Писатель",
+        "educator": "Преподаватель",
+        "student": "Студент",
+        "legal": "Юриспруденция",
+        "healthcare": "Здравоохранение",
+        "other": "Другое"
+      },
+      "professionalLevels": {
+        "executive": "Руководитель",
+        "director": "Директор",
+        "manager": "Менеджер",
+        "individual_contributor": "Специалист",
+        "freelancer": "Фрилансер",
+        "other": "Другое"
+      },
+      "pleaseSpecify": "Уточните",
+      "otherPlaceholder": "Введите ваш ответ..."
+    },
+    "typingUseCases": {
+      "title": "Где вы проводите время за набором текста?",
+      "subtitle": "Это поможет нам настроить ваш опыт.",
+      "subtitleHint": "Выберите все подходящие варианты.",
+      "continue": "Продолжить",
+      "back": "Назад",
+      "pleaseSpecify": "Уточните",
+      "otherPlaceholder": "Введите ваш ответ...",
+      "options": {
+        "ai_chat": "Общение с AI-ассистентами",
+        "messaging": "Мессенджеры и чаты",
+        "coding": "Написание кода",
+        "emails": "Написание писем",
+        "documents": "Создание документов",
+        "notes": "Заметки",
+        "social_posts": "Посты и комментарии в соцсетях",
+        "other": "Что-то другое"
+      }
+    },
+    "permissions": {
+      "title": "Настройте {{appName}} на вашем компьютере",
+      "accessibility": {
+        "title": "Разрешите {{appName}} вставлять произнесённые слова",
+        "description": "Это позволит {{appName}} вставлять ваши слова в нужное текстовое поле",
+        "tooltip": "{{appName}} использует это для получения контекста используемого приложения и временного доступа к буферу обмена для вставки текста.",
+        "success": "{{appName}} теперь может вставлять текст везде"
+      },
+      "microphone": {
+        "title": "Разрешите {{appName}} использовать микрофон",
+        "description": "{{appName}} будет получать доступ к микрофону только когда вы его используете",
+        "tooltip": "{{appName}} воспроизведёт звук и покажет анимацию, когда микрофон активен",
+        "success": "{{appName}} теперь может вас слышать"
+      },
+      "allow": "Разрешить",
+      "checking": "Проверка...",
+      "retry": "Повторить",
+      "continue": "Продолжить",
+      "back": "Назад",
+      "skipModal": {
+        "title": "Требуются разрешения",
+        "description": "{{appName}} работает лучше с обоими разрешениями. Вы можете продолжить без них, но некоторые функции могут быть ограничены.",
+        "continueAnyway": "Продолжить всё равно",
+        "goBack": "Вернуться"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Назад",
+      "title": "Говорите, чтобы проверить микрофон",
+      "subtitle": "Встроенный микрофон вашего компьютера обеспечит оптимальную транскрипцию.",
+      "question": "Видите ли вы красные полосы, движущиеся во время разговора?",
+      "changeMicrophone": "Нет, изменить микрофон",
+      "yes": "Да",
+      "dialog": {
+        "title": "Выбрать микрофон",
+        "autoDetect": "Автоопределение",
+        "autoDetectDescription": "Использовать системный микрофон по умолчанию",
+        "default": "по умолчанию"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Назад",
+      "title": "Нажмите сочетание клавиш, чтобы проверить его",
+      "subtitle": "Рекомендуем использовать клавишу",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "в левом нижнем углу клавиатуры.",
+      "question": "Кнопка становится красной при нажатии?",
+      "changeShortcut": "Нет, изменить сочетание",
+      "yes": "Да",
+      "continue": "Продолжить",
+      "modal": {
+        "title": "Изменить сочетания клавиш",
+        "subtitle": "Настройте взаимодействие с {{appName}}",
+        "pushToTalk": {
+          "title": "Нажми и говори",
+          "description": "Удерживайте для коротких фраз"
+        },
+        "handsFree": {
+          "title": "Режим без рук",
+          "description": "Нажмите для начала и остановки диктовки"
+        },
+        "addAnother": "Добавить ещё",
+        "resetToDefault": "Сбросить по умолчанию"
+      }
+    },
+    "languageSelect": {
+      "back": "Назад",
+      "title": "Установите язык(и), на которых вы говорите",
+      "subtitle": "{{appName}} работает на 100 языках.",
+      "description": "Выберите языки, на которых вы говорите, или позвольте {{appName}} определить их автоматически.",
+      "yourSelectedLanguage": "Ваш выбранный язык",
+      "yourSelectedLanguages": "Ваши выбранные языки",
+      "changeLanguages": "Изменить языки",
+      "continue": "Продолжить",
+      "makeActiveHint": "Сделать этот язык активным по умолчанию",
+      "modal": {
+        "title": "Языки",
+        "subtitle": "Выберите языки, которые хотите использовать с {{appName}}",
+        "searchPlaceholder": "Поиск языков",
+        "autoDetect": "Автоопределение",
+        "autoDetectMessage": "Автоопределение включено. {{appName}} попытается определить язык, на котором вы говорите.",
+        "selected": "Выбрано",
+        "languagesCount": "{{count}} языков",
+        "saveAndClose": "Сохранить и закрыть",
+        "maxReached": "Максимум {{max}} языков"
+      }
+    },
     "modelCard": {
       "accuracy": "точность",
       "speed": "скорость"
@@ -51,7 +251,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "Очень быстро, только английский. Хорошо распознаёт акценты."
       }
     },
     "learn": {
@@ -116,7 +316,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to {{appName}}!",
+    "welcome": "Добро пожаловать в {{appName}}!",
     "downloadPrompt": "Загрузите модель ниже, чтобы начать транскрипцию.",
     "availableModels": "Доступные модели",
     "downloadModels": "Скачать модели",
@@ -150,18 +350,29 @@
         "pressKeys": "Нажимайте клавиши...",
         "bindings": {
           "transcribe": {
-            "name": "Расшифровать",
-            "description": "Преобразует вашу речь в текст."
+            "name": "Нажми и говори",
+            "description": "Удерживайте для коротких фраз"
           },
           "cancel": {
             "name": "Отмена",
             "description": "Отменяет текущую запись."
+          },
+          "transcribe_handsfree": {
+            "name": "Режим без рук",
+            "description": "Нажмите для начала и остановки диктовки"
+          },
+          "paste_last_transcript": {
+            "name": "Вставить последнюю транскрипцию",
+            "description": "Вставляет только что продиктованный текст"
           }
         },
         "errors": {
           "restore": "Не удалось восстановить исходный ярлык",
           "set": "Не удалось установить ярлык: {{error}}",
-          "reset": "Не удалось сбросить ярлык до исходного значения"
+          "reset": "Не удалось сбросить ярлык до исходного значения",
+          "multipleNonModifierKeys": "Сочетание клавиш может содержать только одну основную клавишу. Используйте клавиши-модификаторы (Ctrl, Shift, Alt, Cmd) с одной клавишей.",
+          "modifierRequired": "Сочетание клавиш должно включать клавишу-модификатор (Ctrl, Shift, Alt, Cmd) или функциональную клавишу",
+          "noKeysRecorded": "Клавиши не записаны"
         }
       },
       "language": {
@@ -483,7 +694,9 @@
     "off": "Выключенный",
     "yes": "Да",
     "no": "Нет",
-    "noOptionsFound": "Вариантов не найдено"
+    "noOptionsFound": "Вариантов не найдено",
+    "space": "Пробел",
+    "optionKey": "⌥"
   },
   "accessibility": {
     "permissionsRequired": "Требуются разрешения на доступ",
@@ -508,6 +721,36 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "microphone": {
+    "permissionsRequired": "Требуется разрешение на микрофон",
+    "permissionsDescription": "{{appName}} необходим доступ к микрофону для транскрипции вашего голоса.",
+    "openSettings": "Открыть настройки системы",
+    "dismiss": "Закрыть"
+  },
+  "permissions": {
+    "accessibilityLost": "Разрешение на доступность было отозвано. Автоматическая вставка отключена. Пожалуйста, включите снова в Системные настройки > Конфиденциальность и безопасность > Универсальный доступ.",
+    "accessibilityLostTitle": "Требуется разрешение на доступность",
+    "microphoneDenied": "Разрешение на микрофон было отклонено. Пожалуйста, предоставьте разрешение в Системные настройки > Конфиденциальность и безопасность > Микрофон.",
+    "microphoneDeniedTitle": "Требуется разрешение на микрофон",
+    "openSettings": "Открыть настройки",
+    "modal": {
+      "accessibility": {
+        "title": "Требуется разрешение на доступность",
+        "description": "Codictate требуются разрешения на доступность для обнаружения сочетаний клавиш и вставки транскрипций. Пожалуйста, включите в Системных настройках.",
+        "openSettings": "Открыть настройки системы"
+      },
+      "microphone": {
+        "title": "Требуется разрешение на микрофон",
+        "description": "Codictate необходим доступ к микрофону для транскрипции вашего голоса. Пожалуйста, включите в Системных настройках.",
+        "openSettings": "Открыть настройки системы"
+      },
+      "dismiss": "Закрыть"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "Нет истории транскрипций для вставки"
   }
 }

@@ -20,6 +20,206 @@
     "recommended": "おすすめ",
     "download": "ダウンロード",
     "downloading": "ダウンロード中...",
+    "progress": {
+      "welcome": "ようこそ",
+      "permissions": "許可",
+      "setup": "セットアップ",
+      "learn": "学ぶ"
+    },
+    "welcome": {
+      "title": "お名前は何ですか？",
+      "subtitle": "あなたの体験をパーソナライズしましょう",
+      "namePlaceholder": "名前を入力",
+      "continue": "続ける"
+    },
+    "attribution": {
+      "greeting": "ようこそ、{{name}}さん！",
+      "defaultName": "ゲスト",
+      "question": "どこで私たちのことを知りましたか？",
+      "continue": "続ける",
+      "back": "戻る",
+      "sources": {
+        "social_media": "ソーシャルメディア",
+        "youtube": "YouTube",
+        "newsletter": "ニュースレター",
+        "ai_chat": "AIチャット",
+        "search_engine": "検索エンジン",
+        "event": "イベント",
+        "friend": "友人",
+        "colleague": "同僚",
+        "podcast": "ポッドキャスト",
+        "article": "記事",
+        "product_hunt": "Product Hunt",
+        "other": "その他"
+      },
+      "secondaryQuestion": {
+        "social_media": "どのソーシャルメディア？",
+        "search_engine": "どの検索エンジン？"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "その他"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "その他"
+        }
+      },
+      "pleaseSpecify": "詳細を入力",
+      "otherPlaceholder": "回答を入力..."
+    },
+    "tellUsAboutYou": {
+      "title": "あなたについて教えてください",
+      "workQuestion": "お仕事は何ですか？",
+      "levelQuestion": "もう少し教えてください",
+      "continue": "続ける",
+      "back": "戻る",
+      "workRoles": {
+        "founder_ceo": "創業者/CEO",
+        "consultant": "コンサルタント",
+        "operations": "オペレーション",
+        "developer": "開発者",
+        "product": "プロダクト",
+        "data_analysis": "データ分析",
+        "sales": "営業",
+        "marketing": "マーケティング",
+        "customer_support": "カスタマーサポート",
+        "recruiting": "採用",
+        "creator": "クリエイター",
+        "writer": "ライター",
+        "educator": "教育者",
+        "student": "学生",
+        "legal": "法務",
+        "healthcare": "医療",
+        "other": "その他"
+      },
+      "professionalLevels": {
+        "executive": "エグゼクティブ",
+        "director": "ディレクター",
+        "manager": "マネージャー",
+        "individual_contributor": "スペシャリスト",
+        "freelancer": "フリーランサー",
+        "other": "その他"
+      },
+      "pleaseSpecify": "詳細を入力",
+      "otherPlaceholder": "回答を入力..."
+    },
+    "typingUseCases": {
+      "title": "どこでタイピングに時間を費やしますか？",
+      "subtitle": "これにより体験をカスタマイズできます。",
+      "subtitleHint": "該当するものをすべて選択してください。",
+      "continue": "続ける",
+      "back": "戻る",
+      "pleaseSpecify": "詳細を入力",
+      "otherPlaceholder": "回答を入力...",
+      "options": {
+        "ai_chat": "AIアシスタントとの会話",
+        "messaging": "メッセージ＆チャット",
+        "coding": "コードを書く",
+        "emails": "メールを作成",
+        "documents": "ドキュメントを作成",
+        "notes": "メモを取る",
+        "social_posts": "SNS投稿＆コメント",
+        "other": "その他"
+      }
+    },
+    "permissions": {
+      "title": "{{appName}}をコンピューターに設定する",
+      "accessibility": {
+        "title": "{{appName}}に話した言葉の挿入を許可",
+        "description": "これにより{{appName}}が話した言葉を正しいテキストボックスに入力できます",
+        "tooltip": "{{appName}}はこれを使用して使用中のアプリケーションのコンテキストを取得し、テキストを貼り付けるために一時的にクリップボードにアクセスします。",
+        "success": "{{appName}}はどこでもテキストを貼り付けられるようになりました"
+      },
+      "microphone": {
+        "title": "{{appName}}にマイクの使用を許可",
+        "description": "{{appName}}はあなたが積極的に使用しているときのみマイクにアクセスします",
+        "tooltip": "{{appName}}はマイクがアクティブなときに音を鳴らしアニメーションを表示します",
+        "success": "{{appName}}があなたの声を聞けるようになりました"
+      },
+      "allow": "許可",
+      "checking": "確認中...",
+      "retry": "再試行",
+      "continue": "続ける",
+      "back": "戻る",
+      "skipModal": {
+        "title": "許可が必要です",
+        "description": "{{appName}}は両方の許可が有効な場合に最適に動作します。許可なしで続行できますが、一部の機能が制限される場合があります。",
+        "continueAnyway": "続行する",
+        "goBack": "戻る"
+      }
+    },
+    "microphoneCheck": {
+      "back": "戻る",
+      "title": "マイクをテストするために話してください",
+      "subtitle": "コンピューター内蔵のマイクで最適な文字起こしを確保します。",
+      "question": "話している間に赤いバーが動いていますか？",
+      "changeMicrophone": "いいえ、マイクを変更",
+      "yes": "はい",
+      "dialog": {
+        "title": "マイクを選択",
+        "autoDetect": "自動検出",
+        "autoDetectDescription": "システムのデフォルトマイクを使用",
+        "default": "デフォルト"
+      }
+    },
+    "hotkeySetup": {
+      "back": "戻る",
+      "title": "キーボードショートカットを押してテスト",
+      "subtitle": "お勧めは",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "キー（キーボード左下）です。",
+      "question": "押している間ボタンが赤くなりますか？",
+      "changeShortcut": "いいえ、ショートカットを変更",
+      "yes": "はい",
+      "continue": "続ける",
+      "modal": {
+        "title": "ショートカットを変更",
+        "subtitle": "{{appName}}との操作方法をカスタマイズ",
+        "pushToTalk": {
+          "title": "プッシュトゥトーク",
+          "description": "短い発話のために押し続ける"
+        },
+        "handsFree": {
+          "title": "ハンズフリーモード",
+          "description": "押して開始と停止を切り替え"
+        },
+        "addAnother": "もう一つ追加",
+        "resetToDefault": "デフォルトにリセット"
+      }
+    },
+    "languageSelect": {
+      "back": "戻る",
+      "title": "話す言語を設定",
+      "subtitle": "{{appName}}は100言語に対応しています。",
+      "description": "話す言語を選択するか、{{appName}}に自動検出させてください。",
+      "yourSelectedLanguage": "選択した言語",
+      "yourSelectedLanguages": "選択した言語",
+      "changeLanguages": "言語を変更",
+      "continue": "続ける",
+      "makeActiveHint": "これをデフォルトのアクティブ言語にする",
+      "modal": {
+        "title": "言語",
+        "subtitle": "{{appName}}で使用する言語を選択",
+        "searchPlaceholder": "言語を検索",
+        "autoDetect": "自動検出",
+        "autoDetectMessage": "自動検出がオンです。{{appName}}が話している言語を検出しようとします。",
+        "selected": "選択済み",
+        "languagesCount": "{{count}}言語",
+        "saveAndClose": "保存して閉じる",
+        "maxReached": "最大{{max}}言語まで"
+      }
+    },
     "modelCard": {
       "accuracy": "精度",
       "speed": "速度"
@@ -51,7 +251,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "非常に高速、英語のみ。アクセントの処理が得意。"
       }
     },
     "learn": {
@@ -101,7 +301,7 @@
       "steps": {
         "share": "招待リンクを共有",
         "theyGet": "登録すると<strong>1ヶ月無料</strong>のProを獲得！",
-        "youGet": "2,000語を読み上げると<strong>1ヶ月無料</strong>獲得！"
+        "youGet": "2,000語を音声入力すると<strong>1ヶ月無料</strong>獲得！"
       },
       "yourLink": "紹介リンク",
       "copy": "コピー",
@@ -116,7 +316,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to {{appName}}!",
+    "welcome": "{{appName}}へようこそ！",
     "downloadPrompt": "文字起こしを開始するには、下からモデルをダウンロードしてください。",
     "availableModels": "利用可能なモデル",
     "downloadModels": "モデルをダウンロード",
@@ -150,18 +350,29 @@
         "pressKeys": "キーを押してください...",
         "bindings": {
           "transcribe": {
-            "name": "文字起こし",
-            "description": "音声をテキストに変換します。"
+            "name": "プッシュトゥトーク",
+            "description": "短い発話のために押し続ける"
           },
           "cancel": {
             "name": "キャンセル",
             "description": "現在の録音をキャンセルします。"
+          },
+          "transcribe_handsfree": {
+            "name": "ハンズフリーモード",
+            "description": "押して音声入力を開始・停止"
+          },
+          "paste_last_transcript": {
+            "name": "最後の文字起こしを貼り付け",
+            "description": "直前に文字起こしたテキストを貼り付け"
           }
         },
         "errors": {
           "restore": "元のショートカットを復元できませんでした",
           "set": "ショートカットを設定できませんでした: {{error}}",
-          "reset": "ショートカットを元の値にリセットできませんでした"
+          "reset": "ショートカットを元の値にリセットできませんでした",
+          "multipleNonModifierKeys": "ショートカットには1つのメインキーのみ使用できます。修飾キー（Ctrl、Shift、Alt、Cmd）と1つのキーを組み合わせてください。",
+          "modifierRequired": "ショートカットには修飾キー（Ctrl、Shift、Alt、Cmd）またはファンクションキーが必要です",
+          "noKeysRecorded": "キーが記録されていません"
         }
       },
       "language": {
@@ -483,7 +694,9 @@
     "off": "オフ",
     "yes": "はい",
     "no": "いいえ",
-    "noOptionsFound": "オプションが見つかりません"
+    "noOptionsFound": "オプションが見つかりません",
+    "space": "スペース",
+    "optionKey": "⌥"
   },
   "accessibility": {
     "permissionsRequired": "アクセシビリティ権限が必要です",
@@ -508,6 +721,36 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "microphone": {
+    "permissionsRequired": "マイクの許可が必要です",
+    "permissionsDescription": "{{appName}}があなたの声を文字起こしするには、マイクへのアクセスが必要です。",
+    "openSettings": "システム設定を開く",
+    "dismiss": "閉じる"
+  },
+  "permissions": {
+    "accessibilityLost": "アクセシビリティ権限が取り消されました。自動貼り付けが無効になりました。システム設定 > プライバシーとセキュリティ > アクセシビリティで再度有効にしてください。",
+    "accessibilityLostTitle": "アクセシビリティ権限が必要です",
+    "microphoneDenied": "マイクの許可が拒否されました。システム設定 > プライバシーとセキュリティ > マイクで許可してください。",
+    "microphoneDeniedTitle": "マイクの許可が必要です",
+    "openSettings": "設定を開く",
+    "modal": {
+      "accessibility": {
+        "title": "アクセシビリティ権限が必要です",
+        "description": "Codictateがキーボードショートカットを検出し、文字起こしを貼り付けるには、アクセシビリティ権限が必要です。システム設定で有効にしてください。",
+        "openSettings": "システム設定を開く"
+      },
+      "microphone": {
+        "title": "マイクの許可が必要です",
+        "description": "Codictateがあなたの声を文字起こしするには、マイクへのアクセスが必要です。システム設定で有効にしてください。",
+        "openSettings": "システム設定を開く"
+      },
+      "dismiss": "閉じる"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "貼り付ける文字起こし履歴がありません"
   }
 }

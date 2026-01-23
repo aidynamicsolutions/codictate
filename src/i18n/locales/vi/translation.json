@@ -20,6 +20,206 @@
     "recommended": "Đề xuất",
     "download": "Tải xuống",
     "downloading": "Đang tải xuống...",
+    "progress": {
+      "welcome": "Chào mừng",
+      "permissions": "Quyền truy cập",
+      "setup": "Cài đặt",
+      "learn": "Học cách sử dụng"
+    },
+    "welcome": {
+      "title": "Tên bạn là gì?",
+      "subtitle": "Hãy cá nhân hóa trải nghiệm của bạn",
+      "namePlaceholder": "Nhập tên của bạn",
+      "continue": "Tiếp tục"
+    },
+    "attribution": {
+      "greeting": "Chào mừng, {{name}}!",
+      "defaultName": "bạn",
+      "question": "Bạn biết đến chúng tôi qua đâu?",
+      "continue": "Tiếp tục",
+      "back": "Quay lại",
+      "sources": {
+        "social_media": "Mạng xã hội",
+        "youtube": "YouTube",
+        "newsletter": "Bản tin",
+        "ai_chat": "Chat AI",
+        "search_engine": "Công cụ tìm kiếm",
+        "event": "Sự kiện",
+        "friend": "Bạn bè",
+        "colleague": "Đồng nghiệp",
+        "podcast": "Podcast",
+        "article": "Bài viết",
+        "product_hunt": "Product Hunt",
+        "other": "Khác"
+      },
+      "secondaryQuestion": {
+        "social_media": "Mạng xã hội nào?",
+        "search_engine": "Công cụ tìm kiếm nào?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Khác"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Khác"
+        }
+      },
+      "pleaseSpecify": "Vui lòng nêu rõ",
+      "otherPlaceholder": "Nhập câu trả lời của bạn..."
+    },
+    "tellUsAboutYou": {
+      "title": "Kể cho chúng tôi về bạn",
+      "workQuestion": "Bạn làm công việc gì?",
+      "levelQuestion": "Cho chúng tôi biết thêm",
+      "continue": "Tiếp tục",
+      "back": "Quay lại",
+      "workRoles": {
+        "founder_ceo": "Nhà sáng lập/CEO",
+        "consultant": "Tư vấn viên",
+        "operations": "Vận hành",
+        "developer": "Nhà phát triển",
+        "product": "Sản phẩm",
+        "data_analysis": "Phân tích dữ liệu",
+        "sales": "Kinh doanh",
+        "marketing": "Marketing",
+        "customer_support": "Hỗ trợ khách hàng",
+        "recruiting": "Tuyển dụng",
+        "creator": "Nhà sáng tạo nội dung",
+        "writer": "Nhà văn",
+        "educator": "Giảng viên",
+        "student": "Sinh viên",
+        "legal": "Pháp lý",
+        "healthcare": "Y tế",
+        "other": "Khác"
+      },
+      "professionalLevels": {
+        "executive": "Điều hành",
+        "director": "Giám đốc",
+        "manager": "Quản lý",
+        "individual_contributor": "Chuyên viên",
+        "freelancer": "Freelancer",
+        "other": "Khác"
+      },
+      "pleaseSpecify": "Vui lòng nêu rõ",
+      "otherPlaceholder": "Nhập câu trả lời của bạn..."
+    },
+    "typingUseCases": {
+      "title": "Bạn dành thời gian gõ phím ở đâu?",
+      "subtitle": "Điều này giúp chúng tôi tùy chỉnh trải nghiệm của bạn.",
+      "subtitleHint": "Chọn tất cả các mục phù hợp.",
+      "continue": "Tiếp tục",
+      "back": "Quay lại",
+      "pleaseSpecify": "Vui lòng nêu rõ",
+      "otherPlaceholder": "Nhập câu trả lời của bạn...",
+      "options": {
+        "ai_chat": "Trò chuyện với trợ lý AI",
+        "messaging": "Nhắn tin & chat",
+        "coding": "Viết code",
+        "emails": "Viết email",
+        "documents": "Tạo tài liệu",
+        "notes": "Ghi chú",
+        "social_posts": "Bài đăng & bình luận mạng xã hội",
+        "other": "Việc khác"
+      }
+    },
+    "permissions": {
+      "title": "Thiết lập {{appName}} trên máy tính của bạn",
+      "accessibility": {
+        "title": "Cho phép {{appName}} chèn các từ đã nói",
+        "description": "Điều này cho phép {{appName}} đặt các từ bạn nói vào đúng ô văn bản",
+        "tooltip": "{{appName}} sử dụng quyền này để lấy ngữ cảnh của ứng dụng bạn đang dùng và tạm thời truy cập clipboard để dán văn bản.",
+        "success": "{{appName}} giờ có thể dán văn bản bất kỳ đâu"
+      },
+      "microphone": {
+        "title": "Cho phép {{appName}} sử dụng micrô",
+        "description": "{{appName}} chỉ truy cập micrô khi bạn đang sử dụng tích cực",
+        "tooltip": "{{appName}} sẽ phát âm thanh và hiển thị hoạt ảnh khi micrô đang hoạt động",
+        "success": "{{appName}} giờ có thể nghe bạn"
+      },
+      "allow": "Cho phép",
+      "checking": "Đang kiểm tra...",
+      "retry": "Thử lại",
+      "continue": "Tiếp tục",
+      "back": "Quay lại",
+      "skipModal": {
+        "title": "Cần quyền truy cập",
+        "description": "{{appName}} hoạt động tốt nhất với cả hai quyền được bật. Bạn có thể tiếp tục mà không có chúng, nhưng một số tính năng có thể bị hạn chế.",
+        "continueAnyway": "Vẫn tiếp tục",
+        "goBack": "Quay lại"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Quay lại",
+      "title": "Nói để kiểm tra micrô của bạn",
+      "subtitle": "Micrô tích hợp trong máy tính của bạn sẽ đảm bảo chuyển đổi tối ưu.",
+      "question": "Bạn có thấy các thanh màu đỏ di chuyển khi nói không?",
+      "changeMicrophone": "Không, đổi micrô",
+      "yes": "Có",
+      "dialog": {
+        "title": "Chọn Micrô",
+        "autoDetect": "Tự động phát hiện",
+        "autoDetectDescription": "Sử dụng micrô mặc định của hệ thống",
+        "default": "mặc định"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Quay lại",
+      "title": "Nhấn phím tắt để kiểm tra",
+      "subtitle": "Chúng tôi khuyên dùng phím",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "ở góc dưới bên trái bàn phím.",
+      "question": "Nút có chuyển sang màu đỏ khi bạn nhấn không?",
+      "changeShortcut": "Không, đổi phím tắt",
+      "yes": "Có",
+      "continue": "Tiếp tục",
+      "modal": {
+        "title": "Đổi phím tắt",
+        "subtitle": "Tùy chỉnh cách bạn tương tác với {{appName}}",
+        "pushToTalk": {
+          "title": "Nhấn để nói",
+          "description": "Giữ để nói điều gì đó ngắn"
+        },
+        "handsFree": {
+          "title": "Chế độ rảnh tay",
+          "description": "Nhấn để bắt đầu và dừng nói để gõ"
+        },
+        "addAnother": "Thêm phím khác",
+        "resetToDefault": "Đặt lại mặc định"
+      }
+    },
+    "languageSelect": {
+      "back": "Quay lại",
+      "title": "Đặt ngôn ngữ bạn nói",
+      "subtitle": "{{appName}} hoạt động với 100 ngôn ngữ.",
+      "description": "Chọn các ngôn ngữ bạn nói hoặc để {{appName}} tự động phát hiện.",
+      "yourSelectedLanguage": "Ngôn ngữ đã chọn của bạn",
+      "yourSelectedLanguages": "Các ngôn ngữ đã chọn của bạn",
+      "changeLanguages": "Đổi ngôn ngữ",
+      "continue": "Tiếp tục",
+      "makeActiveHint": "Đặt làm ngôn ngữ hoạt động mặc định",
+      "modal": {
+        "title": "Ngôn ngữ",
+        "subtitle": "Chọn các ngôn ngữ bạn muốn sử dụng với {{appName}}",
+        "searchPlaceholder": "Tìm kiếm ngôn ngữ",
+        "autoDetect": "Tự động phát hiện",
+        "autoDetectMessage": "Tự động phát hiện đã bật. {{appName}} sẽ cố gắng phát hiện ngôn ngữ bạn đang nói.",
+        "selected": "Đã chọn",
+        "languagesCount": "{{count}} ngôn ngữ",
+        "saveAndClose": "Lưu và đóng",
+        "maxReached": "Tối đa {{max}} ngôn ngữ được phép"
+      }
+    },
     "modelCard": {
       "accuracy": "độ chính xác",
       "speed": "tốc độ"
@@ -51,7 +251,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "Rất nhanh, chỉ tiếng Anh. Xử lý giọng vùng miền tốt."
       }
     },
     "learn": {
@@ -87,7 +287,7 @@
       "description": "Tận hưởng 2 tuần truy cập không giới hạn miễn phí",
       "noCard": "Không cần thẻ tín dụng",
       "features": {
-        "unlimited": "Transcription không giới hạn",
+        "unlimited": "Chuyển đổi giọng nói không giới hạn",
         "collaboration": "Hoạt động ở bất kỳ đâu bạn gõ",
         "crossPlatform": "Tinh chỉnh văn bản bằng AI",
         "commandMode": "Truy cập hỗ trợ ưu tiên"
@@ -101,7 +301,7 @@
       "steps": {
         "share": "Chia sẻ liên kết mời của bạn",
         "theyGet": "Họ đăng ký và nhận <strong>một tháng miễn phí</strong> Pro!",
-        "youGet": "Bạn nhận <strong>một tháng miễn phí</strong> khi họ đọc 2.000 từ!"
+        "youGet": "Bạn nhận <strong>một tháng miễn phí</strong> khi họ nói để gõ 2.000 từ!"
       },
       "yourLink": "Liên kết giới thiệu của bạn",
       "copy": "Sao chép",
@@ -116,7 +316,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to {{appName}}!",
+    "welcome": "Chào mừng đến với {{appName}}!",
     "downloadPrompt": "Tải xuống mô hình bên dưới để bắt đầu chuyển đổi.",
     "availableModels": "Các Mô Hình Có Sẵn",
     "downloadModels": "Tải Xuống Mô Hình",
@@ -150,8 +350,16 @@
         "pressKeys": "Nhấn phím...",
         "bindings": {
           "transcribe": {
-            "name": "Chuyển đổi",
-            "description": "Chuyển đổi giọng nói của bạn thành văn bản."
+            "name": "Nhấn để nói",
+            "description": "Giữ để nói điều gì đó ngắn"
+          },
+          "transcribe_handsfree": {
+            "name": "Chế độ rảnh tay",
+            "description": "Nhấn để bắt đầu và dừng nói để gõ"
+          },
+          "paste_last_transcript": {
+            "name": "Dán bản ghi cuối",
+            "description": "Dán văn bản bạn vừa đọc"
           },
           "cancel": {
             "name": "Hủy",
@@ -161,7 +369,10 @@
         "errors": {
           "restore": "Không thể khôi phục phím tắt gốc",
           "set": "Không thể đặt phím tắt: {{error}}",
-          "reset": "Không thể đặt lại phím tắt về giá trị gốc"
+          "reset": "Không thể đặt lại phím tắt về giá trị gốc",
+          "multipleNonModifierKeys": "Phím tắt chỉ có thể có một phím chính. Sử dụng phím bổ trợ (Ctrl, Shift, Alt, Cmd) với một phím duy nhất.",
+          "modifierRequired": "Phím tắt phải bao gồm phím bổ trợ (Ctrl, Shift, Alt, Cmd) hoặc là phím chức năng",
+          "noKeysRecorded": "Chưa ghi nhận phím nào"
         }
       },
       "language": {
@@ -483,11 +694,19 @@
     "off": "Tắt",
     "yes": "Có",
     "no": "Không",
+    "space": "Phím cách",
+    "optionKey": "⌥",
     "noOptionsFound": "Không tìm thấy tùy chọn"
   },
   "accessibility": {
     "permissionsRequired": "Cần quyền truy cập",
     "permissionsDescription": "{{appName}} cần quyền truy cập để gõ văn bản đã chuyển đổi.",
+    "openSettings": "Mở Cài đặt Hệ thống",
+    "dismiss": "Bỏ qua"
+  },
+  "microphone": {
+    "permissionsRequired": "Cần quyền truy cập Micrô",
+    "permissionsDescription": "{{appName}} cần quyền truy cập micrô để chuyển đổi giọng nói của bạn.",
     "openSettings": "Mở Cài đặt Hệ thống",
     "dismiss": "Bỏ qua"
   },
@@ -508,6 +727,30 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "permissions": {
+    "accessibilityLost": "Quyền truy cập đã bị thu hồi. Tự động dán bị vô hiệu hóa. Vui lòng bật lại trong Cài đặt Hệ thống > Quyền riêng tư & Bảo mật > Trợ năng.",
+    "accessibilityLostTitle": "Cần quyền Trợ năng",
+    "microphoneDenied": "Quyền truy cập micrô đã bị từ chối. Vui lòng cấp quyền trong Cài đặt Hệ thống > Quyền riêng tư & Bảo mật > Micrô.",
+    "microphoneDeniedTitle": "Cần quyền truy cập Micrô",
+    "openSettings": "Mở Cài đặt",
+    "modal": {
+      "accessibility": {
+        "title": "Cần quyền Trợ năng",
+        "description": "Codictate cần quyền Trợ năng để phát hiện phím tắt và dán bản ghi. Vui lòng bật lại trong Cài đặt Hệ thống.",
+        "openSettings": "Mở Cài đặt Hệ thống"
+      },
+      "microphone": {
+        "title": "Cần quyền truy cập Micrô",
+        "description": "Codictate cần quyền truy cập micrô để chuyển đổi giọng nói của bạn. Vui lòng bật trong Cài đặt Hệ thống.",
+        "openSettings": "Mở Cài đặt Hệ thống"
+      },
+      "dismiss": "Bỏ qua"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "Không có lịch sử chuyển đổi để dán"
   }
 }

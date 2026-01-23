@@ -20,6 +20,206 @@
     "recommended": "Polecane",
     "download": "Pobierz",
     "downloading": "Pobieranie...",
+    "progress": {
+      "welcome": "Witaj",
+      "permissions": "Uprawnienia",
+      "setup": "Konfiguracja",
+      "learn": "Naucz się"
+    },
+    "welcome": {
+      "title": "Jak masz na imię?",
+      "subtitle": "Spersonalizujmy Twoje doświadczenie",
+      "namePlaceholder": "Wpisz swoje imię",
+      "continue": "Kontynuuj"
+    },
+    "attribution": {
+      "greeting": "Witaj, {{name}}!",
+      "defaultName": "przyjacielu",
+      "question": "Skąd o nas usłyszałeś?",
+      "continue": "Kontynuuj",
+      "back": "Wstecz",
+      "sources": {
+        "social_media": "Media społecznościowe",
+        "youtube": "YouTube",
+        "newsletter": "Newsletter",
+        "ai_chat": "Czat AI",
+        "search_engine": "Wyszukiwarka",
+        "event": "Wydarzenie",
+        "friend": "Znajomy",
+        "colleague": "Współpracownik",
+        "podcast": "Podcast",
+        "article": "Artykuł",
+        "product_hunt": "Product Hunt",
+        "other": "Inne"
+      },
+      "secondaryQuestion": {
+        "social_media": "Które media społecznościowe?",
+        "search_engine": "Która wyszukiwarka?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Inne"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Inne"
+        }
+      },
+      "pleaseSpecify": "Proszę uściślić",
+      "otherPlaceholder": "Wpisz swoją odpowiedź..."
+    },
+    "tellUsAboutYou": {
+      "title": "Opowiedz nam o sobie",
+      "workQuestion": "Czym się zajmujesz?",
+      "levelQuestion": "Powiedz nam więcej",
+      "continue": "Kontynuuj",
+      "back": "Wstecz",
+      "workRoles": {
+        "founder_ceo": "Założyciel/CEO",
+        "consultant": "Konsultant",
+        "operations": "Operacje",
+        "developer": "Programista",
+        "product": "Produkt",
+        "data_analysis": "Analiza danych",
+        "sales": "Sprzedaż",
+        "marketing": "Marketing",
+        "customer_support": "Obsługa klienta",
+        "recruiting": "Rekrutacja",
+        "creator": "Twórca",
+        "writer": "Pisarz",
+        "educator": "Nauczyciel",
+        "student": "Student",
+        "legal": "Prawo",
+        "healthcare": "Służba zdrowia",
+        "other": "Inne"
+      },
+      "professionalLevels": {
+        "executive": "Dyrektor",
+        "director": "Dyrektor",
+        "manager": "Kierownik",
+        "individual_contributor": "Specjalista",
+        "freelancer": "Freelancer",
+        "other": "Inne"
+      },
+      "pleaseSpecify": "Proszę uściślić",
+      "otherPlaceholder": "Wpisz swoją odpowiedź..."
+    },
+    "typingUseCases": {
+      "title": "Gdzie spędzasz czas pisząc?",
+      "subtitle": "To pomoże nam dostosować Twoje doświadczenie.",
+      "subtitleHint": "Wybierz wszystkie pasujące.",
+      "continue": "Kontynuuj",
+      "back": "Wstecz",
+      "pleaseSpecify": "Proszę uściślić",
+      "otherPlaceholder": "Wpisz swoją odpowiedź...",
+      "options": {
+        "ai_chat": "Rozmowy z asystentami AI",
+        "messaging": "Wiadomości i czat",
+        "coding": "Pisanie kodu",
+        "emails": "Pisanie e-maili",
+        "documents": "Tworzenie dokumentów",
+        "notes": "Robienie notatek",
+        "social_posts": "Posty i komentarze w mediach społecznościowych",
+        "other": "Coś innego"
+      }
+    },
+    "permissions": {
+      "title": "Skonfiguruj {{appName}} na swoim komputerze",
+      "accessibility": {
+        "title": "Pozwól {{appName}} wstawiać wypowiadane słowa",
+        "description": "To pozwala {{appName}} wstawiać wypowiadane słowa w odpowiednie pole tekstowe",
+        "tooltip": "{{appName}} używa tego, aby uzyskać kontekst aplikacji, której używasz, i tymczasowo uzyskać dostęp do schowka w celu wklejenia tekstu.",
+        "success": "{{appName}} może teraz wklejać tekst wszędzie"
+      },
+      "microphone": {
+        "title": "Pozwól {{appName}} używać mikrofonu",
+        "description": "{{appName}} uzyska dostęp do mikrofonu tylko wtedy, gdy aktywnie go używasz",
+        "tooltip": "{{appName}} odtworzy dźwięk i pokaże animację, gdy mikrofon jest aktywny",
+        "success": "{{appName}} może teraz Cię słyszeć"
+      },
+      "allow": "Zezwól",
+      "checking": "Sprawdzanie...",
+      "retry": "Ponów",
+      "continue": "Kontynuuj",
+      "back": "Wstecz",
+      "skipModal": {
+        "title": "Wymagane uprawnienia",
+        "description": "{{appName}} działa najlepiej z obiema uprawnieniami. Możesz kontynuować bez nich, ale niektóre funkcje mogą być ograniczone.",
+        "continueAnyway": "Kontynuuj mimo to",
+        "goBack": "Wróć"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Wstecz",
+      "title": "Mów, aby przetestować mikrofon",
+      "subtitle": "Wbudowany mikrofon komputera zapewni optymalną transkrypcję.",
+      "question": "Czy widzisz czerwone paski poruszające się podczas mówienia?",
+      "changeMicrophone": "Nie, zmień mikrofon",
+      "yes": "Tak",
+      "dialog": {
+        "title": "Wybierz mikrofon",
+        "autoDetect": "Auto-wykrywanie",
+        "autoDetectDescription": "Używa domyślnego mikrofonu systemowego",
+        "default": "domyślny"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Wstecz",
+      "title": "Naciśnij skrót klawiaturowy, aby go przetestować",
+      "subtitle": "Zalecamy klawisz",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "w lewym dolnym rogu klawiatury.",
+      "question": "Czy przycisk zmienia kolor na czerwony podczas naciskania?",
+      "changeShortcut": "Nie, zmień skrót",
+      "yes": "Tak",
+      "continue": "Kontynuuj",
+      "modal": {
+        "title": "Zmień skróty",
+        "subtitle": "Dostosuj sposób interakcji z {{appName}}",
+        "pushToTalk": {
+          "title": "Naciśnij, aby mówić",
+          "description": "Przytrzymaj, aby powiedzieć coś krótkiego"
+        },
+        "handsFree": {
+          "title": "Tryb bez użycia rąk",
+          "description": "Naciśnij, aby rozpocząć i zatrzymać dyktowanie"
+        },
+        "addAnother": "Dodaj kolejny",
+        "resetToDefault": "Przywróć domyślne"
+      }
+    },
+    "languageSelect": {
+      "back": "Wstecz",
+      "title": "Ustaw język(i), którymi mówisz",
+      "subtitle": "{{appName}} działa w 100 językach.",
+      "description": "Wybierz języki, którymi mówisz, lub pozwól {{appName}} je automatycznie wykryć.",
+      "yourSelectedLanguage": "Twój wybrany język",
+      "yourSelectedLanguages": "Twoje wybrane języki",
+      "changeLanguages": "Zmień języki",
+      "continue": "Kontynuuj",
+      "makeActiveHint": "Ustaw jako domyślny aktywny język",
+      "modal": {
+        "title": "Języki",
+        "subtitle": "Wybierz języki, których chcesz używać z {{appName}}",
+        "searchPlaceholder": "Szukaj języków",
+        "autoDetect": "Auto-wykrywanie",
+        "autoDetectMessage": "Auto-wykrywanie jest włączone. {{appName}} spróbuje wykryć język, którym mówisz.",
+        "selected": "Wybrane",
+        "languagesCount": "{{count}} języków",
+        "saveAndClose": "Zapisz i zamknij",
+        "maxReached": "Maksymalnie {{max}} języków dozwolone"
+      }
+    },
     "modelCard": {
       "accuracy": "dokładność",
       "speed": "szybkość"
@@ -51,7 +251,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "Bardzo szybki, tylko angielski. Dobrze radzi sobie z akcentami."
       }
     },
     "learn": {
@@ -116,7 +316,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to {{appName}}!",
+    "welcome": "Witamy w {{appName}}!",
     "downloadPrompt": "Pobierz model poniżej, aby rozpocząć transkrypcję.",
     "availableModels": "Dostępne modele",
     "downloadModels": "Pobierz modele",
@@ -150,18 +350,29 @@
         "pressKeys": "Naciśnij klawisze...",
         "bindings": {
           "transcribe": {
-            "name": "Transkrybuj",
-            "description": "Konwertuje Twoją mowę na tekst."
+            "name": "Naciśnij, aby mówić",
+            "description": "Przytrzymaj, aby powiedzieć coś krótkiego"
           },
           "cancel": {
             "name": "Anuluj",
             "description": "Anuluje bieżące nagrywanie."
+          },
+          "transcribe_handsfree": {
+            "name": "Tryb bez użycia rąk",
+            "description": "Naciśnij, aby rozpocząć i zatrzymać dyktowanie"
+          },
+          "paste_last_transcript": {
+            "name": "Wklej ostatnią transkrypcję",
+            "description": "Wkleja tekst, który właśnie podyktowałeś"
           }
         },
         "errors": {
           "restore": "Nie udało się przywrócić oryginalnego skrótu",
           "set": "Nie udało się ustawić skrótu: {{error}}",
-          "reset": "Nie udało się zresetować skrótu do wartości domyślnej"
+          "reset": "Nie udało się zresetować skrótu do wartości domyślnej",
+          "multipleNonModifierKeys": "Skrót może mieć tylko jeden klawisz główny. Użyj klawiszy modyfikujących (Ctrl, Shift, Alt, Cmd) z pojedynczym klawiszem.",
+          "modifierRequired": "Skrót musi zawierać klawisz modyfikujący (Ctrl, Shift, Alt, Cmd) lub być klawiszem funkcyjnym",
+          "noKeysRecorded": "Nie zarejestrowano żadnych klawiszy"
         }
       },
       "language": {
@@ -483,7 +694,9 @@
     "off": "Wyłącz",
     "yes": "Tak",
     "no": "Nie",
-    "noOptionsFound": "Nie znaleziono opcji"
+    "noOptionsFound": "Nie znaleziono opcji",
+    "space": "Spacja",
+    "optionKey": "⌥"
   },
   "accessibility": {
     "permissionsRequired": "Wymagane uprawnienia dostępności",
@@ -508,6 +721,36 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "microphone": {
+    "permissionsRequired": "Wymagane uprawnienie do mikrofonu",
+    "permissionsDescription": "{{appName}} potrzebuje dostępu do mikrofonu, aby transkrybować Twój głos.",
+    "openSettings": "Otwórz ustawienia systemowe",
+    "dismiss": "Zamknij"
+  },
+  "permissions": {
+    "accessibilityLost": "Uprawnienie dostępności zostało odwołane. Automatyczne wklejanie jest wyłączone. Proszę włączyć ponownie w Ustawienia systemowe > Prywatność i bezpieczeństwo > Dostępność.",
+    "accessibilityLostTitle": "Wymagane uprawnienie dostępności",
+    "microphoneDenied": "Uprawnienie do mikrofonu zostało odrzucone. Proszę przyznać uprawnienie w Ustawienia systemowe > Prywatność i bezpieczeństwo > Mikrofon.",
+    "microphoneDeniedTitle": "Wymagane uprawnienie do mikrofonu",
+    "openSettings": "Otwórz ustawienia",
+    "modal": {
+      "accessibility": {
+        "title": "Wymagane uprawnienie dostępności",
+        "description": "Codictate potrzebuje uprawnień dostępności, aby wykrywać skróty klawiszowe i wklejać transkrypcje. Proszę włączyć w Ustawieniach systemowych.",
+        "openSettings": "Otwórz ustawienia systemowe"
+      },
+      "microphone": {
+        "title": "Wymagane uprawnienie do mikrofonu",
+        "description": "Codictate potrzebuje dostępu do mikrofonu, aby transkrybować Twój głos. Proszę włączyć w Ustawieniach systemowych.",
+        "openSettings": "Otwórz ustawienia systemowe"
+      },
+      "dismiss": "Zamknij"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "Brak historii transkrypcji do wklejenia"
   }
 }

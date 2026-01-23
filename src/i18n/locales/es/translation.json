@@ -20,6 +20,206 @@
     "recommended": "Recomendado",
     "download": "Descargar",
     "downloading": "Descargando...",
+    "progress": {
+      "welcome": "Bienvenida",
+      "permissions": "Permisos",
+      "setup": "Configuración",
+      "learn": "Aprende"
+    },
+    "welcome": {
+      "title": "¿Cómo te llamas?",
+      "subtitle": "Personalicemos tu experiencia",
+      "namePlaceholder": "Ingresa tu nombre",
+      "continue": "Continuar"
+    },
+    "attribution": {
+      "greeting": "¡Bienvenido, {{name}}!",
+      "defaultName": "amigo",
+      "question": "¿Cómo nos conociste?",
+      "continue": "Continuar",
+      "back": "Atrás",
+      "sources": {
+        "social_media": "Redes sociales",
+        "youtube": "YouTube",
+        "newsletter": "Boletín",
+        "ai_chat": "Chat de IA",
+        "search_engine": "Motor de búsqueda",
+        "event": "Evento",
+        "friend": "Amigo",
+        "colleague": "Colega",
+        "podcast": "Podcast",
+        "article": "Artículo",
+        "product_hunt": "Product Hunt",
+        "other": "Otro"
+      },
+      "secondaryQuestion": {
+        "social_media": "¿Cuál red social?",
+        "search_engine": "¿Cuál motor de búsqueda?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Otro"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Otro"
+        }
+      },
+      "pleaseSpecify": "Por favor especifica",
+      "otherPlaceholder": "Escribe tu respuesta..."
+    },
+    "tellUsAboutYou": {
+      "title": "Cuéntanos sobre ti",
+      "workQuestion": "¿A qué te dedicas?",
+      "levelQuestion": "Cuéntanos más",
+      "continue": "Continuar",
+      "back": "Atrás",
+      "workRoles": {
+        "founder_ceo": "Fundador/CEO",
+        "consultant": "Consultor",
+        "operations": "Operaciones",
+        "developer": "Desarrollador",
+        "product": "Producto",
+        "data_analysis": "Análisis de Datos",
+        "sales": "Ventas",
+        "marketing": "Marketing",
+        "customer_support": "Atención al Cliente",
+        "recruiting": "Reclutamiento",
+        "creator": "Creador",
+        "writer": "Escritor",
+        "educator": "Educador",
+        "student": "Estudiante",
+        "legal": "Legal",
+        "healthcare": "Salud",
+        "other": "Otro"
+      },
+      "professionalLevels": {
+        "executive": "Ejecutivo",
+        "director": "Director",
+        "manager": "Gerente",
+        "individual_contributor": "Especialista",
+        "freelancer": "Freelancer",
+        "other": "Otro"
+      },
+      "pleaseSpecify": "Por favor especifica",
+      "otherPlaceholder": "Escribe tu respuesta..."
+    },
+    "typingUseCases": {
+      "title": "¿Dónde pasas tu tiempo escribiendo?",
+      "subtitle": "Esto nos ayuda a personalizar tu experiencia.",
+      "subtitleHint": "Selecciona todas las que apliquen.",
+      "continue": "Continuar",
+      "back": "Atrás",
+      "pleaseSpecify": "Por favor especifica",
+      "otherPlaceholder": "Escribe tu respuesta...",
+      "options": {
+        "ai_chat": "Hablando con asistentes de IA",
+        "messaging": "Mensajería y chat",
+        "coding": "Escribiendo código",
+        "emails": "Redactando correos",
+        "documents": "Creando documentos",
+        "notes": "Tomando notas",
+        "social_posts": "Publicaciones y comentarios en redes",
+        "other": "Algo más"
+      }
+    },
+    "permissions": {
+      "title": "Configura {{appName}} en tu computadora",
+      "accessibility": {
+        "title": "Permite que {{appName}} inserte palabras habladas",
+        "description": "Esto permite que {{appName}} coloque tus palabras habladas en el cuadro de texto correcto",
+        "tooltip": "{{appName}} usa esto para obtener contexto según la aplicación que estés usando, y para acceder temporalmente a tu portapapeles para pegar texto.",
+        "success": "{{appName}} ahora puede pegar texto en cualquier lugar"
+      },
+      "microphone": {
+        "title": "Permite que {{appName}} use tu micrófono",
+        "description": "{{appName}} solo accederá al micrófono cuando lo estés usando activamente",
+        "tooltip": "{{appName}} reproducirá un sonido y mostrará una animación cuando el micrófono esté activo",
+        "success": "{{appName}} ahora puede escucharte"
+      },
+      "allow": "Permitir",
+      "checking": "Verificando...",
+      "retry": "Reintentar",
+      "continue": "Continuar",
+      "back": "Atrás",
+      "skipModal": {
+        "title": "Permisos Requeridos",
+        "description": "{{appName}} funciona mejor con ambos permisos habilitados. Puedes continuar sin ellos, pero algunas funciones podrían estar limitadas.",
+        "continueAnyway": "Continuar de todos modos",
+        "goBack": "Volver"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Atrás",
+      "title": "Habla para probar tu micrófono",
+      "subtitle": "El micrófono integrado de tu computadora asegurará una transcripción óptima.",
+      "question": "¿Ves barras rojas moviéndose mientras hablas?",
+      "changeMicrophone": "No, cambiar micrófono",
+      "yes": "Sí",
+      "dialog": {
+        "title": "Seleccionar Micrófono",
+        "autoDetect": "Auto-detectar",
+        "autoDetectDescription": "Usa el micrófono predeterminado del sistema",
+        "default": "predeterminado"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Atrás",
+      "title": "Presiona el atajo de teclado para probarlo",
+      "subtitle": "Recomendamos la tecla",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "en la esquina inferior izquierda del teclado.",
+      "question": "¿El botón se pone rojo mientras lo presionas?",
+      "changeShortcut": "No, cambiar atajo",
+      "yes": "Sí",
+      "continue": "Continuar",
+      "modal": {
+        "title": "Cambiar atajos",
+        "subtitle": "Personaliza cómo interactúas con {{appName}}",
+        "pushToTalk": {
+          "title": "Pulsar para hablar",
+          "description": "Mantén presionado para decir algo breve"
+        },
+        "handsFree": {
+          "title": "Modo manos libres",
+          "description": "Presiona para iniciar y detener el dictado"
+        },
+        "addAnother": "Agregar otro",
+        "resetToDefault": "Restablecer por defecto"
+      }
+    },
+    "languageSelect": {
+      "back": "Atrás",
+      "title": "Configura el idioma(s) que hablas",
+      "subtitle": "{{appName}} funciona en 100 idiomas.",
+      "description": "Selecciona los idiomas que hablas o deja que {{appName}} los detecte automáticamente.",
+      "yourSelectedLanguage": "Tu idioma seleccionado",
+      "yourSelectedLanguages": "Tus idiomas seleccionados",
+      "changeLanguages": "Cambiar idiomas",
+      "continue": "Continuar",
+      "makeActiveHint": "Hacer este el idioma activo predeterminado",
+      "modal": {
+        "title": "Idiomas",
+        "subtitle": "Selecciona los idiomas que quieres usar con {{appName}}",
+        "searchPlaceholder": "Buscar cualquier idioma",
+        "autoDetect": "Auto-detectar",
+        "autoDetectMessage": "La auto-detección está activada. {{appName}} intentará detectar el idioma que estás hablando.",
+        "selected": "Seleccionado",
+        "languagesCount": "{{count}} idiomas",
+        "saveAndClose": "Guardar y cerrar",
+        "maxReached": "Máximo {{max}} idiomas permitidos"
+      }
+    },
     "modelCard": {
       "accuracy": "precisión",
       "speed": "velocidad"
@@ -51,7 +251,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "Muy rápido, solo inglés. Maneja bien los acentos."
       }
     },
     "learn": {
@@ -101,7 +301,7 @@
       "steps": {
         "share": "Comparte tu enlace de invitación",
         "theyGet": "Ellos se registran y obtienen un <strong>mes gratis</strong> de Pro!",
-        "youGet": "Tú obtienes un <strong>mes gratis</strong> cuando dicten 2,000 palabras!"
+        "youGet": "¡Tú obtienes un <strong>mes gratis</strong> cuando dicten 2,000 palabras!"
       },
       "yourLink": "Tu enlace de referido",
       "copy": "Copiar",
@@ -116,7 +316,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to {{appName}}!",
+    "welcome": "¡Bienvenido a {{appName}}!",
     "downloadPrompt": "Descarga un modelo a continuación para comenzar con la transcripción.",
     "availableModels": "Modelos Disponibles",
     "downloadModels": "Descargar Modelos",
@@ -150,18 +350,29 @@
         "pressKeys": "Presiona teclas...",
         "bindings": {
           "transcribe": {
-            "name": "Transcribir",
-            "description": "Convierte tu voz en texto."
+            "name": "Pulsar para hablar",
+            "description": "Mantén presionado para decir algo breve"
           },
           "cancel": {
             "name": "Cancelar",
             "description": "Cancela la grabación actual."
+          },
+          "transcribe_handsfree": {
+            "name": "Modo manos libres",
+            "description": "Presiona para iniciar y detener el dictado"
+          },
+          "paste_last_transcript": {
+            "name": "Pegar última transcripción",
+            "description": "Pega el texto que acabas de dictar"
           }
         },
         "errors": {
           "restore": "Error al restaurar el atajo original",
           "set": "Error al configurar el atajo: {{error}}",
-          "reset": "Error al restablecer el atajo al valor original"
+          "reset": "Error al restablecer el atajo al valor original",
+          "multipleNonModifierKeys": "El atajo solo puede tener una tecla principal. Usa teclas modificadoras (Ctrl, Shift, Alt, Cmd) con una sola tecla.",
+          "modifierRequired": "El atajo debe incluir una tecla modificadora (Ctrl, Shift, Alt, Cmd) o ser una tecla de función",
+          "noKeysRecorded": "No se han registrado teclas"
         }
       },
       "language": {
@@ -483,7 +694,9 @@
     "off": "Desactivado",
     "yes": "Sí",
     "no": "No",
-    "noOptionsFound": "No se encontraron opciones"
+    "noOptionsFound": "No se encontraron opciones",
+    "space": "Espacio",
+    "optionKey": "⌥"
   },
   "accessibility": {
     "permissionsRequired": "Se Requieren Permisos de Accesibilidad",
@@ -508,6 +721,36 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "microphone": {
+    "permissionsRequired": "Se requiere permiso de micrófono",
+    "permissionsDescription": "{{appName}} necesita acceso al micrófono para transcribir tu voz.",
+    "openSettings": "Abrir Ajustes del Sistema",
+    "dismiss": "Descartar"
+  },
+  "permissions": {
+    "accessibilityLost": "El permiso de accesibilidad fue revocado. El pegado automático está deshabilitado. Por favor reactívalo en Ajustes del Sistema > Privacidad y Seguridad > Accesibilidad.",
+    "accessibilityLostTitle": "Se requiere permiso de Accesibilidad",
+    "microphoneDenied": "El permiso del micrófono fue denegado. Por favor concede el permiso en Ajustes del Sistema > Privacidad y Seguridad > Micrófono.",
+    "microphoneDeniedTitle": "Se requiere permiso de Micrófono",
+    "openSettings": "Abrir Ajustes",
+    "modal": {
+      "accessibility": {
+        "title": "Se requiere permiso de Accesibilidad",
+        "description": "Codictate necesita permisos de Accesibilidad para detectar atajos de teclado y pegar transcripciones. Por favor actívalo en Ajustes del Sistema.",
+        "openSettings": "Abrir Ajustes del Sistema"
+      },
+      "microphone": {
+        "title": "Se requiere permiso de Micrófono",
+        "description": "Codictate necesita acceso al micrófono para transcribir tu voz. Por favor actívalo en Ajustes del Sistema.",
+        "openSettings": "Abrir Ajustes del Sistema"
+      },
+      "dismiss": "Descartar"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "No hay historial de transcripción para pegar"
   }
 }

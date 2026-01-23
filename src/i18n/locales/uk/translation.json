@@ -3,7 +3,8 @@
     "settings": "Налаштування...",
     "checkUpdates": "Перевірити оновлення...",
     "quit": "Вийти",
-    "cancel": "Скасувати"
+    "cancel": "Скасувати",
+    "copyLastRecording": "Копіювати останній запис"
   },
   "sidebar": {
     "general": "Загальні",
@@ -18,6 +19,206 @@
     "recommended": "Рекомендовано",
     "download": "Завантажити",
     "downloading": "Завантаження...",
+    "progress": {
+      "welcome": "Ласкаво просимо",
+      "permissions": "Дозволи",
+      "setup": "Налаштування",
+      "learn": "Навчання"
+    },
+    "welcome": {
+      "title": "Як вас звати?",
+      "subtitle": "Давайте персоналізуємо ваш досвід",
+      "namePlaceholder": "Введіть ваше ім'я",
+      "continue": "Продовжити"
+    },
+    "attribution": {
+      "greeting": "Ласкаво просимо, {{name}}!",
+      "defaultName": "друже",
+      "question": "Як ви дізналися про нас?",
+      "continue": "Продовжити",
+      "back": "Назад",
+      "sources": {
+        "social_media": "Соціальні мережі",
+        "youtube": "YouTube",
+        "newsletter": "Розсилка",
+        "ai_chat": "AI-чат",
+        "search_engine": "Пошукова система",
+        "event": "Подія",
+        "friend": "Друг",
+        "colleague": "Колега",
+        "podcast": "Подкаст",
+        "article": "Стаття",
+        "product_hunt": "Product Hunt",
+        "other": "Інше"
+      },
+      "secondaryQuestion": {
+        "social_media": "Яка соціальна мережа?",
+        "search_engine": "Яка пошукова система?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Інше"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Інше"
+        }
+      },
+      "pleaseSpecify": "Уточніть",
+      "otherPlaceholder": "Введіть вашу відповідь..."
+    },
+    "tellUsAboutYou": {
+      "title": "Розкажіть про себе",
+      "workQuestion": "Чим ви займаєтесь?",
+      "levelQuestion": "Розкажіть детальніше",
+      "continue": "Продовжити",
+      "back": "Назад",
+      "workRoles": {
+        "founder_ceo": "Засновник/CEO",
+        "consultant": "Консультант",
+        "operations": "Операційна діяльність",
+        "developer": "Розробник",
+        "product": "Продукт",
+        "data_analysis": "Аналітика даних",
+        "sales": "Продажі",
+        "marketing": "Маркетинг",
+        "customer_support": "Підтримка клієнтів",
+        "recruiting": "Рекрутинг",
+        "creator": "Творець контенту",
+        "writer": "Письменник",
+        "educator": "Викладач",
+        "student": "Студент",
+        "legal": "Юриспруденція",
+        "healthcare": "Охорона здоров'я",
+        "other": "Інше"
+      },
+      "professionalLevels": {
+        "executive": "Керівник",
+        "director": "Директор",
+        "manager": "Менеджер",
+        "individual_contributor": "Спеціаліст",
+        "freelancer": "Фрілансер",
+        "other": "Інше"
+      },
+      "pleaseSpecify": "Уточніть",
+      "otherPlaceholder": "Введіть вашу відповідь..."
+    },
+    "typingUseCases": {
+      "title": "Де ви проводите час за набором тексту?",
+      "subtitle": "Це допоможе нам налаштувати ваш досвід.",
+      "subtitleHint": "Оберіть усі підходящі варіанти.",
+      "continue": "Продовжити",
+      "back": "Назад",
+      "pleaseSpecify": "Уточніть",
+      "otherPlaceholder": "Введіть вашу відповідь...",
+      "options": {
+        "ai_chat": "Спілкування з AI-асистентами",
+        "messaging": "Месенджери та чати",
+        "coding": "Написання коду",
+        "emails": "Написання листів",
+        "documents": "Створення документів",
+        "notes": "Нотатки",
+        "social_posts": "Пости та коментарі в соцмережах",
+        "other": "Щось інше"
+      }
+    },
+    "permissions": {
+      "title": "Налаштуйте {{appName}} на вашому комп'ютері",
+      "accessibility": {
+        "title": "Дозвольте {{appName}} вставляти вимовлені слова",
+        "description": "Це дозволить {{appName}} вставляти ваші слова у потрібне текстове поле",
+        "tooltip": "{{appName}} використовує це для отримання контексту використовуваної програми та тимчасового доступу до буфера обміну для вставки тексту.",
+        "success": "{{appName}} тепер може вставляти текст всюди"
+      },
+      "microphone": {
+        "title": "Дозвольте {{appName}} використовувати мікрофон",
+        "description": "{{appName}} отримає доступ до мікрофона лише коли ви його використовуєте",
+        "tooltip": "{{appName}} відтворить звук і покаже анімацію, коли мікрофон активний",
+        "success": "{{appName}} тепер може вас чути"
+      },
+      "allow": "Дозволити",
+      "checking": "Перевірка...",
+      "retry": "Повторити",
+      "continue": "Продовжити",
+      "back": "Назад",
+      "skipModal": {
+        "title": "Потрібні дозволи",
+        "description": "{{appName}} працює краще з обома дозволами. Ви можете продовжити без них, але деякі функції можуть бути обмежені.",
+        "continueAnyway": "Продовжити все одно",
+        "goBack": "Повернутися"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Назад",
+      "title": "Говоріть, щоб перевірити мікрофон",
+      "subtitle": "Вбудований мікрофон вашого комп'ютера забезпечить оптимальну транскрипцію.",
+      "question": "Чи бачите ви червоні смуги, що рухаються під час розмови?",
+      "changeMicrophone": "Ні, змінити мікрофон",
+      "yes": "Так",
+      "dialog": {
+        "title": "Обрати мікрофон",
+        "autoDetect": "Автовизначення",
+        "autoDetectDescription": "Використовувати системний мікрофон за замовчуванням",
+        "default": "за замовчуванням"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Назад",
+      "title": "Натисніть комбінацію клавіш, щоб перевірити її",
+      "subtitle": "Рекомендуємо використовувати клавішу",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "у лівому нижньому куті клавіатури.",
+      "question": "Кнопка стає червоною при натисканні?",
+      "changeShortcut": "Ні, змінити комбінацію",
+      "yes": "Так",
+      "continue": "Продовжити",
+      "modal": {
+        "title": "Змінити комбінації клавіш",
+        "subtitle": "Налаштуйте взаємодію з {{appName}}",
+        "pushToTalk": {
+          "title": "Натисни і говори",
+          "description": "Утримуйте для коротких фраз"
+        },
+        "handsFree": {
+          "title": "Режим без рук",
+          "description": "Натисніть для початку та зупинки диктування"
+        },
+        "addAnother": "Додати ще",
+        "resetToDefault": "Скинути за замовчуванням"
+      }
+    },
+    "languageSelect": {
+      "back": "Назад",
+      "title": "Встановіть мову(и), якими ви говорите",
+      "subtitle": "{{appName}} працює на 100 мовах.",
+      "description": "Оберіть мови, якими ви говорите, або дозвольте {{appName}} визначити їх автоматично.",
+      "yourSelectedLanguage": "Ваша обрана мова",
+      "yourSelectedLanguages": "Ваші обрані мови",
+      "changeLanguages": "Змінити мови",
+      "continue": "Продовжити",
+      "makeActiveHint": "Зробити цю мову активною за замовчуванням",
+      "modal": {
+        "title": "Мови",
+        "subtitle": "Оберіть мови, які хочете використовувати з {{appName}}",
+        "searchPlaceholder": "Пошук мов",
+        "autoDetect": "Автовизначення",
+        "autoDetectMessage": "Автовизначення увімкнено. {{appName}} спробує визначити мову, якою ви говорите.",
+        "selected": "Обрано",
+        "languagesCount": "{{count}} мов",
+        "saveAndClose": "Зберегти і закрити",
+        "maxReached": "Максимум {{max}} мов"
+      }
+    },
     "modelCard": {
       "accuracy": "точність",
       "speed": "швидкість"
@@ -49,7 +250,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "Дуже швидкий, лише англійська. Добре обробляє акценти."
       }
     },
     "learn": {
@@ -114,7 +315,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Ласкаво просимо до Handy!",
+    "welcome": "Ласкаво просимо до {{appName}}!",
     "downloadPrompt": "Завантажте модель нижче, щоб почати транскрипцію.",
     "availableModels": "Доступні моделі",
     "downloadModels": "Завантажити моделі",
@@ -148,18 +349,29 @@
         "pressKeys": "Натисніть клавіші...",
         "bindings": {
           "transcribe": {
-            "name": "Диктувати",
-            "description": "Перетворює ваше мовлення в текст"
+            "name": "Натисни і говори",
+            "description": "Утримуйте для коротких фраз"
           },
           "cancel": {
             "name": "Скасувати",
             "description": "Скасовує поточний запис"
+          },
+          "transcribe_handsfree": {
+            "name": "Режим без рук",
+            "description": "Натисніть для початку та зупинки диктування"
+          },
+          "paste_last_transcript": {
+            "name": "Вставити останню транскрипцію",
+            "description": "Вставляє щойно продиктований текст"
           }
         },
         "errors": {
           "restore": "Не вдалося відновити початкове скорочення",
           "set": "Не вдалося встановити скорочення: {{error}}",
-          "reset": "Не вдалося скинути скорочення до початкового значення"
+          "reset": "Не вдалося скинути скорочення до початкового значення",
+          "multipleNonModifierKeys": "Комбінація клавіш може мати лише одну основну клавішу. Використовуйте клавіші-модифікатори (Ctrl, Shift, Alt, Cmd) з однією клавішею.",
+          "modifierRequired": "Комбінація клавіш повинна включати клавішу-модифікатор (Ctrl, Shift, Alt, Cmd) або функціональну клавішу",
+          "noKeysRecorded": "Клавіші не записані"
         }
       },
       "language": {
@@ -459,7 +671,9 @@
     "off": "Вимк.",
     "yes": "Так",
     "no": "Ні",
-    "noOptionsFound": "Опцій не знайдено"
+    "noOptionsFound": "Опцій не знайдено",
+    "space": "Пробіл",
+    "optionKey": "⌥"
   },
   "accessibility": {
     "permissionsRequired": "Потрібні права доступу",
@@ -476,5 +690,40 @@
   },
   "overlay": {
     "transcribing": "Обробка..."
-  }
+  },
+  "microphone": {
+    "permissionsRequired": "Потрібен дозвіл на мікрофон",
+    "permissionsDescription": "{{appName}} потребує доступ до мікрофона для транскрипції вашого голосу.",
+    "openSettings": "Відкрити Системні налаштування",
+    "dismiss": "Закрити"
+  },
+  "permissions": {
+    "accessibilityLost": "Дозвіл на доступність було відкликано. Автоматична вставка вимкнена. Будь ласка, увімкніть знову в Системні налаштування > Конфіденційність та безпека > Доступність.",
+    "accessibilityLostTitle": "Потрібен дозвіл на доступність",
+    "microphoneDenied": "Дозвіл на мікрофон було відхилено. Будь ласка, надайте дозвіл в Системні налаштування > Конфіденційність та безпека > Мікрофон.",
+    "microphoneDeniedTitle": "Потрібен дозвіл на мікрофон",
+    "openSettings": "Відкрити налаштування",
+    "modal": {
+      "accessibility": {
+        "title": "Потрібен дозвіл на доступність",
+        "description": "Codictate потребує дозволів на доступність для виявлення комбінацій клавіш та вставки транскрипцій. Будь ласка, увімкніть в Системних налаштуваннях.",
+        "openSettings": "Відкрити Системні налаштування"
+      },
+      "microphone": {
+        "title": "Потрібен дозвіл на мікрофон",
+        "description": "Codictate потребує доступ до мікрофона для транскрипції вашого голосу. Будь ласка, увімкніть в Системних налаштуваннях.",
+        "openSettings": "Відкрити Системні налаштування"
+      },
+      "dismiss": "Закрити"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "Немає історії транскрипцій для вставки"
+  },
+  "notifications": {
+    "errorTitle": "{{appName}}",
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "appName": "Codictate"
 }

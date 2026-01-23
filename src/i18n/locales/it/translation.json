@@ -20,6 +20,206 @@
     "recommended": "Raccomandato",
     "download": "Scaricare",
     "downloading": "Download in corso...",
+    "progress": {
+      "welcome": "Benvenuto",
+      "permissions": "Autorizzazioni",
+      "setup": "Configurazione",
+      "learn": "Impara"
+    },
+    "welcome": {
+      "title": "Come ti chiami?",
+      "subtitle": "Personalizziamo la tua esperienza",
+      "namePlaceholder": "Inserisci il tuo nome",
+      "continue": "Continua"
+    },
+    "attribution": {
+      "greeting": "Benvenuto, {{name}}!",
+      "defaultName": "amico",
+      "question": "Come ci hai scoperto?",
+      "continue": "Continua",
+      "back": "Indietro",
+      "sources": {
+        "social_media": "Social media",
+        "youtube": "YouTube",
+        "newsletter": "Newsletter",
+        "ai_chat": "Chat IA",
+        "search_engine": "Motore di ricerca",
+        "event": "Evento",
+        "friend": "Amico",
+        "colleague": "Collega",
+        "podcast": "Podcast",
+        "article": "Articolo",
+        "product_hunt": "Product Hunt",
+        "other": "Altro"
+      },
+      "secondaryQuestion": {
+        "social_media": "Quale social media?",
+        "search_engine": "Quale motore di ricerca?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Altro"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Altro"
+        }
+      },
+      "pleaseSpecify": "Specifica",
+      "otherPlaceholder": "Scrivi la tua risposta..."
+    },
+    "tellUsAboutYou": {
+      "title": "Raccontaci di te",
+      "workQuestion": "Che lavoro fai?",
+      "levelQuestion": "Dicci di più",
+      "continue": "Continua",
+      "back": "Indietro",
+      "workRoles": {
+        "founder_ceo": "Fondatore/CEO",
+        "consultant": "Consulente",
+        "operations": "Operations",
+        "developer": "Sviluppatore",
+        "product": "Prodotto",
+        "data_analysis": "Analisi dati",
+        "sales": "Vendite",
+        "marketing": "Marketing",
+        "customer_support": "Supporto clienti",
+        "recruiting": "Recruiting",
+        "creator": "Creator",
+        "writer": "Scrittore",
+        "educator": "Educatore",
+        "student": "Studente",
+        "legal": "Legale",
+        "healthcare": "Sanità",
+        "other": "Altro"
+      },
+      "professionalLevels": {
+        "executive": "Dirigente",
+        "director": "Direttore",
+        "manager": "Manager",
+        "individual_contributor": "Specialista",
+        "freelancer": "Freelancer",
+        "other": "Altro"
+      },
+      "pleaseSpecify": "Specifica",
+      "otherPlaceholder": "Scrivi la tua risposta..."
+    },
+    "typingUseCases": {
+      "title": "Dove passi il tuo tempo a scrivere?",
+      "subtitle": "Questo ci aiuta a personalizzare la tua esperienza.",
+      "subtitleHint": "Seleziona tutto ciò che si applica.",
+      "continue": "Continua",
+      "back": "Indietro",
+      "pleaseSpecify": "Specifica",
+      "otherPlaceholder": "Scrivi la tua risposta...",
+      "options": {
+        "ai_chat": "Parlare con assistenti IA",
+        "messaging": "Messaggistica e chat",
+        "coding": "Scrivere codice",
+        "emails": "Scrivere email",
+        "documents": "Creare documenti",
+        "notes": "Prendere appunti",
+        "social_posts": "Post e commenti sui social",
+        "other": "Qualcos'altro"
+      }
+    },
+    "permissions": {
+      "title": "Configura {{appName}} sul tuo computer",
+      "accessibility": {
+        "title": "Consenti a {{appName}} di inserire le parole pronunciate",
+        "description": "Questo permette a {{appName}} di inserire le parole pronunciate nel campo di testo corretto",
+        "tooltip": "{{appName}} usa questo per ottenere il contesto dell'applicazione che stai usando e per accedere temporaneamente agli appunti per incollare il testo.",
+        "success": "{{appName}} ora può incollare testo ovunque"
+      },
+      "microphone": {
+        "title": "Consenti a {{appName}} di usare il microfono",
+        "description": "{{appName}} accederà al microfono solo quando lo stai usando attivamente",
+        "tooltip": "{{appName}} riprodurrà un suono e mostrerà un'animazione quando il microfono è attivo",
+        "success": "{{appName}} ora può sentirti"
+      },
+      "allow": "Consenti",
+      "checking": "Verifica...",
+      "retry": "Riprova",
+      "continue": "Continua",
+      "back": "Indietro",
+      "skipModal": {
+        "title": "Autorizzazioni richieste",
+        "description": "{{appName}} funziona meglio con entrambe le autorizzazioni abilitate. Puoi continuare senza, ma alcune funzionalità potrebbero essere limitate.",
+        "continueAnyway": "Continua comunque",
+        "goBack": "Torna indietro"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Indietro",
+      "title": "Parla per testare il microfono",
+      "subtitle": "Il microfono integrato del tuo computer garantirà una trascrizione ottimale.",
+      "question": "Vedi le barre rosse muoversi mentre parli?",
+      "changeMicrophone": "No, cambia microfono",
+      "yes": "Sì",
+      "dialog": {
+        "title": "Seleziona microfono",
+        "autoDetect": "Rileva automaticamente",
+        "autoDetectDescription": "Usa il microfono predefinito del sistema",
+        "default": "predefinito"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Indietro",
+      "title": "Premi la scorciatoia da tastiera per testarla",
+      "subtitle": "Consigliamo il tasto",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "in basso a sinistra sulla tastiera.",
+      "question": "Il pulsante diventa rosso mentre lo premi?",
+      "changeShortcut": "No, cambia scorciatoia",
+      "yes": "Sì",
+      "continue": "Continua",
+      "modal": {
+        "title": "Cambia scorciatoie",
+        "subtitle": "Personalizza come interagisci con {{appName}}",
+        "pushToTalk": {
+          "title": "Premi per parlare",
+          "description": "Tieni premuto per dire qualcosa di breve"
+        },
+        "handsFree": {
+          "title": "Modalità mani libere",
+          "description": "Premi per avviare e fermare la dettatura"
+        },
+        "addAnother": "Aggiungi un altro",
+        "resetToDefault": "Ripristina predefinito"
+      }
+    },
+    "languageSelect": {
+      "back": "Indietro",
+      "title": "Imposta la/e lingua/e che parli",
+      "subtitle": "{{appName}} funziona in 100 lingue.",
+      "description": "Seleziona le lingue che parli o lascia che {{appName}} le rilevi automaticamente.",
+      "yourSelectedLanguage": "La tua lingua selezionata",
+      "yourSelectedLanguages": "Le tue lingue selezionate",
+      "changeLanguages": "Cambia lingue",
+      "continue": "Continua",
+      "makeActiveHint": "Rendi questa la lingua attiva predefinita",
+      "modal": {
+        "title": "Lingue",
+        "subtitle": "Seleziona le lingue che vuoi usare con {{appName}}",
+        "searchPlaceholder": "Cerca qualsiasi lingua",
+        "autoDetect": "Rileva automaticamente",
+        "autoDetectMessage": "Il rilevamento automatico è attivo. {{appName}} proverà a rilevare la lingua che stai parlando.",
+        "selected": "Selezionato",
+        "languagesCount": "{{count}} lingue",
+        "saveAndClose": "Salva e chiudi",
+        "maxReached": "Massimo {{max}} lingue consentite"
+      }
+    },
     "modelCard": {
       "accuracy": "accuratezza",
       "speed": "velocità"
@@ -51,7 +251,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "Molto veloce, solo inglese. Gestisce bene gli accenti."
       }
     },
     "learn": {
@@ -116,7 +316,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to {{appName}}!",
+    "welcome": "Benvenuto in {{appName}}!",
     "downloadPrompt": "Scarica un modello per cominciare a trascrivere.",
     "availableModels": "Modelli Disponibili",
     "downloadModels": "Scarica Modelli",
@@ -150,18 +350,29 @@
         "pressKeys": "Premi i tasti...",
         "bindings": {
           "transcribe": {
-            "name": "Trascrivi",
-            "description": "Converti la tua voce in testo."
+            "name": "Premi per parlare",
+            "description": "Tieni premuto per dire qualcosa di breve"
           },
           "cancel": {
             "name": "Annulla",
             "description": "Annulla la registrazione in corso."
+          },
+          "transcribe_handsfree": {
+            "name": "Modalità mani libere",
+            "description": "Premi per avviare e fermare la dettatura"
+          },
+          "paste_last_transcript": {
+            "name": "Incolla ultima trascrizione",
+            "description": "Incolla il testo appena dettato"
           }
         },
         "errors": {
           "restore": "Errore nel ripristino della scorciatoia originale",
           "set": "Errore nella configurazione della scorciatoia: {{error}}",
-          "reset": "Errore nella reinizializzazione della scorciatoia al valore originale"
+          "reset": "Errore nella reinizializzazione della scorciatoia al valore originale",
+          "multipleNonModifierKeys": "La scorciatoia può avere solo un tasto principale. Usa i tasti modificatori (Ctrl, Shift, Alt, Cmd) con un singolo tasto.",
+          "modifierRequired": "La scorciatoia deve includere un tasto modificatore (Ctrl, Shift, Alt, Cmd) o essere un tasto funzione",
+          "noKeysRecorded": "Nessun tasto registrato"
         }
       },
       "language": {
@@ -483,7 +694,9 @@
     "off": "Off",
     "yes": "Sì",
     "no": "No",
-    "noOptionsFound": "Nessuna opzione trovata"
+    "noOptionsFound": "Nessuna opzione trovata",
+    "space": "Spazio",
+    "optionKey": "⌥"
   },
   "accessibility": {
     "permissionsRequired": "Richiesti Permessi di Accessibilità",
@@ -508,6 +721,36 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "microphone": {
+    "permissionsRequired": "Autorizzazione microfono richiesta",
+    "permissionsDescription": "{{appName}} ha bisogno dell'accesso al microfono per trascrivere la tua voce.",
+    "openSettings": "Apri Impostazioni di Sistema",
+    "dismiss": "Ignora"
+  },
+  "permissions": {
+    "accessibilityLost": "L'autorizzazione di accessibilità è stata revocata. L'incolla automatico è disabilitato. Per favore riattivalo in Impostazioni di Sistema > Privacy e Sicurezza > Accessibilità.",
+    "accessibilityLostTitle": "Autorizzazione di accessibilità richiesta",
+    "microphoneDenied": "L'autorizzazione del microfono è stata negata. Per favore concedi l'autorizzazione in Impostazioni di Sistema > Privacy e Sicurezza > Microfono.",
+    "microphoneDeniedTitle": "Autorizzazione microfono richiesta",
+    "openSettings": "Apri Impostazioni",
+    "modal": {
+      "accessibility": {
+        "title": "Autorizzazione di accessibilità richiesta",
+        "description": "Codictate ha bisogno delle autorizzazioni di accessibilità per rilevare le scorciatoie da tastiera e incollare le trascrizioni. Per favore attivale nelle Impostazioni di Sistema.",
+        "openSettings": "Apri Impostazioni di Sistema"
+      },
+      "microphone": {
+        "title": "Autorizzazione microfono richiesta",
+        "description": "Codictate ha bisogno dell'accesso al microfono per trascrivere la tua voce. Per favore attivalo nelle Impostazioni di Sistema.",
+        "openSettings": "Apri Impostazioni di Sistema"
+      },
+      "dismiss": "Ignora"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "Nessuna cronologia di trascrizione da incollare"
   }
 }

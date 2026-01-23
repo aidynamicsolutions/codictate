@@ -20,6 +20,206 @@
     "recommended": "推荐",
     "download": "下载",
     "downloading": "下载中...",
+    "progress": {
+      "welcome": "欢迎",
+      "permissions": "权限",
+      "setup": "设置",
+      "learn": "学习"
+    },
+    "welcome": {
+      "title": "您叫什么名字？",
+      "subtitle": "让我们个性化您的体验",
+      "namePlaceholder": "输入您的名字",
+      "continue": "继续"
+    },
+    "attribution": {
+      "greeting": "欢迎，{{name}}！",
+      "defaultName": "朋友",
+      "question": "您是如何了解到我们的？",
+      "continue": "继续",
+      "back": "返回",
+      "sources": {
+        "social_media": "社交媒体",
+        "youtube": "YouTube",
+        "newsletter": "电子邮件订阅",
+        "ai_chat": "AI 聊天",
+        "search_engine": "搜索引擎",
+        "event": "活动",
+        "friend": "朋友",
+        "colleague": "同事",
+        "podcast": "播客",
+        "article": "文章",
+        "product_hunt": "Product Hunt",
+        "other": "其他"
+      },
+      "secondaryQuestion": {
+        "social_media": "哪个社交媒体？",
+        "search_engine": "哪个搜索引擎？"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "其他"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "其他"
+        }
+      },
+      "pleaseSpecify": "请说明",
+      "otherPlaceholder": "输入您的回答..."
+    },
+    "tellUsAboutYou": {
+      "title": "介绍一下您自己",
+      "workQuestion": "您的职业是什么？",
+      "levelQuestion": "告诉我们更多",
+      "continue": "继续",
+      "back": "返回",
+      "workRoles": {
+        "founder_ceo": "创始人/CEO",
+        "consultant": "顾问",
+        "operations": "运营",
+        "developer": "开发者",
+        "product": "产品",
+        "data_analysis": "数据分析",
+        "sales": "销售",
+        "marketing": "市场营销",
+        "customer_support": "客户支持",
+        "recruiting": "招聘",
+        "creator": "内容创作者",
+        "writer": "作家",
+        "educator": "教育工作者",
+        "student": "学生",
+        "legal": "法律",
+        "healthcare": "医疗",
+        "other": "其他"
+      },
+      "professionalLevels": {
+        "executive": "高管",
+        "director": "总监",
+        "manager": "经理",
+        "individual_contributor": "专员",
+        "freelancer": "自由职业者",
+        "other": "其他"
+      },
+      "pleaseSpecify": "请说明",
+      "otherPlaceholder": "输入您的回答..."
+    },
+    "typingUseCases": {
+      "title": "您在哪里花时间打字？",
+      "subtitle": "这有助于我们定制您的体验。",
+      "subtitleHint": "选择所有适用的选项。",
+      "continue": "继续",
+      "back": "返回",
+      "pleaseSpecify": "请说明",
+      "otherPlaceholder": "输入您的回答...",
+      "options": {
+        "ai_chat": "与 AI 助手对话",
+        "messaging": "消息和聊天",
+        "coding": "编写代码",
+        "emails": "撰写邮件",
+        "documents": "创建文档",
+        "notes": "记笔记",
+        "social_posts": "社交媒体帖子和评论",
+        "other": "其他"
+      }
+    },
+    "permissions": {
+      "title": "在您的电脑上设置 {{appName}}",
+      "accessibility": {
+        "title": "允许 {{appName}} 插入语音文字",
+        "description": "这使 {{appName}} 能够将您说的话放入正确的文本框中",
+        "tooltip": "{{appName}} 使用此权限获取您正在使用的应用程序的上下文，并临时访问剪贴板以粘贴文本。",
+        "success": "{{appName}} 现在可以在任何地方粘贴文本"
+      },
+      "microphone": {
+        "title": "允许 {{appName}} 使用您的麦克风",
+        "description": "{{appName}} 仅在您主动使用时访问麦克风",
+        "tooltip": "{{appName}} 会在麦克风激活时播放声音并显示动画",
+        "success": "{{appName}} 现在可以听到您的声音"
+      },
+      "allow": "允许",
+      "checking": "检查中...",
+      "retry": "重试",
+      "continue": "继续",
+      "back": "返回",
+      "skipModal": {
+        "title": "需要权限",
+        "description": "{{appName}} 在两项权限都启用时效果最佳。您可以在没有权限的情况下继续，但某些功能可能受限。",
+        "continueAnyway": "仍然继续",
+        "goBack": "返回"
+      }
+    },
+    "microphoneCheck": {
+      "back": "返回",
+      "title": "说话以测试您的麦克风",
+      "subtitle": "您电脑的内置麦克风将确保最佳转录效果。",
+      "question": "您说话时能看到红色条在移动吗？",
+      "changeMicrophone": "不，更换麦克风",
+      "yes": "是",
+      "dialog": {
+        "title": "选择麦克风",
+        "autoDetect": "自动检测",
+        "autoDetectDescription": "使用系统默认麦克风",
+        "default": "默认"
+      }
+    },
+    "hotkeySetup": {
+      "back": "返回",
+      "title": "按下快捷键以测试",
+      "subtitle": "我们建议使用",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "键，位于键盘左下角。",
+      "question": "按下时按钮会变红吗？",
+      "changeShortcut": "不，更改快捷键",
+      "yes": "是",
+      "continue": "继续",
+      "modal": {
+        "title": "更改快捷键",
+        "subtitle": "自定义您与 {{appName}} 的交互方式",
+        "pushToTalk": {
+          "title": "按住说话",
+          "description": "按住以说短句"
+        },
+        "handsFree": {
+          "title": "免提模式",
+          "description": "按下开始和停止听写"
+        },
+        "addAnother": "添加其他",
+        "resetToDefault": "恢复默认"
+      }
+    },
+    "languageSelect": {
+      "back": "返回",
+      "title": "设置您说的语言",
+      "subtitle": "{{appName}} 支持 100 种语言。",
+      "description": "选择您说的语言，或让 {{appName}} 自动检测。",
+      "yourSelectedLanguage": "您选择的语言",
+      "yourSelectedLanguages": "您选择的语言",
+      "changeLanguages": "更改语言",
+      "continue": "继续",
+      "makeActiveHint": "将此设为默认活动语言",
+      "modal": {
+        "title": "语言",
+        "subtitle": "选择您要与 {{appName}} 一起使用的语言",
+        "searchPlaceholder": "搜索语言",
+        "autoDetect": "自动检测",
+        "autoDetectMessage": "自动检测已开启。{{appName}} 将尝试检测您说的语言。",
+        "selected": "已选择",
+        "languagesCount": "{{count}} 种语言",
+        "saveAndClose": "保存并关闭",
+        "maxReached": "最多允许 {{max}} 种语言"
+      }
+    },
     "modelCard": {
       "accuracy": "准确度",
       "speed": "速度"
@@ -51,7 +251,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "非常快速，仅支持英语。能够很好地处理口音。"
       }
     },
     "learn": {
@@ -101,7 +301,7 @@
       "steps": {
         "share": "分享您的邀请链接",
         "theyGet": "他们注册并获得<strong>一个月免费</strong>的 Pro！",
-        "youGet": "当他们读出 2,000 个字时，您获得<strong>一个月免费</strong>！"
+        "youGet": "当他们听写 2,000 个字时，您获得<strong>一个月免费</strong>！"
       },
       "yourLink": "您的推荐链接",
       "copy": "复制",
@@ -116,7 +316,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to {{appName}}!",
+    "welcome": "欢迎使用 {{appName}}！",
     "downloadPrompt": "请下载以下模型以开始转录。",
     "availableModels": "可用模型",
     "downloadModels": "下载模型",
@@ -150,18 +350,29 @@
         "pressKeys": "请按键...",
         "bindings": {
           "transcribe": {
-            "name": "转录",
-            "description": "将语音转换为文字。"
+            "name": "按住说话",
+            "description": "按住以说短句"
           },
           "cancel": {
             "name": "取消",
             "description": "取消当前录制。"
+          },
+          "transcribe_handsfree": {
+            "name": "免提模式",
+            "description": "按下开始和停止听写"
+          },
+          "paste_last_transcript": {
+            "name": "粘贴上次转录",
+            "description": "粘贴刚刚听写的文本"
           }
         },
         "errors": {
           "restore": "无法恢复原始快捷键",
           "set": "无法设置快捷键: {{error}}",
-          "reset": "无法将快捷键重置为原始值"
+          "reset": "无法将快捷键重置为原始值",
+          "multipleNonModifierKeys": "快捷键只能有一个主键。请使用修饰键（Ctrl、Shift、Alt、Cmd）与单个按键组合。",
+          "modifierRequired": "快捷键必须包含修饰键（Ctrl、Shift、Alt、Cmd）或功能键",
+          "noKeysRecorded": "未记录任何按键"
         }
       },
       "language": {
@@ -483,7 +694,9 @@
     "off": "关",
     "yes": "是",
     "no": "否",
-    "noOptionsFound": "未找到选项"
+    "noOptionsFound": "未找到选项",
+    "space": "空格",
+    "optionKey": "⌥"
   },
   "accessibility": {
     "permissionsRequired": "需要辅助功能权限",
@@ -508,6 +721,36 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "microphone": {
+    "permissionsRequired": "需要麦克风权限",
+    "permissionsDescription": "{{appName}} 需要麦克风访问权限来转录您的语音。",
+    "openSettings": "打开系统设置",
+    "dismiss": "关闭"
+  },
+  "permissions": {
+    "accessibilityLost": "辅助功能权限已被撤销。自动粘贴已禁用。请在系统设置 > 隐私与安全 > 辅助功能中重新启用。",
+    "accessibilityLostTitle": "需要辅助功能权限",
+    "microphoneDenied": "麦克风权限被拒绝。请在系统设置 > 隐私与安全 > 麦克风中授予权限。",
+    "microphoneDeniedTitle": "需要麦克风权限",
+    "openSettings": "打开设置",
+    "modal": {
+      "accessibility": {
+        "title": "需要辅助功能权限",
+        "description": "Codictate 需要辅助功能权限来检测键盘快捷键和粘贴转录内容。请在系统设置中启用。",
+        "openSettings": "打开系统设置"
+      },
+      "microphone": {
+        "title": "需要麦克风权限",
+        "description": "Codictate 需要麦克风访问权限来转录您的语音。请在系统设置中启用。",
+        "openSettings": "打开系统设置"
+      },
+      "dismiss": "关闭"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "没有可粘贴的转录历史"
   }
 }

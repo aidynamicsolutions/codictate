@@ -20,6 +20,206 @@
     "recommended": "Empfohlen",
     "download": "Herunterladen",
     "downloading": "Wird heruntergeladen...",
+    "progress": {
+      "welcome": "Willkommen",
+      "permissions": "Berechtigungen",
+      "setup": "Einrichtung",
+      "learn": "Lernen"
+    },
+    "welcome": {
+      "title": "Wie heißt du?",
+      "subtitle": "Lass uns dein Erlebnis personalisieren",
+      "namePlaceholder": "Gib deinen Namen ein",
+      "continue": "Weiter"
+    },
+    "attribution": {
+      "greeting": "Willkommen, {{name}}!",
+      "defaultName": "Freund",
+      "question": "Wie hast du von uns erfahren?",
+      "continue": "Weiter",
+      "back": "Zurück",
+      "sources": {
+        "social_media": "Soziale Medien",
+        "youtube": "YouTube",
+        "newsletter": "Newsletter",
+        "ai_chat": "KI-Chat",
+        "search_engine": "Suchmaschine",
+        "event": "Veranstaltung",
+        "friend": "Freund",
+        "colleague": "Kollege",
+        "podcast": "Podcast",
+        "article": "Artikel",
+        "product_hunt": "Product Hunt",
+        "other": "Anderes"
+      },
+      "secondaryQuestion": {
+        "social_media": "Welches soziale Netzwerk?",
+        "search_engine": "Welche Suchmaschine?"
+      },
+      "details": {
+        "social_media": {
+          "tiktok": "TikTok",
+          "instagram": "Instagram",
+          "x_twitter": "X (Twitter)",
+          "discord": "Discord",
+          "facebook": "Facebook",
+          "linkedin": "LinkedIn",
+          "reddit": "Reddit",
+          "threads": "Threads",
+          "other": "Anderes"
+        },
+        "search_engine": {
+          "google": "Google",
+          "bing": "Bing",
+          "duckduckgo": "DuckDuckGo",
+          "other": "Anderes"
+        }
+      },
+      "pleaseSpecify": "Bitte angeben",
+      "otherPlaceholder": "Tippe deine Antwort..."
+    },
+    "tellUsAboutYou": {
+      "title": "Erzähl uns von dir",
+      "workQuestion": "Was machst du beruflich?",
+      "levelQuestion": "Erzähl uns mehr",
+      "continue": "Weiter",
+      "back": "Zurück",
+      "workRoles": {
+        "founder_ceo": "Gründer/CEO",
+        "consultant": "Berater",
+        "operations": "Operations",
+        "developer": "Entwickler",
+        "product": "Produkt",
+        "data_analysis": "Datenanalyse",
+        "sales": "Vertrieb",
+        "marketing": "Marketing",
+        "customer_support": "Kundensupport",
+        "recruiting": "Recruiting",
+        "creator": "Creator",
+        "writer": "Autor",
+        "educator": "Lehrer",
+        "student": "Student",
+        "legal": "Recht",
+        "healthcare": "Gesundheit",
+        "other": "Anderes"
+      },
+      "professionalLevels": {
+        "executive": "Führungskraft",
+        "director": "Direktor",
+        "manager": "Manager",
+        "individual_contributor": "Fachkraft",
+        "freelancer": "Freelancer",
+        "other": "Anderes"
+      },
+      "pleaseSpecify": "Bitte angeben",
+      "otherPlaceholder": "Tippe deine Antwort..."
+    },
+    "typingUseCases": {
+      "title": "Wo verbringst du deine Zeit mit Tippen?",
+      "subtitle": "Das hilft uns, dein Erlebnis anzupassen.",
+      "subtitleHint": "Wähle alle zutreffenden aus.",
+      "continue": "Weiter",
+      "back": "Zurück",
+      "pleaseSpecify": "Bitte angeben",
+      "otherPlaceholder": "Tippe deine Antwort...",
+      "options": {
+        "ai_chat": "Mit KI-Assistenten sprechen",
+        "messaging": "Nachrichten & Chat",
+        "coding": "Code schreiben",
+        "emails": "E-Mails verfassen",
+        "documents": "Dokumente erstellen",
+        "notes": "Notizen machen",
+        "social_posts": "Social-Media-Beiträge & Kommentare",
+        "other": "Etwas anderes"
+      }
+    },
+    "permissions": {
+      "title": "Richte {{appName}} auf deinem Computer ein",
+      "accessibility": {
+        "title": "Erlaube {{appName}}, gesprochene Worte einzufügen",
+        "description": "Dies ermöglicht {{appName}}, deine gesprochenen Worte in das richtige Textfeld zu setzen",
+        "tooltip": "{{appName}} nutzt dies, um den Kontext der verwendeten Anwendung zu erfassen und vorübergehend auf die Zwischenablage zuzugreifen.",
+        "success": "{{appName}} kann jetzt überall Text einfügen"
+      },
+      "microphone": {
+        "title": "Erlaube {{appName}}, dein Mikrofon zu verwenden",
+        "description": "{{appName}} greift nur auf das Mikrofon zu, wenn du es aktiv nutzt",
+        "tooltip": "{{appName}} spielt einen Ton ab und zeigt eine Animation, wenn das Mikrofon aktiv ist",
+        "success": "{{appName}} kann dich jetzt hören"
+      },
+      "allow": "Erlauben",
+      "checking": "Prüfe...",
+      "retry": "Erneut versuchen",
+      "continue": "Weiter",
+      "back": "Zurück",
+      "skipModal": {
+        "title": "Berechtigungen erforderlich",
+        "description": "{{appName}} funktioniert am besten mit beiden Berechtigungen. Du kannst ohne fortfahren, aber einige Funktionen könnten eingeschränkt sein.",
+        "continueAnyway": "Trotzdem fortfahren",
+        "goBack": "Zurückgehen"
+      }
+    },
+    "microphoneCheck": {
+      "back": "Zurück",
+      "title": "Sprich, um dein Mikrofon zu testen",
+      "subtitle": "Das eingebaute Mikrofon deines Computers gewährleistet optimale Transkription.",
+      "question": "Siehst du rote Balken, die sich bewegen, während du sprichst?",
+      "changeMicrophone": "Nein, Mikrofon wechseln",
+      "yes": "Ja",
+      "dialog": {
+        "title": "Mikrofon auswählen",
+        "autoDetect": "Automatisch erkennen",
+        "autoDetectDescription": "Verwendet das Standard-Systemmikrofon",
+        "default": "Standard"
+      }
+    },
+    "hotkeySetup": {
+      "back": "Zurück",
+      "title": "Drücke das Tastenkürzel, um es zu testen",
+      "subtitle": "Wir empfehlen die",
+      "subtitleFnKey": "fn",
+      "subtitleEnd": "-Taste unten links auf der Tastatur.",
+      "question": "Wird die Taste rot, wenn du sie drückst?",
+      "changeShortcut": "Nein, Kürzel ändern",
+      "yes": "Ja",
+      "continue": "Weiter",
+      "modal": {
+        "title": "Tastenkürzel ändern",
+        "subtitle": "Passe an, wie du mit {{appName}} interagierst",
+        "pushToTalk": {
+          "title": "Push-to-Talk",
+          "description": "Halten für kurze Äußerungen"
+        },
+        "handsFree": {
+          "title": "Freisprechmodus",
+          "description": "Drücken zum Starten und Stoppen der Diktierfunktion"
+        },
+        "addAnother": "Weiteres hinzufügen",
+        "resetToDefault": "Auf Standard zurücksetzen"
+      }
+    },
+    "languageSelect": {
+      "back": "Zurück",
+      "title": "Lege die Sprache(n) fest, die du sprichst",
+      "subtitle": "{{appName}} funktioniert in 100 Sprachen.",
+      "description": "Wähle die Sprachen, die du sprichst, oder lass {{appName}} sie automatisch erkennen.",
+      "yourSelectedLanguage": "Deine ausgewählte Sprache",
+      "yourSelectedLanguages": "Deine ausgewählten Sprachen",
+      "changeLanguages": "Sprachen ändern",
+      "continue": "Weiter",
+      "makeActiveHint": "Diese zur aktiven Standardsprache machen",
+      "modal": {
+        "title": "Sprachen",
+        "subtitle": "Wähle die Sprachen, die du mit {{appName}} verwenden möchtest",
+        "searchPlaceholder": "Sprachen suchen",
+        "autoDetect": "Automatisch erkennen",
+        "autoDetectMessage": "Die automatische Erkennung ist aktiviert. {{appName}} wird versuchen, die gesprochene Sprache zu erkennen.",
+        "selected": "Ausgewählt",
+        "languagesCount": "{{count}} Sprachen",
+        "saveAndClose": "Speichern und schließen",
+        "maxReached": "Maximal {{max}} Sprachen erlaubt"
+      }
+    },
     "modelCard": {
       "accuracy": "Genauigkeit",
       "speed": "Geschwindigkeit"
@@ -51,7 +251,7 @@
       },
       "moonshine-base": {
         "name": "Moonshine Base",
-        "description": "Very fast, English only. Handles accents well."
+        "description": "Sehr schnell, nur Englisch. Verarbeitet Akzente gut."
       }
     },
     "learn": {
@@ -101,7 +301,7 @@
       "steps": {
         "share": "Teile deinen Einladungslink",
         "theyGet": "Sie melden sich an und erhalten einen <strong>kostenlosen Monat</strong> Pro!",
-        "youGet": "Du erhältst einen <strong>kostenlosen Monat</strong>, wenn sie 2.000 Wörter diktieren!"
+        "youGet": "Sie erhalten einen <strong>kostenlosen Monat</strong>, wenn sie 2.000 Wörter diktieren!"
       },
       "yourLink": "Dein Empfehlungslink",
       "copy": "Kopieren",
@@ -116,7 +316,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to {{appName}}!",
+    "welcome": "Willkommen bei {{appName}}!",
     "downloadPrompt": "Lade ein Modell herunter, um mit der Transkription zu beginnen.",
     "availableModels": "Verfügbare Modelle",
     "downloadModels": "Modelle herunterladen",
@@ -150,8 +350,16 @@
         "pressKeys": "Tasten drücken...",
         "bindings": {
           "transcribe": {
-            "name": "Transkribieren",
-            "description": "Wandelt Sprache in Text um."
+            "name": "Drücken zum Sprechen",
+            "description": "Halten für kurze Äußerungen"
+          },
+          "transcribe_handsfree": {
+            "name": "Freisprechmodus",
+            "description": "Drücken zum Starten und Stoppen der Diktierfunktion"
+          },
+          "paste_last_transcript": {
+            "name": "Letzte Transkription einfügen",
+            "description": "Fügt den zuletzt transkribierten Text ein"
           },
           "cancel": {
             "name": "Abbrechen",
@@ -161,7 +369,10 @@
         "errors": {
           "restore": "Ursprüngliches Tastenkürzel konnte nicht wiederhergestellt werden",
           "set": "Tastenkürzel konnte nicht gesetzt werden: {{error}}",
-          "reset": "Tastenkürzel konnte nicht auf Originalwert zurückgesetzt werden"
+          "reset": "Tastenkürzel konnte nicht auf Originalwert zurückgesetzt werden",
+          "multipleNonModifierKeys": "Tastenkürzel darf nur eine Haupttaste haben. Verwenden Sie Modifikatortasten (Strg, Umschalt, Alt, Cmd) mit einer einzelnen Taste.",
+          "modifierRequired": "Tastenkürzel muss eine Modifikatortaste (Strg, Umschalt, Alt, Cmd) oder eine Funktionstaste enthalten",
+          "noKeysRecorded": "Keine Tasten aufgezeichnet"
         }
       },
       "language": {
@@ -483,11 +694,19 @@
     "off": "Aus",
     "yes": "Ja",
     "no": "Nein",
+    "space": "Leertaste",
+    "optionKey": "⌥",
     "noOptionsFound": "Keine Optionen gefunden"
   },
   "accessibility": {
     "permissionsRequired": "Bedienungshilfen-Berechtigungen erforderlich",
     "permissionsDescription": "{{appName}} benötigt Bedienungshilfen-Berechtigungen, um transkribierten Text einzugeben.",
+    "openSettings": "Systemeinstellungen öffnen",
+    "dismiss": "Schließen"
+  },
+  "microphone": {
+    "permissionsRequired": "Mikrofonberechtigung erforderlich",
+    "permissionsDescription": "{{appName}} benötigt Mikrofonzugriff, um Ihre Sprache zu transkribieren.",
     "openSettings": "Systemeinstellungen öffnen",
     "dismiss": "Schließen"
   },
@@ -508,6 +727,30 @@
   },
   "notifications": {
     "errorTitle": "{{appName}}",
-    "infoTitle": "{{appName}}"
+    "infoTitle": "{{appName}}",
+    "warningTitle": "{{appName}}"
+  },
+  "permissions": {
+    "accessibilityLost": "Zugriffsberechtigung wurde entzogen. Auto-Einfügen ist deaktiviert. Bitte aktivieren Sie es erneut unter Systemeinstellungen > Datenschutz & Sicherheit > Bedienungshilfen.",
+    "accessibilityLostTitle": "Bedienungshilfen-Berechtigung erforderlich",
+    "microphoneDenied": "Mikrofonzugriff wurde verweigert. Bitte erteilen Sie die Berechtigung unter Systemeinstellungen > Datenschutz & Sicherheit > Mikrofon.",
+    "microphoneDeniedTitle": "Mikrofonberechtigung erforderlich",
+    "openSettings": "Einstellungen öffnen",
+    "modal": {
+      "accessibility": {
+        "title": "Bedienungshilfen-Berechtigung erforderlich",
+        "description": "Codictate benötigt Bedienungshilfen-Berechtigungen, um Tastenkürzel zu erkennen und Transkriptionen einzufügen. Bitte aktivieren Sie diese in den Systemeinstellungen.",
+        "openSettings": "Systemeinstellungen öffnen"
+      },
+      "microphone": {
+        "title": "Mikrofonberechtigung erforderlich",
+        "description": "Codictate benötigt Mikrofonzugriff, um Ihre Sprache zu transkribieren. Bitte aktivieren Sie dies in den Systemeinstellungen.",
+        "openSettings": "Systemeinstellungen öffnen"
+      },
+      "dismiss": "Schließen"
+    }
+  },
+  "pasteLastTranscript": {
+    "noHistory": "Keine Transkriptionshistorie zum Einfügen vorhanden"
   }
 }
