@@ -5,11 +5,11 @@ Comprehensive documentation of the Codictate onboarding experience.
 ## Flow Overview
 
 ```
-Welcome → Attribution → Tell Us About You → Typing Use Cases → Permissions → Microphone Check → Hotkey Setup → Language Select → Learn
-   1           2                3                  4               5              6                 7                8            9
+Welcome → Attribution → Tell Us About You → Typing Use Cases → Permissions → Microphone Check → Hotkey Setup → Language Select → Learn → Success → Referral
+   1           2                3                  4               5              6                 7                8            9        10        11
 ```
 
-Steps 1-4 collect user profile data. Steps 5-9 configure the app.
+Steps 1-4 collect user profile data. Steps 5-9 configure the app. Steps 10-11 introduce Pro features and referrals.
 
 ---
 
@@ -212,6 +212,38 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 - Bot avatar: `/src-tauri/resources/botAvatar.png`
 - i18n keys: `onboarding.learn.*`
 
+### 10. Success Step
+
+**Component**: [SuccessStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/SuccessStep.tsx)
+
+**Features**:
+- Displays Pro trial unlocked message with 2-week free trial badge
+- Lists Pro features (unlimited transcriptions, AI text refinement, priority support)
+- "No credit card required" message
+- Continue button proceeds to Referral step
+
+**i18n keys**: `onboarding.success.*`
+
+### 11. Referral Step
+
+**Component**: [ReferralStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/ReferralStep.tsx)
+
+**Features**:
+- Left panel: Title, "How it works?" with 3 steps, referral link input with Copy button
+- Right panel: Share card with 3D hover animation (±10° rotation following cursor)
+- Glare effect on hover that moves with cursor position
+- Enhanced shadows for elevated card appearance
+- Toast notification (bottom-right) when link is copied
+- Finish button completes onboarding and exits to main app
+
+**Visual Effects**:
+- 3D perspective transform on card (1000px perspective)
+- Multi-layer wave pattern with gradient
+- Shimmer overlay effect
+- Enhanced box-shadow with ambient glow
+
+**i18n keys**: `onboarding.referral.*`
+
 ---
 
 ## Layout & Design
@@ -272,6 +304,8 @@ All strings in [translation.json](file:///Users/tiger/Dev/opensource/speechGen/H
 - `onboarding.hotkeySetup.*`
 - `onboarding.languageSelect.*`
 - `onboarding.learn.*`
+- `onboarding.success.*`
+- `onboarding.referral.*`
 
 ---
 

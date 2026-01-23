@@ -95,6 +95,21 @@
       "continue": "继续",
       "proBadge": "Pro"
     },
+    "referral": {
+      "title": "分享 Codictate 的魔力。\n获得一个月的 Pro。",
+      "howItWorks": "如何运作？",
+      "steps": {
+        "share": "分享您的邀请链接",
+        "theyGet": "他们注册并获得<strong>一个月免费</strong>的 Pro！",
+        "youGet": "当他们读出 2,000 个字时，您获得<strong>一个月免费</strong>！"
+      },
+      "yourLink": "您的推荐链接",
+      "copy": "复制",
+      "copied": "推荐链接已复制到剪贴板",
+      "finish": "完成",
+      "cardTagline": "1 个月无限使用",
+      "giftedBy": "来自 {{name}} 的礼物 ❤️"
+    },
     "errors": {
       "loadModels": "无法加载可用模型",
       "downloadModel": "模型下载失败: {{error}}"

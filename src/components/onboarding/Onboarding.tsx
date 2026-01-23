@@ -10,6 +10,7 @@ import HotkeySetupStep from "./HotkeySetupStep";
 import LanguageSelectStep from "./LanguageSelectStep";
 import LearnStep from "./LearnStep";
 import SuccessStep from "./SuccessStep";
+import ReferralStep from "./ReferralStep";
 import type { OnboardingStep } from "./OnboardingProgress";
 
 interface OnboardingProps {
@@ -27,6 +28,7 @@ const STEP_ORDER: OnboardingStep[] = [
   "languageSelect",
   "learn",
   "success",
+  "referral",
 ];
 
 const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
@@ -204,12 +206,20 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   };
 
   const handleSuccessComplete = async () => {
+    await goToNextStep();
+  };
+
+  const handleSuccessBack = async () => {
+    await goToPreviousStep();
+  };
+
+  const handleReferralComplete = async () => {
     await updateProfile("onboarding_completed", true);
     await updateProfile("onboarding_step", STEP_ORDER.length + 1);
     onComplete();
   };
 
-  const handleSuccessBack = async () => {
+  const handleReferralBack = async () => {
     await goToPreviousStep();
   };
 
@@ -297,6 +307,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
         <SuccessStep
           onComplete={handleSuccessComplete}
           onBack={handleSuccessBack}
+        />
+      );
+    case "referral":
+      return (
+        <ReferralStep
+          onComplete={handleReferralComplete}
+          onBack={handleReferralBack}
+          userName={userName}
         />
       );
     default:

@@ -95,6 +95,21 @@
       "continue": "Continuar",
       "proBadge": "Pro"
     },
+    "referral": {
+      "title": "Comparte la magia de Codictate.\nObtén un mes de Pro.",
+      "howItWorks": "¿Cómo funciona?",
+      "steps": {
+        "share": "Comparte tu enlace de invitación",
+        "theyGet": "Ellos se registran y obtienen un <strong>mes gratis</strong> de Pro!",
+        "youGet": "Tú obtienes un <strong>mes gratis</strong> cuando dicten 2,000 palabras!"
+      },
+      "yourLink": "Tu enlace de referido",
+      "copy": "Copiar",
+      "copied": "Enlace de referido copiado al portapapeles",
+      "finish": "Finalizar",
+      "cardTagline": "USO ILIMITADO POR 1 MES",
+      "giftedBy": "Regalado por {{name}} ❤️"
+    },
     "errors": {
       "loadModels": "Error al cargar los modelos disponibles",
       "downloadModel": "Error al descargar el modelo: {{error}}"

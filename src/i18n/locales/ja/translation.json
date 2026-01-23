@@ -95,6 +95,21 @@
       "continue": "続ける",
       "proBadge": "Pro"
     },
+    "referral": {
+      "title": "Codictateの魔法を共有しよう。\n1ヶ月のProを獲得。",
+      "howItWorks": "仕組みは？",
+      "steps": {
+        "share": "招待リンクを共有",
+        "theyGet": "登録すると<strong>1ヶ月無料</strong>のProを獲得！",
+        "youGet": "2,000語を読み上げると<strong>1ヶ月無料</strong>獲得！"
+      },
+      "yourLink": "紹介リンク",
+      "copy": "コピー",
+      "copied": "紹介リンクをクリップボードにコピーしました",
+      "finish": "完了",
+      "cardTagline": "1ヶ月間無制限使用",
+      "giftedBy": "{{name}}からのギフト ❤️"
+    },
     "errors": {
       "loadModels": "利用可能なモデルの読み込みに失敗しました",
       "downloadModel": "モデルのダウンロードに失敗しました: {{error}}"

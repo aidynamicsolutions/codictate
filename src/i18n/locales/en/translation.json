@@ -261,6 +261,21 @@
       "continue": "Continue",
       "proBadge": "Pro"
     },
+    "referral": {
+      "title": "Give the magic of Codictate.\nGet a month of Pro.",
+      "howItWorks": "How it works?",
+      "steps": {
+        "share": "Share your invite link",
+        "theyGet": "They sign up and get a <strong>free month</strong> of Pro!",
+        "youGet": "You get a <strong>free month</strong> when they dictate 2,000 words!"
+      },
+      "yourLink": "Your referral link",
+      "copy": "Copy",
+      "copied": "Referral link copied to clipboard",
+      "finish": "Finish",
+      "cardTagline": "UNLIMITED USAGE FOR 1 MONTH",
+      "giftedBy": "Gifted by {{name}} ❤️"
+    },
     "modelCard": {
       "accuracy": "accuracy",
       "speed": "speed"

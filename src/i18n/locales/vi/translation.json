@@ -95,6 +95,21 @@
       "continue": "Tiếp tục",
       "proBadge": "Pro"
     },
+    "referral": {
+      "title": "Chia sẻ điều kỳ diệu của Codictate.\nNhận một tháng Pro.",
+      "howItWorks": "Cách hoạt động?",
+      "steps": {
+        "share": "Chia sẻ liên kết mời của bạn",
+        "theyGet": "Họ đăng ký và nhận <strong>một tháng miễn phí</strong> Pro!",
+        "youGet": "Bạn nhận <strong>một tháng miễn phí</strong> khi họ đọc 2.000 từ!"
+      },
+      "yourLink": "Liên kết giới thiệu của bạn",
+      "copy": "Sao chép",
+      "copied": "Đã sao chép liên kết giới thiệu vào clipboard",
+      "finish": "Hoàn tất",
+      "cardTagline": "SỬ DỤNG KHÔNG GIỚI HẠN TRONG 1 THÁNG",
+      "giftedBy": "Quà tặng từ {{name}} ❤️"
+    },
     "errors": {
       "loadModels": "Không thể tải các mô hình có sẵn",
       "downloadModel": "Không thể tải mô hình: {{error}}"

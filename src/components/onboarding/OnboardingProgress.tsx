@@ -2,7 +2,7 @@ import React from "react";
 import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-export type OnboardingStep = "welcome" | "attribution" | "tellUsAboutYou" | "typingUseCases" | "permissions" | "microphoneCheck" | "hotkeySetup" | "languageSelect" | "learn" | "success";
+export type OnboardingStep = "welcome" | "attribution" | "tellUsAboutYou" | "typingUseCases" | "permissions" | "microphoneCheck" | "hotkeySetup" | "languageSelect" | "learn" | "success" | "referral";
 
 interface OnboardingProgressProps {
   currentStep: OnboardingStep;
@@ -25,8 +25,8 @@ export const OnboardingProgress: React.FC<OnboardingProgressProps> = ({
     if (step === "attribution" || step === "tellUsAboutYou" || step === "typingUseCases") return 0;
     // Map "microphoneCheck", "hotkeySetup", and "languageSelect" to "setup" (index 2) for progress display
     if (step === "microphoneCheck" || step === "hotkeySetup" || step === "languageSelect") return 2;
-    // Map "learn" and "success" to the same index (both show as "Learn" in progress)
-    if (step === "learn" || step === "success") return 3;
+    // Map "learn", "success", and "referral" to the same index (all show as "Learn" in progress)
+    if (step === "learn" || step === "success" || step === "referral") return 3;
     return STEPS.indexOf(step);
   };
 
