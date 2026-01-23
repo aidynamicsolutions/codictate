@@ -1,5 +1,6 @@
 import React from "react";
 import OnboardingProgress, { type OnboardingStep } from "./OnboardingProgress";
+import { OnboardingLanguageSwitcher } from "./OnboardingLanguageSwitcher";
 
 interface OnboardingLayoutProps {
   currentStep: OnboardingStep;
@@ -15,8 +16,11 @@ export const OnboardingLayout: React.FC<OnboardingLayoutProps> = ({
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
       {/* Progress indicator at top */}
-      <div className="shrink-0 border-b border-border bg-background dark:bg-[#1E1E1E]">
+      <div className="relative shrink-0 border-b border-border bg-background dark:bg-[#1E1E1E]">
         <OnboardingProgress currentStep={currentStep} />
+        <div className="absolute right-4 top-1/2 -translate-y-1/2">
+          <OnboardingLanguageSwitcher />
+        </div>
       </div>
 
       {/* Split content area */}

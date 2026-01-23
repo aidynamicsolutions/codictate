@@ -25,12 +25,13 @@ export const SUPPORTED_LANGUAGES = Object.keys(resources)
     const meta = LANGUAGE_METADATA[code];
     if (!meta) {
       console.warn(`Missing metadata for locale "${code}" in languages.ts`);
-      return { code, name: code, nativeName: code, priority: undefined };
+      return { code, name: code, nativeName: code, flag: "🌐", priority: undefined };
     }
     return {
       code,
       name: meta.name,
       nativeName: meta.nativeName,
+      flag: meta.flag,
       priority: meta.priority,
     };
   })

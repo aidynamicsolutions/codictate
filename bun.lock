@@ -6,6 +6,7 @@
       "name": "handy-app",
       "dependencies": {
         "@fontsource-variable/noto-sans": "^5.2.10",
+        "@radix-ui/react-dropdown-menu": "^2.1.16",
         "@tailwindcss/vite": "^4.1.16",
         "@tauri-apps/api": "^2.9.0",
         "@tauri-apps/plugin-autostart": "~2.5.1",

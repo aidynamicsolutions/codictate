@@ -8,18 +8,18 @@
  */
 export const LANGUAGE_METADATA: Record<
   string,
-  { name: string; nativeName: string; priority?: number }
+  { name: string; nativeName: string; flag: string; priority?: number }
 > = {
-  en: { name: "English", nativeName: "English", priority: 1 },
-  zh: { name: "Chinese", nativeName: "中文", priority: 2 },
-  es: { name: "Spanish", nativeName: "Español", priority: 3 },
-  fr: { name: "French", nativeName: "Français", priority: 4 },
-  de: { name: "German", nativeName: "Deutsch", priority: 5 },
-  ja: { name: "Japanese", nativeName: "日本語", priority: 6 },
-  vi: { name: "Vietnamese", nativeName: "Tiếng Việt", priority: 7 },
-  pl: { name: "Polish", nativeName: "Polski", priority: 8 },
-  it: { name: "Italian", nativeName: "Italiano", priority: 9 },
-  ru: { name: "Russian", nativeName: "Русский", priority: 10 },
-  uk: { name: "Ukrainian", nativeName: "Українська", priority: 11 },
-  pt: { name: "Portuguese", nativeName: "Português", priority: 12 },
+  en: { name: "English", nativeName: "English", flag: "🇺🇸", priority: 1 },
+  zh: { name: "Chinese", nativeName: "中文", flag: "🇨🇳", priority: 2 },
+  es: { name: "Spanish", nativeName: "Español", flag: "🇪🇸", priority: 3 },
+  fr: { name: "French", nativeName: "Français", flag: "🇫🇷", priority: 4 },
+  de: { name: "German", nativeName: "Deutsch", flag: "🇩🇪", priority: 5 },
+  ja: { name: "Japanese", nativeName: "日本語", flag: "🇯🇵", priority: 6 },
+  vi: { name: "Vietnamese", nativeName: "Tiếng Việt", flag: "🇻🇳", priority: 7 },
+  pl: { name: "Polish", nativeName: "Polski", flag: "🇵🇱", priority: 8 },
+  it: { name: "Italian", nativeName: "Italiano", flag: "🇮🇹", priority: 9 },
+  ru: { name: "Russian", nativeName: "Русский", flag: "🇷🇺", priority: 10 },
+  uk: { name: "Ukrainian", nativeName: "Українська", flag: "🇺🇦", priority: 11 },
+  pt: { name: "Portuguese", nativeName: "Português", flag: "🇧🇷", priority: 12 },
 };
