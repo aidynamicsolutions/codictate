@@ -81,6 +81,20 @@
         "Perfekt! Lass uns loslegen. Drücke Weiter, um die Einrichtung abzuschließen."
       ]
     },
+    "success": {
+      "badge": "2 WOCHEN KOSTENLOS TESTEN",
+      "title": "Du hast Codictate Pro freigeschaltet 🎉",
+      "description": "Genieße 2 Wochen unbegrenzten Zugang auf uns",
+      "noCard": "Keine Kreditkarte erforderlich",
+      "features": {
+        "unlimited": "Unbegrenzte Transkriptionen",
+        "collaboration": "Funktioniert überall, wo du tippst",
+        "crossPlatform": "KI-gestützte Textverbesserung",
+        "commandMode": "Zugang zu Priority-Support"
+      },
+      "continue": "Weiter",
+      "proBadge": "Pro"
+    },
     "errors": {
       "loadModels": "Verfügbare Modelle konnten nicht geladen werden",
       "downloadModel": "Modell konnte nicht heruntergeladen werden: {{error}}"

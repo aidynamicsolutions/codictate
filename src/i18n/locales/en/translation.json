@@ -247,6 +247,20 @@
         "Perfect! Let's get you started. Press continue to finish setup."
       ]
     },
+    "success": {
+      "badge": "2 WEEK FREE TRIAL",
+      "title": "You've unlocked Codictate Pro 🎉",
+      "description": "Enjoy 2 weeks of unlimited access on us",
+      "noCard": "No credit card required",
+      "features": {
+        "unlimited": "Unlimited transcriptions",
+        "collaboration": "Works anywhere you type",
+        "crossPlatform": "AI-powered text refinement",
+        "commandMode": "Priority support access"
+      },
+      "continue": "Continue",
+      "proBadge": "Pro"
+    },
     "modelCard": {
       "accuracy": "accuracy",
       "speed": "speed"

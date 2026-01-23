@@ -81,6 +81,20 @@
         "完璧！始めましょう。続けるを押してセットアップを完了してください。"
       ]
     },
+    "success": {
+      "badge": "2週間無料トライアル",
+      "title": "Codictate Proをアンロックしました 🎉",
+      "description": "2週間の無制限アクセスを無料でお楽しみください",
+      "noCard": "クレジットカード不要",
+      "features": {
+        "unlimited": "無制限の文字起こし",
+        "collaboration": "どこでも入力できます",
+        "crossPlatform": "AIによるテキスト改善",
+        "commandMode": "優先サポートアクセス"
+      },
+      "continue": "続ける",
+      "proBadge": "Pro"
+    },
     "errors": {
       "loadModels": "利用可能なモデルの読み込みに失敗しました",
       "downloadModel": "モデルのダウンロードに失敗しました: {{error}}"

@@ -9,6 +9,7 @@ import MicrophoneCheckStep from "./MicrophoneCheckStep";
 import HotkeySetupStep from "./HotkeySetupStep";
 import LanguageSelectStep from "./LanguageSelectStep";
 import LearnStep from "./LearnStep";
+import SuccessStep from "./SuccessStep";
 import type { OnboardingStep } from "./OnboardingProgress";
 
 interface OnboardingProps {
@@ -25,6 +26,7 @@ const STEP_ORDER: OnboardingStep[] = [
   "hotkeySetup",
   "languageSelect",
   "learn",
+  "success",
 ];
 
 const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
@@ -193,13 +195,21 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     await goToPreviousStep();
   };
 
-  const handleLearnComplete = async () => {
+  const handleLearnContinue = async () => {
+    await goToNextStep();
+  };
+
+  const handleLearnBack = async () => {
+    await goToPreviousStep();
+  };
+
+  const handleSuccessComplete = async () => {
     await updateProfile("onboarding_completed", true);
     await updateProfile("onboarding_step", STEP_ORDER.length + 1);
     onComplete();
   };
 
-  const handleLearnBack = async () => {
+  const handleSuccessBack = async () => {
     await goToPreviousStep();
   };
 
@@ -276,10 +286,17 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     case "learn":
       return (
         <LearnStep
-          onComplete={handleLearnComplete}
+          onComplete={handleLearnContinue}
           onBack={handleLearnBack}
-          onSkip={handleLearnComplete}
+          onSkip={handleLearnContinue}
           userName={userName}
+        />
+      );
+    case "success":
+      return (
+        <SuccessStep
+          onComplete={handleSuccessComplete}
+          onBack={handleSuccessBack}
         />
       );
     default:

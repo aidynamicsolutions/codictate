@@ -81,6 +81,20 @@
         "Hoàn hảo! Hãy bắt đầu thôi. Nhấn Tiếp tục để hoàn tất cài đặt."
       ]
     },
+    "success": {
+      "badge": "DÙNG THỬ MIỄN PHÍ 2 TUẦN",
+      "title": "Bạn đã mở khóa Codictate Pro 🎉",
+      "description": "Tận hưởng 2 tuần truy cập không giới hạn miễn phí",
+      "noCard": "Không cần thẻ tín dụng",
+      "features": {
+        "unlimited": "Transcription không giới hạn",
+        "collaboration": "Hoạt động ở bất kỳ đâu bạn gõ",
+        "crossPlatform": "Tinh chỉnh văn bản bằng AI",
+        "commandMode": "Truy cập hỗ trợ ưu tiên"
+      },
+      "continue": "Tiếp tục",
+      "proBadge": "Pro"
+    },
     "errors": {
       "loadModels": "Không thể tải các mô hình có sẵn",
       "downloadModel": "Không thể tải mô hình: {{error}}"

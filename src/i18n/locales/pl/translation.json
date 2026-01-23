@@ -81,6 +81,20 @@
         "Doskonale! Zaczynajmy. Naciśnij Kontynuuj, aby zakończyć konfigurację."
       ]
     },
+    "success": {
+      "badge": "2 TYGODNIE ZA DARMO",
+      "title": "Odblokowałeś Codictate Pro 🎉",
+      "description": "Ciesz się 2 tygodniami nieograniczonego dostępu za darmo",
+      "noCard": "Karta kredytowa nie jest wymagana",
+      "features": {
+        "unlimited": "Nieograniczona transkrypcja",
+        "collaboration": "Działa wszędzie, gdzie piszesz",
+        "crossPlatform": "Ulepszanie tekstu dzięki AI",
+        "commandMode": "Dostęp do priorytetowego wsparcia"
+      },
+      "continue": "Kontynuuj",
+      "proBadge": "Pro"
+    },
     "errors": {
       "loadModels": "Nie udało się wczytać dostępnych modeli",
       "downloadModel": "Nie udało się pobrać modelu: {{error}}"

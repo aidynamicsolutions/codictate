@@ -79,6 +79,20 @@
         "Perfeito! Vamos começar. Pressione Continuar para finalizar a configuração."
       ]
     },
+    "success": {
+      "badge": "TESTE GRÁTIS DE 2 SEMANAS",
+      "title": "Você desbloqueou o Codictate Pro 🎉",
+      "description": "Aproveite 2 semanas de acesso ilimitado por nossa conta",
+      "noCard": "Não é necessário cartão de crédito",
+      "features": {
+        "unlimited": "Transcrições ilimitadas",
+        "collaboration": "Funciona em qualquer lugar que você digitar",
+        "crossPlatform": "Refinamento de texto com IA",
+        "commandMode": "Acesso ao suporte prioritário"
+      },
+      "continue": "Continuar",
+      "proBadge": "Pro"
+    },
     "errors": {
       "loadModels": "Falha ao carregar modelos disponíveis",
       "downloadModel": "Falha ao baixar modelo: {{error}}"

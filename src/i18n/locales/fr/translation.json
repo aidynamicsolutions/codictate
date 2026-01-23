@@ -81,6 +81,20 @@
         "Parfait ! Allons-y. Appuyez sur Continuer pour terminer la configuration."
       ]
     },
+    "success": {
+      "badge": "ESSAI GRATUIT DE 2 SEMAINES",
+      "title": "Vous avez débloqué Codictate Pro 🎉",
+      "description": "Profitez de 2 semaines d'accès illimité offert",
+      "noCard": "Aucune carte de crédit requise",
+      "features": {
+        "unlimited": "Transcriptions illimitées",
+        "collaboration": "Fonctionne partout où vous tapez",
+        "crossPlatform": "Amélioration du texte par IA",
+        "commandMode": "Accès au support prioritaire"
+      },
+      "continue": "Continuer",
+      "proBadge": "Pro"
+    },
     "errors": {
       "loadModels": "Échec du chargement des modèles disponibles",
       "downloadModel": "Échec du téléchargement du modèle : {{error}}"
