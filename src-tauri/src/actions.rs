@@ -405,18 +405,19 @@ impl ShortcutAction for TranscribeAction {
                                 if let Some(converted_text) =
                                     maybe_convert_chinese_variant(&settings, &transcription).await
                                 {
-                                    final_text = converted_text.clone();
-                                    post_processed_text = Some(converted_text);
+                                    final_text = converted_text;
                                 }
+
                                 // Then apply regular post-processing if enabled
-                                else if let Some(processed_text) =
+                                // Uses final_text which may already have Chinese conversion applied
+                                if let Some(processed_text) =
                                     {
                                         utils::show_processing_overlay(&ah);
-                                        maybe_post_process_transcription(&ah, &settings, &transcription).await
+                                        maybe_post_process_transcription(&ah, &settings, &final_text).await
                                     }
                                 {
-                                    final_text = processed_text.clone();
-                                    post_processed_text = Some(processed_text);
+                                    post_processed_text = Some(processed_text.clone());
+                                    final_text = processed_text;
 
                                     if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
                                         if let Some(prompt) = settings
@@ -427,6 +428,9 @@ impl ShortcutAction for TranscribeAction {
                                             post_process_prompt = Some(prompt.prompt.clone());
                                         }
                                     }
+                                } else if final_text != transcription {
+                                    // Chinese conversion was applied but no LLM post-processing
+                                    post_processed_text = Some(final_text.clone());
                                 }
 
                                 let hm_clone = Arc::clone(&hm);

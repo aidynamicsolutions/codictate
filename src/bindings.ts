@@ -401,6 +401,7 @@ async setOnboardingPasteOverride(enabled: boolean) : Promise<void> {
 },
 /**
  * Try to initialize Enigo (keyboard/mouse simulation).
+ * Uses the lazy-init EnigoState - calls try_init() to initialize if not already done.
  * On macOS, this will fail if accessibility permissions are not granted.
  */
 async initializeEnigo() : Promise<Result<null, string>> {
