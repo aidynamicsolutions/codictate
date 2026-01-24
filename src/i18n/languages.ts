@@ -22,4 +22,5 @@ export const LANGUAGE_METADATA: Record<
   ru: { name: "Russian", nativeName: "Русский", flag: "🇷🇺", priority: 10 },
   uk: { name: "Ukrainian", nativeName: "Українська", flag: "🇺🇦", priority: 11 },
   pt: { name: "Portuguese", nativeName: "Português", flag: "🇧🇷", priority: 12 },
+  cs: { name: "Czech", nativeName: "Čeština", flag: "🇨🇿", priority: 13 },
 };
