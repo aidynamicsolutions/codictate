@@ -149,6 +149,14 @@
       "allow": "Permitir",
       "checking": "Verificando...",
       "retry": "Tentar novamente",
+      "grant": "Conceder Permissão",
+      "granted": "Concedido",
+      "waiting": "Aguardando...",
+      "allGranted": "Tudo pronto!",
+      "errors": {
+        "checkFailed": "Erro ao verificar permissões. Por favor, tente novamente.",
+        "requestFailed": "Erro ao solicitar permissão. Por favor, tente novamente."
+      },
       "continue": "Continuar",
       "back": "Voltar",
       "skipModal": {
