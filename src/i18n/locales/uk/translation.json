@@ -4,7 +4,7 @@
     "checkUpdates": "Перевірити оновлення...",
     "quit": "Вийти",
     "cancel": "Скасувати",
-    "copyLastRecording": "Копіювати останній запис"
+    "copyLastTranscript": "Копіювати останній запис"
   },
   "sidebar": {
     "general": "Загальні",

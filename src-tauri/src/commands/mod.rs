@@ -167,3 +167,34 @@ pub fn set_onboarding_paste_override(app: AppHandle, enabled: bool) {
         }
     }
 }
+
+/// Try to initialize Enigo (keyboard/mouse simulation).
+/// Uses the lazy-init EnigoState - calls try_init() to initialize if not already done.
+/// On macOS, this will fail if accessibility permissions are not granted.
+#[specta::specta]
+#[tauri::command]
+pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
+    use crate::input::EnigoState;
+
+    // Get the managed EnigoState (which was already registered in initialize_core_logic)
+    let enigo_state = app.state::<EnigoState>();
+    
+    // Check if already initialized
+    if enigo_state.is_available() {
+        tracing::debug!("Enigo already initialized");
+        return Ok(());
+    }
+
+    // Try to initialize
+    if enigo_state.try_init() {
+        tracing::info!("Enigo initialized successfully after permission grant");
+        Ok(())
+    } else {
+        if cfg!(target_os = "macos") {
+            tracing::warn!("Failed to initialize Enigo (accessibility permissions may not be granted)");
+        } else {
+            tracing::warn!("Failed to initialize Enigo");
+        }
+        Err("Failed to initialize input system".to_string())
+    }
+}

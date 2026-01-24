@@ -1,4 +1,4 @@
-use crate::managers::history::HistoryManager;
+use crate::managers::history::{HistoryEntry, HistoryManager};
 use crate::settings;
 use crate::tray_i18n::get_tray_translations;
 use std::sync::Arc;
@@ -6,6 +6,7 @@ use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Manager, Theme};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 
 
 #[derive(Clone, Debug, PartialEq)]
@@ -160,6 +161,14 @@ fn build_and_set_tray_menu(
         None::<&str>,
     )
     .expect("failed to create check updates item");
+    let copy_last_transcript_i = MenuItem::with_id(
+        app,
+        "copy_last_transcript",
+        &strings.copy_last_transcript,
+        true,
+        None::<&str>,
+    )
+    .expect("failed to create copy last transcript item");
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)
         .expect("failed to create quit item");
     let separator = || PredefinedMenuItem::separator(app).expect("failed to create separator");
@@ -175,6 +184,8 @@ fn build_and_set_tray_menu(
                     &separator(),
                     &cancel_i,
                     &separator(),
+                    &copy_last_transcript_i,
+                    &separator(),
                     &settings_i,
                     &check_updates_i,
                     &separator(),
@@ -185,20 +196,12 @@ fn build_and_set_tray_menu(
         }
         TrayIconState::Idle => {
             if has_history {
-                let copy_last_i = MenuItem::with_id(
-                    app,
-                    "copy_last_recording",
-                    &strings.copy_last_recording,
-                    true,
-                    None::<&str>,
-                )
-                .expect("failed to create copy last recording item");
                 Menu::with_items(
                     app,
                     &[
                         &version_i,
                         &separator(),
-                        &copy_last_i,
+                        &copy_last_transcript_i,
                         &separator(),
                         &settings_i,
                         &check_updates_i,
@@ -246,47 +249,63 @@ async fn has_history_entries_async(app: &AppHandle) -> bool {
     }
 }
 
-/// Copy the latest transcription to clipboard
-pub fn copy_last_recording_to_clipboard(app: &AppHandle) {
-    if let Some(history_manager) = app.try_state::<Arc<HistoryManager>>() {
-        let manager = history_manager.inner().clone();
-        let app_clone = app.clone();
+fn last_transcript_text(entry: &HistoryEntry) -> &str {
+    entry
+        .post_processed_text
+        .as_deref()
+        .unwrap_or(&entry.transcription_text)
+}
 
-        // Spawn async task to get history entries and copy to clipboard
-        tauri::async_runtime::spawn(async move {
-            match manager.get_history_entries().await {
-                Ok(entries) => {
-                    if let Some(latest) = entries.first() {
-                        // Prefer post-processed text if available, otherwise use raw transcription
-                        let text = latest
-                            .post_processed_text
-                            .as_ref()
-                            .unwrap_or(&latest.transcription_text)
-                            .clone();
+/// Copy the latest transcription to clipboard (from main, uses sync get_latest_entry)
+pub fn copy_last_transcript(app: &AppHandle) {
+    let history_manager = app.state::<Arc<HistoryManager>>();
+    let entry = match history_manager.get_latest_entry() {
+        Ok(Some(entry)) => entry,
+        Ok(None) => {
+            tracing::warn!("No transcription history entries available for tray copy.");
+            return;
+        }
+        Err(err) => {
+            tracing::error!("Failed to fetch last transcription entry: {}", err);
+            return;
+        }
+    };
 
-                        // Copy to clipboard on main thread
-                        let app_for_clipboard = app_clone.clone();
-                        if let Err(e) = app_clone.run_on_main_thread(move || {
-                            use tauri_plugin_clipboard_manager::ClipboardExt;
-                            let clipboard = app_for_clipboard.clipboard();
-                            if let Err(e) = clipboard.write_text(&text) {
-                                tracing::error!("Failed to write to clipboard: {}", e);
-                            } else {
-                                tracing::info!("Copied last recording to clipboard");
-                            }
-                        }) {
-                            tracing::error!("Failed to schedule clipboard copy on main thread: {}", e);
-                        }
-                    } else {
-                        tracing::debug!("No history entries to copy");
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to get history entries for clipboard copy: {}", e);
-                }
-            }
-        });
-    } else {
-        tracing::warn!("Cannot copy last recording: HistoryManager not available");
+    if let Err(err) = app.clipboard().write_text(last_transcript_text(&entry)) {
+        tracing::error!("Failed to copy last transcript to clipboard: {}", err);
+        return;
+    }
+
+    tracing::info!("Copied last transcript to clipboard via tray.");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::last_transcript_text;
+    use crate::managers::history::HistoryEntry;
+
+    fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
+        HistoryEntry {
+            id: 1,
+            file_name: "handy-1.wav".to_string(),
+            timestamp: 0,
+            saved: false,
+            title: "Recording".to_string(),
+            transcription_text: transcription.to_string(),
+            post_processed_text: post_processed.map(|text| text.to_string()),
+            post_process_prompt: None,
+        }
+    }
+
+    #[test]
+    fn uses_post_processed_text_when_available() {
+        let entry = build_entry("raw", Some("processed"));
+        assert_eq!(last_transcript_text(&entry), "processed");
+    }
+
+    #[test]
+    fn falls_back_to_raw_transcription() {
+        let entry = build_entry("raw", None);
+        assert_eq!(last_transcript_text(&entry), "raw");
     }
 }

@@ -3,7 +3,7 @@
   "tray": {
     "settings": "設定...",
     "checkUpdates": "アップデートを確認...",
-    "copyLastRecording": "最後の録音をコピー",
+    "copyLastTranscript": "最後の録音をコピー",
     "quit": "終了",
     "cancel": "キャンセル"
   },

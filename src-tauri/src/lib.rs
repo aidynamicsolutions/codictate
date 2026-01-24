@@ -181,8 +181,8 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                 // Use centralized cancellation that handles all operations
                 cancel_current_operation(app);
             }
-            "copy_last_recording" => {
-                tray::copy_last_recording_to_clipboard(app);
+            "copy_last_transcript" => {
+                tray::copy_last_transcript(app);
             }
             "quit" => {
                 app.exit(0);
@@ -268,6 +268,10 @@ pub fn run() {
         shortcut::change_update_checks_setting,
         user_profile::get_user_profile_command,
         user_profile::update_user_profile_setting,
+        shortcut::change_keyboard_implementation_setting,
+        shortcut::get_keyboard_implementation,
+        shortcut::handy_keys::start_handy_keys_recording,
+        shortcut::handy_keys::stop_handy_keys_recording,
         trigger_update_check,
         commands::cancel_operation,
         commands::get_app_dir_path,
@@ -281,6 +285,7 @@ pub fn run() {
         commands::check_apple_intelligence_available,
         commands::log_from_frontend,
         commands::set_onboarding_paste_override,
+        commands::initialize_enigo,
         commands::models::get_available_models,
         commands::models::get_model_info,
         commands::models::download_model,
@@ -376,6 +381,10 @@ pub fn run() {
         shortcut::change_update_checks_setting,
         user_profile::get_user_profile_command,
         user_profile::update_user_profile_setting,
+        shortcut::change_keyboard_implementation_setting,
+        shortcut::get_keyboard_implementation,
+        shortcut::handy_keys::start_handy_keys_recording,
+        shortcut::handy_keys::stop_handy_keys_recording,
         trigger_update_check,
         commands::cancel_operation,
         commands::get_app_dir_path,
@@ -389,6 +398,7 @@ pub fn run() {
         commands::check_apple_intelligence_available,
         commands::log_from_frontend,
         commands::set_onboarding_paste_override,
+        commands::initialize_enigo,
         commands::models::get_available_models,
         commands::models::get_model_info,
         commands::models::download_model,

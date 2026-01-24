@@ -1,6 +1,6 @@
 [package]
 name = "codictate"
-version = "0.6.10"
+version = "0.7.0"
 description = "Codictate"
 authors = ["cjpais"]
 edition = "2021"
@@ -61,11 +61,14 @@ futures-util = "0.3"
 rustfft = "6.4.0"
 strsim = "0.11.0"
 rphonetic = "3.0.4"
+natural = "0.5.0"
+regex = "1"
 chrono = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
 tar = "0.4.44"
 flate2 = "1.0"
-transcribe-rs = { version = "0.2", features = ["whisper", "parakeet", "moonshine"] }
+transcribe-rs = { version = "0.2.2", features = ["whisper", "parakeet", "moonshine"] }
+handy-keys = "0.1.4"
 ferrous-opencc = "0.2.3"
 specta = "=2.0.0-rc.22"
 specta-typescript = "0.0.9"

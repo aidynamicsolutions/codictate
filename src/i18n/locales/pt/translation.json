@@ -4,7 +4,7 @@
     "checkUpdates": "Verificar Atualizações...",
     "quit": "Sair",
     "cancel": "Cancelar",
-    "copyLastRecording": "Copiar última gravação"
+    "copyLastTranscript": "Copiar última gravação"
   },
   "sidebar": {
     "general": "Geral",

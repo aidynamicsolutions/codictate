@@ -3,7 +3,7 @@
   "tray": {
     "settings": "Cài đặt...",
     "checkUpdates": "Kiểm tra cập nhật...",
-    "copyLastRecording": "Sao chép bản ghi cuối cùng",
+    "copyLastTranscript": "Sao chép bản ghi cuối cùng",
     "quit": "Thoát",
     "cancel": "Hủy"
   },

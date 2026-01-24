@@ -3,7 +3,7 @@
   "tray": {
     "settings": "Configuración...",
     "checkUpdates": "Buscar actualizaciones...",
-    "copyLastRecording": "Copiar última grabación",
+    "copyLastTranscript": "Copiar última grabación",
     "quit": "Salir",
     "cancel": "Cancelar"
   },

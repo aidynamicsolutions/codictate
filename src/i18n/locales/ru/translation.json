@@ -3,7 +3,7 @@
   "tray": {
     "settings": "Настройки...",
     "checkUpdates": "Проверить обновления...",
-    "copyLastRecording": "Копировать последнюю запись",
+    "copyLastTranscript": "Копировать последнюю запись",
     "quit": "Выход",
     "cancel": "Отмена"
   },

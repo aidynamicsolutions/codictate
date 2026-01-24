@@ -3,25 +3,25 @@ import { useTranslation } from "react-i18next";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
 
-interface TranslateToEnglishProps {
+interface ExperimentalToggleProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
 }
 
-export const TranslateToEnglish: React.FC<TranslateToEnglishProps> = React.memo(
+export const ExperimentalToggle: React.FC<ExperimentalToggleProps> = React.memo(
   ({ descriptionMode = "tooltip", grouped = false }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
 
-    const translateToEnglish = getSetting("translate_to_english") || false;
+    const enabled = getSetting("experimental_enabled") || false;
 
     return (
       <ToggleSwitch
-        checked={translateToEnglish}
-        onChange={(enabled) => updateSetting("translate_to_english", enabled)}
-        isUpdating={isUpdating("translate_to_english")}
-        label={t("settings.advanced.translateToEnglish.label")}
-        description={t("settings.advanced.translateToEnglish.description")}
+        checked={enabled}
+        onChange={(enabled) => updateSetting("experimental_enabled", enabled)}
+        isUpdating={isUpdating("experimental_enabled")}
+        label={t("settings.advanced.experimentalToggle.label")}
+        description={t("settings.advanced.experimentalToggle.description")}
         descriptionMode={descriptionMode}
         grouped={grouped}
       />
