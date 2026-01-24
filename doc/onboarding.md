@@ -5,11 +5,11 @@ Comprehensive documentation of the Codictate onboarding experience.
 ## Flow Overview
 
 ```
-Welcome → Attribution → Tell Us About You → Typing Use Cases → Permissions → Microphone Check → Hotkey Setup → Language Select → Learn → Success → Referral
-   1           2                3                  4               5              6                 7                8            9        10        11
+Welcome → Attribution → Tell Us About You → Typing Use Cases → Permissions → Download Model → Microphone Check → Hotkey Setup → Language Select → Learn → Success → Referral
+   1           2                3                  4               5             6                7                 8                9            10       11        12
 ```
 
-Steps 1-4 collect user profile data. Steps 5-9 configure the app. Steps 10-11 introduce Pro features and referrals.
+Steps 1-4 collect user profile data. Steps 5-10 configure the app. Steps 11-12 introduce Pro features and referrals.
 
 ---
 
@@ -98,7 +98,36 @@ Requests macOS accessibility and microphone permissions.
 }
 ```
 
-### 6. Microphone Check Step
+### 6. Download Model Step
+
+**Component**: [ModelDownloadStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/ModelDownloadStep.tsx)
+
+Downloads the recommended ASR model while allowing users to continue setup.
+
+**Features**:
+- Auto-selects best model via `getRecommendedFirstModel()` (Parakeet V3 for most systems)
+- Model info card showing name, description, size, and speed score
+- Download progress with percentage, speed, and estimated time
+- Dynamic messaging encouraging users to continue during download
+- Pulsating Continue button appears once download starts
+- "Extracting..." state after download completes
+- Note explaining model will be set as default (changeable in settings)
+
+**Persistent Progress Indicator**: [ModelDownloadProgress.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/ModelDownloadProgress.tsx)
+- Floating toast at bottom-right when user navigates away
+- Collapsible with progress bar and speed display
+- Shows "Ready to use!" with green checkmark for 5s after extraction completes
+
+**Events**:
+- `model-download-progress` - Progress updates during download
+- `model-download-complete` - Download finished, extraction starts
+- `model-extraction-started` - Extraction phase begins
+- `model-extraction-completed` - Model ready to use
+- `model-extraction-failed` - Error with retry option
+
+**i18n keys**: `onboarding.downloadModel.*`, `modelSelector.extractingGeneric`
+
+### 7. Microphone Check Step
 
 **Component**: [MicrophoneCheckStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/MicrophoneCheckStep.tsx)
 
@@ -131,7 +160,7 @@ Requests macOS accessibility and microphone permissions.
 
 **Note on virtual devices**: Shows all audio devices including virtual ones (BlackHole, Microsoft Teams Audio) as power users may need them for audio routing.
 
-### 7. Hotkey Setup Step
+### 8. Hotkey Setup Step
 
 **Component**: [HotkeySetupStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/HotkeySetupStep.tsx)
 
@@ -166,7 +195,7 @@ Requests macOS accessibility and microphone permissions.
 - Windows: `super+l/d/e/r/tab`, `alt+tab/f4`, `ctrl+c/v/x/z/y/a/s/n/o/p/w`
 - Linux: `alt+tab/f4`, `super+l/d`, `ctrl+c/v/x/z/y/a/s/n/o/p/w`
 
-### 8. Language Select Step
+### 9. Language Select Step
 
 **Component**: [LanguageSelectStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/LanguageSelectStep.tsx)
 
@@ -188,7 +217,7 @@ Requests macOS accessibility and microphone permissions.
 - All 100 Whisper languages with ISO 639-1 codes and emoji flags
 - Helper functions: `getLanguageByCode`, `getLanguageFlag`, `getLanguageLabel` (returns `undefined` for "auto" to use i18n)
 
-### 9. Learn Step
+### 10. Learn Step
 
 **Component**: [LearnStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/LearnStep.tsx)
 
@@ -212,7 +241,7 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 - Bot avatar: `/src-tauri/resources/botAvatar.png`
 - i18n keys: `onboarding.learn.*`
 
-### 10. Success Step
+### 11. Success Step
 
 **Component**: [SuccessStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/SuccessStep.tsx)
 
@@ -224,7 +253,7 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 
 **i18n keys**: `onboarding.success.*`
 
-### 11. Referral Step
+### 12. Referral Step
 
 **Component**: [ReferralStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/ReferralStep.tsx)
 
@@ -300,6 +329,7 @@ All strings in [translation.json](file:///Users/tiger/Dev/opensource/speechGen/H
 - `onboarding.tellUsAboutYou.*`
 - `onboarding.typingUseCases.*`
 - `onboarding.permissions.*`
+- `onboarding.downloadModel.*`
 - `onboarding.microphoneCheck.*`
 - `onboarding.hotkeySetup.*`
 - `onboarding.languageSelect.*`

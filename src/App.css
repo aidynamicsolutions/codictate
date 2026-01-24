@@ -184,6 +184,20 @@
   }
 }
 
+/* Gentle pulse animation for download step continue button */
+@keyframes pulse-gentle {
+  0%, 100% {
+    box-shadow: 0 0 0 0 var(--color-logo-primary);
+  }
+  50% {
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+.animate-pulse-gentle {
+  animation: pulse-gentle 2s ease-in-out infinite;
+}
+
 .container {
   margin: 0;
   padding-top: 10vh;

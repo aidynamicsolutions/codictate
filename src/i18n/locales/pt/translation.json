@@ -309,6 +309,30 @@
       "cardTagline": "USO ILIMITADO POR 1 MÊS",
       "giftedBy": "Presente de {{name}} ❤️"
     },
+    "downloadModel": {
+      "title": "Baixe seu modelo de reconhecimento de voz IA",
+      "subtitle": "{{appName}} funciona 100% offline. Sua voz nunca sai do seu dispositivo.",
+      "privacyNote": "Após o download, não é necessária conexão com internet.",
+      "modelInfo": "Selecionamos o melhor modelo para seu sistema:",
+      "downloadButton": "Baixar Modelo",
+      "downloadStarted": "Download iniciado!",
+      "downloading": "Baixando...",
+      "progressMessages": {
+        "starting": "Download iniciado! Continue enquanto preparamos seu modelo...",
+        "inProgress": "Baixando em segundo plano. Fique à vontade para continuar!",
+        "almostDone": "Quase pronto! Continue para o próximo passo.",
+        "finishing": "Quase lá! Você pode continuar agora."
+      },
+      "backgroundHint": "Downloads continuam em segundo plano",
+      "estimatedTime": "~{{minutes}} min restantes",
+      "continue": "Continuar",
+      "back": "Voltar",
+      "retry": "Tentar Novamente",
+      "error": "Download falhou. Verifique sua conexão e tente novamente.",
+      "complete": "Download concluído!",
+      "continueTooltip": "Seu modelo continuará baixando enquanto você completa a configuração",
+      "defaultModelNote": "{{modelName}} será definido como seu modelo padrão. Você pode alterar isso a qualquer momento nas configurações."
+    },
     "errors": {
       "loadModels": "Falha ao carregar modelos disponíveis",
       "downloadModel": "Falha ao baixar modelo: {{error}}"

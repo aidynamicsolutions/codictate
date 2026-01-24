@@ -310,6 +310,30 @@
       "cardTagline": "NIEOGRANICZONE UŻYCIE PRZEZ 1 MIESIĄC",
       "giftedBy": "Podarowane przez {{name}} ❤️"
     },
+    "downloadModel": {
+      "title": "Pobierz swój model rozpoznawania mowy AI",
+      "subtitle": "{{appName}} działa w 100% offline. Twój głos nigdy nie opuszcza urządzenia.",
+      "privacyNote": "Po pobraniu internet nie jest wymagany.",
+      "modelInfo": "Wybraliśmy najlepszy model dla Twojego systemu:",
+      "downloadButton": "Pobierz Model",
+      "downloadStarted": "Pobieranie rozpoczęte!",
+      "downloading": "Pobieranie...",
+      "progressMessages": {
+        "starting": "Pobieranie rozpoczęte! Kontynuuj, podczas gdy przygotowujemy model...",
+        "inProgress": "Pobieranie w tle. Możesz kontynuować!",
+        "almostDone": "Prawie gotowe! Przejdź do następnego kroku.",
+        "finishing": "Prawie ukończone! Możesz teraz kontynuować."
+      },
+      "backgroundHint": "Pobieranie kontynuowane w tle",
+      "estimatedTime": "~{{minutes}} min pozostało",
+      "continue": "Kontynuuj",
+      "back": "Wstecz",
+      "retry": "Ponów Pobieranie",
+      "error": "Pobieranie nie powiodło się. Sprawdź połączenie i spróbuj ponownie.",
+      "complete": "Pobieranie zakończone!",
+      "continueTooltip": "Model będzie pobierany dalej podczas kończenia konfiguracji",
+      "defaultModelNote": "{{modelName}} zostanie ustawiony jako domyślny model. Możesz to zmienić w dowolnym momencie w ustawieniach."
+    },
     "errors": {
       "loadModels": "Nie udało się wczytać dostępnych modeli",
       "downloadModel": "Nie udało się pobrać modelu: {{error}}"

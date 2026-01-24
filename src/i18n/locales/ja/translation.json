@@ -310,6 +310,30 @@
       "cardTagline": "1ヶ月間無制限使用",
       "giftedBy": "{{name}}からのギフト ❤️"
     },
+    "downloadModel": {
+      "title": "AI音声認識モデルをダウンロード",
+      "subtitle": "{{appName}}は100%オフラインで動作します。あなたの声がデバイスの外に出ることはありません。",
+      "privacyNote": "ダウンロード後はインターネット接続不要です。",
+      "modelInfo": "システムに最適なモデルを選択しました：",
+      "downloadButton": "モデルをダウンロード",
+      "downloadStarted": "ダウンロード開始！",
+      "downloading": "ダウンロード中...",
+      "progressMessages": {
+        "starting": "ダウンロード開始！モデルの準備中に続けてください...",
+        "inProgress": "バックグラウンドでダウンロード中。続行してください！",
+        "almostDone": "もうすぐ完了！次のステップに進んでください。",
+        "finishing": "もう少しで完了！続行できます。"
+      },
+      "backgroundHint": "ダウンロードはバックグラウンドで続行されます",
+      "estimatedTime": "残り約{{minutes}}分",
+      "continue": "続ける",
+      "back": "戻る",
+      "retry": "再ダウンロード",
+      "error": "ダウンロード失敗。接続を確認して再試行してください。",
+      "complete": "ダウンロード完了！",
+      "continueTooltip": "セットアップを完了する間、モデルのダウンロードは続行されます",
+      "defaultModelNote": "{{modelName}} がデフォルトのモデルとして設定されます。設定からいつでも変更できます。"
+    },
     "errors": {
       "loadModels": "利用可能なモデルの読み込みに失敗しました",
       "downloadModel": "モデルのダウンロードに失敗しました: {{error}}"

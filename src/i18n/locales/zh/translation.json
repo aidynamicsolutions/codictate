@@ -310,6 +310,30 @@
       "cardTagline": "1 个月无限使用",
       "giftedBy": "来自 {{name}} 的礼物 ❤️"
     },
+    "downloadModel": {
+      "title": "下载您的AI语音识别模型",
+      "subtitle": "{{appName}}完全离线运行。您的声音永远不会离开设备。",
+      "privacyNote": "下载后无需网络连接。",
+      "modelInfo": "我们已为您的系统选择了最佳模型：",
+      "downloadButton": "下载模型",
+      "downloadStarted": "下载已开始！",
+      "downloading": "下载中...",
+      "progressMessages": {
+        "starting": "下载已开始！在我们准备模型时请继续...",
+        "inProgress": "后台下载中。请继续！",
+        "almostDone": "即将完成！请进入下一步。",
+        "finishing": "快完成了！您现在可以继续。"
+      },
+      "backgroundHint": "下载将在后台继续",
+      "estimatedTime": "剩余约{{minutes}}分钟",
+      "continue": "继续",
+      "back": "返回",
+      "retry": "重试下载",
+      "error": "下载失败。请检查网络连接后重试。",
+      "complete": "下载完成！",
+      "continueTooltip": "在您完成设置时，模型将继续下载",
+      "defaultModelNote": "{{modelName}} 将被设置为您的默认模型。您可以随时在设置中更改。"
+    },
     "errors": {
       "loadModels": "无法加载可用模型",
       "downloadModel": "模型下载失败: {{error}}"

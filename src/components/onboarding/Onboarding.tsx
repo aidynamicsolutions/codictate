@@ -5,6 +5,8 @@ import AttributionStep from "./AttributionStep";
 import TellUsAboutYouStep from "./TellUsAboutYouStep";
 import TypingUseCasesStep from "./TypingUseCasesStep";
 import PermissionsStep from "./PermissionsStep";
+import ModelDownloadStep from "./ModelDownloadStep";
+import ModelDownloadProgress from "./ModelDownloadProgress";
 import MicrophoneCheckStep from "./MicrophoneCheckStep";
 import HotkeySetupStep from "./HotkeySetupStep";
 import LanguageSelectStep from "./LanguageSelectStep";
@@ -23,6 +25,7 @@ const STEP_ORDER: OnboardingStep[] = [
   "tellUsAboutYou",
   "typingUseCases",
   "permissions",
+  "downloadModel",
   "microphoneCheck",
   "hotkeySetup",
   "languageSelect",
@@ -173,6 +176,14 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     await goToPreviousStep();
   };
 
+  const handleDownloadModelContinue = async () => {
+    await goToNextStep();
+  };
+
+  const handleDownloadModelBack = async () => {
+    await goToPreviousStep();
+  };
+
   const handleMicrophoneCheckContinue = async () => {
     await goToNextStep();
   };
@@ -235,8 +246,9 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     await goToPreviousStep();
   };
 
-  // Render current step
-  switch (currentStep) {
+  // Render step with persistent download progress indicator
+  const renderStep = () => {
+    switch (currentStep) {
     case "welcome":
       return (
         <WelcomeStep onContinue={handleWelcomeContinue} initialName={userName} />
@@ -272,6 +284,13 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       );
     case "permissions":
       return <PermissionsStep onContinue={handlePermissionsContinue} onBack={handlePermissionsBack} />;
+    case "downloadModel":
+      return (
+        <ModelDownloadStep
+          onContinue={handleDownloadModelContinue}
+          onBack={handleDownloadModelBack}
+        />
+      );
     case "microphoneCheck":
       return (
         <MicrophoneCheckStep
@@ -321,7 +340,16 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
       return (
         <WelcomeStep onContinue={handleWelcomeContinue} initialName={userName} />
       );
-  }
+    }
+  };
+
+  return (
+    <>
+      {renderStep()}
+      {/* Persistent download progress indicator - visible during and after download step */}
+      {currentStep !== "downloadModel" && <ModelDownloadProgress />}
+    </>
+  );
 };
 
 export default Onboarding;

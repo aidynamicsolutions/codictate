@@ -276,6 +276,30 @@
       "cardTagline": "UNLIMITED USAGE FOR 1 MONTH",
       "giftedBy": "Gifted by {{name}} ❤️"
     },
+    "downloadModel": {
+      "title": "Download your AI voice recognition model",
+      "subtitle": "{{appName}} works 100% offline. Your voice never leaves your device.",
+      "privacyNote": "Once downloaded, no internet is required.",
+      "modelInfo": "We've selected the best model for your system:",
+      "downloadButton": "Download Model",
+      "downloadStarted": "Download started!",
+      "downloading": "Downloading...",
+      "progressMessages": {
+        "starting": "Download started! Continue while we prepare your model...",
+        "inProgress": "Downloading in background. Feel free to continue!",
+        "almostDone": "Almost ready! Continue to the next step.",
+        "finishing": "Nearly done! You can continue now."
+      },
+      "backgroundHint": "Downloads continue in background",
+      "estimatedTime": "~{{minutes}} min remaining",
+      "continue": "Continue",
+      "back": "Back",
+      "retry": "Retry Download",
+      "error": "Download failed. Check your connection and try again.",
+      "complete": "Ready to use!",
+      "continueTooltip": "Your model will continue downloading while you complete setup",
+      "defaultModelNote": "{{modelName}} will be set as your default. You can change this anytime in settings."
+    },
     "modelCard": {
       "accuracy": "accuracy",
       "speed": "speed"

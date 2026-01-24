@@ -310,6 +310,30 @@
       "cardTagline": "SỬ DỤNG KHÔNG GIỚI HẠN TRONG 1 THÁNG",
       "giftedBy": "Quà tặng từ {{name}} ❤️"
     },
+    "downloadModel": {
+      "title": "Tải xuống mô hình nhận dạng giọng nói AI",
+      "subtitle": "{{appName}} hoạt động 100% ngoại tuyến. Giọng nói của bạn không bao giờ rời khỏi thiết bị.",
+      "privacyNote": "Sau khi tải xuống, không cần kết nối internet.",
+      "modelInfo": "Chúng tôi đã chọn mô hình tốt nhất cho hệ thống của bạn:",
+      "downloadButton": "Tải Mô Hình",
+      "downloadStarted": "Bắt đầu tải!",
+      "downloading": "Đang tải...",
+      "progressMessages": {
+        "starting": "Bắt đầu tải! Tiếp tục trong khi chúng tôi chuẩn bị mô hình...",
+        "inProgress": "Đang tải trong nền. Hãy tiếp tục!",
+        "almostDone": "Sắp xong! Tiếp tục bước tiếp theo.",
+        "finishing": "Gần hoàn tất! Bạn có thể tiếp tục ngay."
+      },
+      "backgroundHint": "Tải xuống tiếp tục trong nền",
+      "estimatedTime": "~{{minutes}} phút còn lại",
+      "continue": "Tiếp tục",
+      "back": "Quay lại",
+      "retry": "Thử Lại Tải Xuống",
+      "error": "Tải xuống thất bại. Kiểm tra kết nối và thử lại.",
+      "complete": "Tải xuống hoàn tất!",
+      "continueTooltip": "Mô hình sẽ tiếp tục tải xuống trong khi bạn hoàn tất thiết lập",
+      "defaultModelNote": "{{modelName}} sẽ được đặt làm mô hình mặc định của bạn. Bạn có thể thay đổi điều này bất cứ lúc nào trong cài đặt."
+    },
     "errors": {
       "loadModels": "Không thể tải các mô hình có sẵn",
       "downloadModel": "Không thể tải mô hình: {{error}}"

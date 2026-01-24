@@ -310,6 +310,30 @@
       "cardTagline": "UNBEGRENZTE NUTZUNG FÜR 1 MONAT",
       "giftedBy": "Geschenk von {{name}} ❤️"
     },
+    "downloadModel": {
+      "title": "Lade dein KI-Spracherkennungsmodell herunter",
+      "subtitle": "{{appName}} funktioniert 100% offline. Deine Stimme verlässt niemals dein Gerät.",
+      "privacyNote": "Nach dem Download ist kein Internet erforderlich.",
+      "modelInfo": "Wir haben das beste Modell für dein System ausgewählt:",
+      "downloadButton": "Modell herunterladen",
+      "downloadStarted": "Download gestartet!",
+      "downloading": "Wird heruntergeladen...",
+      "progressMessages": {
+        "starting": "Download gestartet! Fahre fort, während wir dein Modell vorbereiten...",
+        "inProgress": "Download im Hintergrund. Du kannst ruhig weiterfahren!",
+        "almostDone": "Fast fertig! Fahre mit dem nächsten Schritt fort.",
+        "finishing": "Gleich fertig! Du kannst jetzt weitermachen."
+      },
+      "backgroundHint": "Downloads laufen im Hintergrund weiter",
+      "estimatedTime": "~{{minutes}} Min. verbleibend",
+      "continue": "Weiter",
+      "back": "Zurück",
+      "retry": "Download wiederholen",
+      "error": "Download fehlgeschlagen. Überprüfe deine Verbindung und versuche es erneut.",
+      "complete": "Download abgeschlossen!",
+      "continueTooltip": "Dein Modell wird weiter heruntergeladen, während du die Einrichtung abschließt",
+      "defaultModelNote": "{{modelName}} wird als dein Standardmodell festgelegt. Du kannst dies jederzeit in den Einstellungen ändern."
+    },
     "errors": {
       "loadModels": "Verfügbare Modelle konnten nicht geladen werden",
       "downloadModel": "Modell konnte nicht heruntergeladen werden: {{error}}"

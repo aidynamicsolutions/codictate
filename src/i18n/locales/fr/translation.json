@@ -310,6 +310,30 @@
       "cardTagline": "UTILISATION ILLIMITÉE PENDANT 1 MOIS",
       "giftedBy": "Offert par {{name}} ❤️"
     },
+    "downloadModel": {
+      "title": "Téléchargez votre modèle de reconnaissance vocale IA",
+      "subtitle": "{{appName}} fonctionne 100% hors ligne. Votre voix ne quitte jamais votre appareil.",
+      "privacyNote": "Une fois téléchargé, aucune connexion internet n'est requise.",
+      "modelInfo": "Nous avons sélectionné le meilleur modèle pour votre système :",
+      "downloadButton": "Télécharger le Modèle",
+      "downloadStarted": "Téléchargement démarré !",
+      "downloading": "Téléchargement...",
+      "progressMessages": {
+        "starting": "Téléchargement démarré ! Continuez pendant que nous préparons votre modèle...",
+        "inProgress": "Téléchargement en arrière-plan. N'hésitez pas à continuer !",
+        "almostDone": "Presque prêt ! Passez à l'étape suivante.",
+        "finishing": "Presque terminé ! Vous pouvez continuer maintenant."
+      },
+      "backgroundHint": "Les téléchargements continuent en arrière-plan",
+      "estimatedTime": "~{{minutes}} min restantes",
+      "continue": "Continuer",
+      "back": "Retour",
+      "retry": "Réessayer le Téléchargement",
+      "error": "Téléchargement échoué. Vérifiez votre connexion et réessayez.",
+      "complete": "Téléchargement terminé !",
+      "continueTooltip": "Votre modèle continuera à se télécharger pendant que vous terminez la configuration",
+      "defaultModelNote": "{{modelName}} sera défini comme votre modèle par défaut. Vous pouvez le modifier à tout moment dans les paramètres."
+    },
     "errors": {
       "loadModels": "Échec du chargement des modèles disponibles",
       "downloadModel": "Échec du téléchargement du modèle : {{error}}"
