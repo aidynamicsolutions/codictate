@@ -399,6 +399,18 @@ async logFromFrontend(level: string, sessionId: string | null, target: string, m
 async setOnboardingPasteOverride(enabled: boolean) : Promise<void> {
     await TAURI_INVOKE("set_onboarding_paste_override", { enabled });
 },
+/**
+ * Try to initialize Enigo (keyboard/mouse simulation).
+ * On macOS, this will fail if accessibility permissions are not granted.
+ */
+async initializeEnigo() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("initialize_enigo") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAvailableModels() : Promise<Result<ModelInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_models") };

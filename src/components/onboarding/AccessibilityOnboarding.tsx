@@ -119,7 +119,7 @@ const AccessibilityOnboarding: React.FC<AccessibilityOnboardingProps> = ({
           if (accessibilityGranted && prev.accessibility !== "granted") {
             newState.accessibility = "granted";
             // Initialize Enigo when accessibility is granted
-            commands.initializeEnigo().catch((e) => {
+            commands.initializeEnigo().catch((e: unknown) => {
               console.warn("Failed to initialize Enigo:", e);
             });
           }
