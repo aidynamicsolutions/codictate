@@ -11,6 +11,7 @@ import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
 import { colors } from "@/theme";
 
+
 type OverlayState = "recording" | "transcribing" | "processing";
 
 // SVG dimensions and border radius (constants)
@@ -54,28 +55,56 @@ const RecordingOverlay: React.FC = () => {
   );
 
   useEffect(() => {
-    const setupEventListeners = async () => {
+    // React StrictMode-safe pattern: https://react.dev/learn/synchronizing-with-effects#fetching-data
+    // Use `ignore` flag to prevent state updates after cleanup
+    let ignore = false;
+    const cleanupFns: Array<() => void> = [];
+    
+    async function setupListeners() {
       // Listen for show-overlay event from Rust
       const unlistenShow = await listen("show-overlay", async (event) => {
-        // Sync language from settings each time overlay is shown
-        await syncLanguageFromSettings();
+        if (ignore) return;  // Ignore if cleanup already ran
         const overlayState = event.payload as OverlayState;
+        
+        // Update state IMMEDIATELY before any async operations
+        // This ensures the UI shows the correct state as soon as the event arrives
         setState(overlayState);
         setIsVisible(true);
+        
         // Reset time when showing overlay in recording state
         if (overlayState === "recording") {
           setElapsedSecs(0);
         }
+        
+        // Sync language from settings (async, but UI is already updated)
+        await syncLanguageFromSettings();
       });
+      
+      // If cleanup ran while awaiting, unsubscribe immediately
+      if (ignore) {
+        unlistenShow();
+        return;
+      }
+      cleanupFns.push(unlistenShow);
 
       // Listen for hide-overlay event from Rust
       const unlistenHide = await listen("hide-overlay", () => {
+        if (ignore) return;
         setIsVisible(false);
         setElapsedSecs(0);
+        // Reset state to "recording" so next show doesn't briefly display stale state
+        setState("recording");
       });
+      
+      if (ignore) {
+        unlistenHide();
+        return;
+      }
+      cleanupFns.push(unlistenHide);
 
       // Listen for mic-level updates
       const unlistenLevel = await listen<number[]>("mic-level", (event) => {
+        if (ignore) return;
         const newLevels = event.payload as number[];
 
         // Apply smoothing to reduce jitter
@@ -88,23 +117,34 @@ const RecordingOverlay: React.FC = () => {
         setLevels(smoothed.slice(0, 16));
       });
       
+      if (ignore) {
+        unlistenLevel();
+        return;
+      }
+      cleanupFns.push(unlistenLevel);
+      
       // Listen for recording time updates
       const unlistenTime = await listen<[number, number]>("recording-time", (event) => {
+        if (ignore) return;
         const [elapsed, max] = event.payload;
         setElapsedSecs(elapsed);
         setMaxSecs(max);
       });
-
-      // Cleanup function
-      return () => {
-        unlistenShow();
-        unlistenHide();
-        unlistenLevel();
+      
+      if (ignore) {
         unlistenTime();
-      };
-    };
+        return;
+      }
+      cleanupFns.push(unlistenTime);
+    }
 
-    setupEventListeners();
+    setupListeners();
+    
+    // Cleanup function - called on unmount or before re-running effect
+    return () => {
+      ignore = true;  // Prevent any pending async operations from updating state
+      cleanupFns.forEach(fn => fn());  // Unsubscribe all listeners
+    };
   }, []);
 
   const getIcon = () => {
@@ -117,7 +157,7 @@ const RecordingOverlay: React.FC = () => {
 
   return (
     <div 
-      className={`recording-overlay-wrapper ${isVisible ? "fade-in" : ""}`}
+      className={`recording-overlay-wrapper ${isVisible ? "fade-in" : "fade-out"}`}
     >
       {/* SVG countdown border - uniform animation along perimeter */}
       {state === "recording" && (

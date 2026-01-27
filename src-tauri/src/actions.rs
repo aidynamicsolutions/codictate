@@ -289,6 +289,7 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string();
         change_tray_icon(app, TrayIconState::Recording);
+        
         show_recording_overlay(app);
 
         let rm = app.state::<Arc<AudioRecordingManager>>();
@@ -361,6 +362,7 @@ impl ShortcutAction for TranscribeAction {
         let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
 
         change_tray_icon(app, TrayIconState::Transcribing);
+        
         show_transcribing_overlay(app);
 
         // Unmute before playing audio feedback so the stop sound is audible

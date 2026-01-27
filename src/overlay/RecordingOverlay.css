@@ -72,6 +72,10 @@
   opacity: 1;
 }
 
+.recording-overlay-wrapper.fade-out {
+  opacity: 0;
+}
+
 .transcribing-text {
   color: white;
   font-size: 12px;
