@@ -1,0 +1,13 @@
+<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Border: Filled with white, Thick Dark Stroke -->
+    <rect x="5" y="5" width="90" height="90" rx="20" fill="#FFFFFF" stroke="#333333" stroke-width="8" />
+    <!-- Icon Content: Dark -->
+    <g transform="scale(0.8) translate(12.5, 12.5)">
+        <rect x="25" y="25" width="12" height="12" rx="5" fill="#333333" />
+        <path d="M63 36 L70 29 L77 36" stroke="#333333" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="25" y="60" width="8" height="12" rx="4" fill="#333333" />
+        <rect x="39" y="55" width="8" height="17" rx="4" fill="#333333" />
+        <rect x="53" y="55" width="8" height="17" rx="4" fill="#333333" />
+        <rect x="67" y="60" width="8" height="12" rx="4" fill="#333333" />
+    </g>
+</svg>
