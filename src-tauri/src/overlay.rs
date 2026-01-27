@@ -206,62 +206,99 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
 
 /// Shows the recording overlay window with fade-in animation
 pub fn show_recording_overlay(app_handle: &AppHandle) {
+    use tracing::{debug, warn};
+    
+    debug!("show_recording_overlay: entry");
+    
     // Check if overlay should be shown based on position setting
     let settings = settings::get_settings(app_handle);
     if settings.overlay_position == OverlayPosition::None {
+        debug!("show_recording_overlay: overlay disabled in settings, skipping");
         return;
     }
 
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Log current visibility state before showing
+        let is_visible_before = overlay_window.is_visible().unwrap_or(false);
+        debug!("show_recording_overlay: found window, is_visible_before={}", is_visible_before);
+        
         // Update position before showing to prevent flicker from position changes
         if let Some((x, y)) = calculate_overlay_position(app_handle) {
             let _ = overlay_window
                 .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
         }
 
-        let _ = overlay_window.show();
+        let show_result = overlay_window.show();
+        debug!("show_recording_overlay: window.show() result={:?}", show_result);
 
         // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
         #[cfg(target_os = "windows")]
         force_overlay_topmost(&overlay_window);
 
         // Emit event to trigger fade-in animation with recording state
-        let _ = overlay_window.emit("show-overlay", "recording");
+        let emit_result = overlay_window.emit("show-overlay", "recording");
+        debug!("show_recording_overlay: emit('show-overlay', 'recording') result={:?}", emit_result);
+        
+        // Log post-show visibility
+        let is_visible_after = overlay_window.is_visible().unwrap_or(false);
+        debug!("show_recording_overlay: is_visible_after={}", is_visible_after);
+    } else {
+        warn!("show_recording_overlay: overlay window 'recording_overlay' NOT FOUND!");
     }
 }
 
 /// Shows the transcribing overlay window
 pub fn show_transcribing_overlay(app_handle: &AppHandle) {
+    use tracing::{debug, warn};
+    
+    debug!("show_transcribing_overlay: entry");
+    
     // Check if overlay should be shown based on position setting
     let settings = settings::get_settings(app_handle);
     if settings.overlay_position == OverlayPosition::None {
+        debug!("show_transcribing_overlay: overlay disabled in settings, skipping");
         return;
     }
 
     update_overlay_position(app_handle);
 
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
-        let _ = overlay_window.show();
+        let is_visible_before = overlay_window.is_visible().unwrap_or(false);
+        debug!("show_transcribing_overlay: found window, is_visible_before={}", is_visible_before);
+        
+        let show_result = overlay_window.show();
+        debug!("show_transcribing_overlay: window.show() result={:?}", show_result);
 
         // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
         #[cfg(target_os = "windows")]
         force_overlay_topmost(&overlay_window);
 
         // Emit event to switch to transcribing state
-        let _ = overlay_window.emit("show-overlay", "transcribing");
+        let emit_result = overlay_window.emit("show-overlay", "transcribing");
+        debug!("show_transcribing_overlay: emit result={:?}", emit_result);
+    } else {
+        warn!("show_transcribing_overlay: overlay window NOT FOUND!");
     }
 }
 
 /// Shows the processing overlay window (during post-processing phase)
 pub fn show_processing_overlay(app_handle: &AppHandle) {
+    use tracing::{debug, warn};
+    
+    debug!("show_processing_overlay: entry");
+    
     let settings = settings::get_settings(app_handle);
     if settings.overlay_position == OverlayPosition::None {
+        debug!("show_processing_overlay: overlay disabled in settings, skipping");
         return;
     }
 
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         // Emit event to switch to processing state
-        let _ = overlay_window.emit("show-overlay", "processing");
+        let emit_result = overlay_window.emit("show-overlay", "processing");
+        debug!("show_processing_overlay: emit result={:?}", emit_result);
+    } else {
+        warn!("show_processing_overlay: overlay window NOT FOUND!");
     }
 }
 
@@ -277,15 +314,26 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
 
 /// Hides the recording overlay window with fade-out animation
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
+    use tracing::{debug, warn};
+    
+    debug!("hide_recording_overlay: entry");
+    
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let is_visible_before = overlay_window.is_visible().unwrap_or(false);
+        debug!("hide_recording_overlay: found window, is_visible_before={}", is_visible_before);
+        
         // Emit event to trigger fade-out animation (CSS handles the 300ms transition)
-        let _ = overlay_window.emit("hide-overlay", ());
+        let emit_result = overlay_window.emit("hide-overlay", ());
+        debug!("hide_recording_overlay: emit('hide-overlay') result={:?}", emit_result);
         
         // Hide the window immediately - CSS transition already handled the visual fade
         // No need for a delayed thread which can cause race conditions
-        let _ = overlay_window.hide();
+        let hide_result = overlay_window.hide();
+        debug!("hide_recording_overlay: hide() result={:?}", hide_result);
+    } else {
+        warn!("hide_recording_overlay: overlay window NOT FOUND!");
     }
 }
 

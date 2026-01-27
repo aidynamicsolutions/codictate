@@ -90,6 +90,8 @@ async fn maybe_post_process_transcription(
         return None;
     }
 
+    utils::show_processing_overlay(app);
+    
     debug!(
         "Starting LLM post-processing with provider '{}' (model: {})",
         provider.id, model
@@ -290,7 +292,9 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string();
         change_tray_icon(app, TrayIconState::Recording);
         
+        info!("TranscribeAction::start: about to call show_recording_overlay (binding={})", binding_id);
         show_recording_overlay(app);
+        info!("TranscribeAction::start: show_recording_overlay returned");
 
         let rm = app.state::<Arc<AudioRecordingManager>>();
 
@@ -363,6 +367,7 @@ impl ShortcutAction for TranscribeAction {
 
         change_tray_icon(app, TrayIconState::Transcribing);
         
+        info!("TranscribeAction::stop: about to call show_transcribing_overlay (binding={})", binding_id);
         show_transcribing_overlay(app);
 
         // Unmute before playing audio feedback so the stop sound is audible
@@ -419,10 +424,7 @@ impl ShortcutAction for TranscribeAction {
                                 // Then apply regular post-processing if enabled
                                 // Uses final_text which may already have Chinese conversion applied
                                 if let Some(processed_text) =
-                                    {
-                                        utils::show_processing_overlay(&ah);
-                                        maybe_post_process_transcription(&ah, &settings, &final_text).await
-                                    }
+                                    maybe_post_process_transcription(&ah, &settings, &final_text).await
                                 {
                                     post_processed_text = Some(processed_text.clone());
                                     final_text = processed_text;

@@ -380,6 +380,10 @@ fn handle_flags_changed_event(event: &CGEvent) {
 
 /// Handle Fn key press - start delayed push-to-talk timer
 fn handle_fn_pressed(app: &AppHandle) {
+    info!("handle_fn_pressed: entry, PTT_STARTED={}, FN_SPACE_TRIGGERED={}, FN_KEY_WAS_PRESSED={}", 
+          PTT_STARTED.load(Ordering::SeqCst),
+          FN_SPACE_TRIGGERED.load(Ordering::SeqCst),
+          FN_KEY_WAS_PRESSED.load(Ordering::SeqCst));
     debug!("Fn key pressed");
     let _ = app.emit("fn-key-down", ());
 
@@ -439,7 +443,7 @@ fn handle_fn_pressed(app: &AppHandle) {
             }
             
             // All checks passed - start push-to-talk recording
-            debug!("Delay expired, starting push-to-talk recording");
+            info!("handle_fn_pressed: PTT delay expired, starting push-to-talk recording (press_id={})", press_id);
             PTT_STARTED.store(true, Ordering::SeqCst);
             
             // Reset hands-free toggle state to ensure mutual exclusivity
@@ -460,6 +464,9 @@ fn handle_fn_pressed(app: &AppHandle) {
 
 /// Handle Fn key release - stop push-to-talk if it was started
 fn handle_fn_released(app: &AppHandle) {
+    info!("handle_fn_released: entry, PTT_STARTED={}, FN_SPACE_TRIGGERED={}", 
+          PTT_STARTED.load(Ordering::SeqCst),
+          FN_SPACE_TRIGGERED.load(Ordering::SeqCst));
     debug!("Fn key released");
     let _ = app.emit("fn-key-up", ());
 

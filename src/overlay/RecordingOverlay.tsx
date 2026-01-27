@@ -10,6 +10,7 @@ import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
 import { colors } from "@/theme";
+import { logInfo, logWarn, logDebug } from "@/utils/logging";
 
 
 type OverlayState = "recording" | "transcribing" | "processing";
@@ -60,16 +61,23 @@ const RecordingOverlay: React.FC = () => {
     let ignore = false;
     const cleanupFns: Array<() => void> = [];
     
+
+    logInfo("RecordingOverlay: Component mounted, setting up event listeners", "fe-overlay");
+    
     async function setupListeners() {
+      logDebug("RecordingOverlay: Starting to register event listeners", "fe-overlay");
+      
       // Listen for show-overlay event from Rust
       const unlistenShow = await listen("show-overlay", async (event) => {
         if (ignore) return;  // Ignore if cleanup already ran
         const overlayState = event.payload as OverlayState;
+        logInfo(`RecordingOverlay: Received show-overlay event: state=${overlayState}`, "fe-overlay");
         
         // Update state IMMEDIATELY before any async operations
         // This ensures the UI shows the correct state as soon as the event arrives
         setState(overlayState);
         setIsVisible(true);
+        logDebug(`RecordingOverlay: Set isVisible=true, state=${overlayState}`, "fe-overlay");
         
         // Reset time when showing overlay in recording state
         if (overlayState === "recording") {
@@ -90,6 +98,7 @@ const RecordingOverlay: React.FC = () => {
       // Listen for hide-overlay event from Rust
       const unlistenHide = await listen("hide-overlay", () => {
         if (ignore) return;
+        logInfo("RecordingOverlay: Received hide-overlay event", "fe-overlay");
         setIsVisible(false);
         setElapsedSecs(0);
         // Reset state to "recording" so next show doesn't briefly display stale state
@@ -136,12 +145,15 @@ const RecordingOverlay: React.FC = () => {
         return;
       }
       cleanupFns.push(unlistenTime);
+
+      logInfo("RecordingOverlay: All event listeners registered successfully", "fe-overlay");
     }
 
     setupListeners();
     
     // Cleanup function - called on unmount or before re-running effect
     return () => {
+      logDebug("RecordingOverlay: Cleanup running, setting ignore=true", "fe-overlay");
       ignore = true;  // Prevent any pending async operations from updating state
       cleanupFns.forEach(fn => fn());  // Unsubscribe all listeners
     };
