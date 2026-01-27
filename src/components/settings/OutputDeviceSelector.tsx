@@ -26,9 +26,20 @@ export const OutputDeviceSelector: React.FC<OutputDeviceSelectorProps> =
         refreshOutputDevices,
       } = useSettings();
 
-      const selectedOutputDevice =
-        getSetting("selected_output_device") === "default"
-          ? "Default"
+      // Ensure output devices are loaded
+      React.useEffect(() => {
+        if (outputDevices.length === 0) {
+          refreshOutputDevices();
+        }
+      }, [outputDevices.length, refreshOutputDevices]);
+
+      // Find the real system default device (ignoring the "Default" placeholder added by the store)
+      const systemDefaultDevice = outputDevices.find((d) => d.is_default && d.name !== "Default" && d.name !== "default");
+
+      // If setting is "Default" (or "default"), we conceptually select the system default device
+      const effectiveSelectedDevice = 
+        (getSetting("selected_output_device") === "default" || getSetting("selected_output_device") === "Default")
+          ? systemDefaultDevice?.name || "Default" 
           : getSetting("selected_output_device") || "Default";
 
       const handleOutputDeviceSelect = async (deviceName: string) => {
@@ -39,10 +50,23 @@ export const OutputDeviceSelector: React.FC<OutputDeviceSelectorProps> =
         await resetSetting("selected_output_device");
       };
 
-      const outputDeviceOptions = outputDevices.map((device: AudioDevice) => ({
-        value: device.name,
-        label: device.name,
-      }));
+      // Fallback: If no system default is detected, we MUST show the "Default" option.
+      const showDefaultOption = !systemDefaultDevice;
+
+      const outputDeviceOptions = outputDevices
+        .filter((device) => {
+            if (device.name === "Default" || device.name === "default") {
+                return showDefaultOption;
+            }
+            return true;
+        })
+        .map((device: AudioDevice) => {
+          const isDefault = device.is_default;
+          return {
+            value: device.name,
+            label: isDefault ? `${device.name} (${t("common.default")})` : device.name,
+          };
+        });
 
       return (
         <SettingContainer
@@ -55,7 +79,7 @@ export const OutputDeviceSelector: React.FC<OutputDeviceSelectorProps> =
           <div className="flex items-center space-x-1">
             <Dropdown
               options={outputDeviceOptions}
-              selectedValue={selectedOutputDevice}
+              selectedValue={effectiveSelectedDevice}
               onSelect={handleOutputDeviceSelect}
               placeholder={
                 isLoading || outputDevices.length === 0
