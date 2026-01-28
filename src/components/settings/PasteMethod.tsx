@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { logInfo } from "@/utils/logging";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
@@ -69,14 +70,14 @@ export const PasteMethodSetting: React.FC<PasteMethodProps> = React.memo(
         description={t("settings.advanced.pasteMethod.description")}
         descriptionMode={descriptionMode}
         grouped={grouped}
-        tooltipPosition="bottom"
       >
         <Dropdown
           options={pasteMethodOptions}
           selectedValue={selectedMethod}
-          onSelect={(value) =>
-            updateSetting("paste_method", value as PasteMethod)
-          }
+          onSelect={(value) => {
+            logInfo(`Paste method selected: ${value}`, "fe");
+            updateSetting("paste_method", value as PasteMethod);
+          }}
           disabled={isUpdating("paste_method")}
         />
       </SettingContainer>

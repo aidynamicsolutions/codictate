@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { logInfo } from "@/utils/logging";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
@@ -39,9 +40,10 @@ export const ClipboardHandlingSetting: React.FC<ClipboardHandlingProps> =
         <Dropdown
           options={clipboardHandlingOptions}
           selectedValue={selectedHandling}
-          onSelect={(value) =>
-            updateSetting("clipboard_handling", value as ClipboardHandling)
-          }
+          onSelect={(value) => {
+            logInfo(`Clipboard handling selected: ${value}`, "fe");
+            updateSetting("clipboard_handling", value as ClipboardHandling);
+          }}
           disabled={isUpdating("clipboard_handling")}
         />
       </SettingContainer>

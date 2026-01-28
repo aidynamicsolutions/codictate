@@ -497,6 +497,7 @@
         "description": "Add words that are often misheard or misspelled during transcription. The system will automatically correct similar-sounding words to match your list.",
         "placeholder": "Add a word",
         "add": "Add",
+        "addedWords": "Added words",
         "remove": "Remove {{word}}"
       }
     },
@@ -585,6 +586,7 @@
       "openFolder": "Open Recordings Folder",
       "loading": "Loading history...",
       "empty": "No transcriptions yet. Start recording to build your history!",
+      "emptyDescription": "Recordings will appear here after you capture them.",
       "copyToClipboard": "Copy transcription to clipboard",
       "save": "Save transcription",
       "unsave": "Remove from saved",

@@ -1,17 +1,31 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { Button } from "@/components/shared/ui/button";
-import { Copy, Star, Check, Trash2, FolderOpen } from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/shared/ui/card";
+import { ScrollArea } from "@/components/shared/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/shared/ui/tooltip";
+import { Skeleton } from "@/components/shared/ui/skeleton";
+import { Copy, Star, Check, Trash2, FolderOpen, Loader2 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { commands, type HistoryEntry } from "@/bindings";
-import { formatDateTime } from "@/utils/dateFormat";
+import { formatDate } from "@/utils/dateFormat";
+import { logError, logInfo } from "@/utils/logging";
 
 const IS_LINUX = platform() === "linux";
-import { logError, logInfo } from "@/utils/logging";
 
 interface OpenRecordingsButtonProps {
   onClick: () => void;
@@ -24,18 +38,18 @@ const OpenRecordingsButton: React.FC<OpenRecordingsButtonProps> = ({
 }) => (
   <Button
     onClick={onClick}
-    variant="secondary"
+    variant="outline"
     size="sm"
-    className="flex items-center gap-2"
+    className="flex items-center gap-2 h-8 text-xs font-medium"
     title={label}
   >
-    <FolderOpen className="w-4 h-4" />
+    <FolderOpen className="w-3.5 h-3.5" />
     <span>{label}</span>
   </Button>
 );
 
 export const HistorySettings: React.FC = () => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -55,14 +69,11 @@ export const HistorySettings: React.FC = () => {
   useEffect(() => {
     loadHistoryEntries();
 
-    // Listen for history update events
     const setupListener = async () => {
       const unlisten = await listen("history-updated", () => {
         logInfo("History updated, reloading entries...", "fe-history");
         loadHistoryEntries();
       });
-
-      // Return cleanup function
       return unlisten;
     };
 
@@ -70,9 +81,7 @@ export const HistorySettings: React.FC = () => {
 
     return () => {
       unlistenPromise.then((unlisten) => {
-        if (unlisten) {
-          unlisten();
-        }
+        if (unlisten) unlisten();
       });
     };
   }, [loadHistoryEntries]);
@@ -80,7 +89,6 @@ export const HistorySettings: React.FC = () => {
   const toggleSaved = async (id: number) => {
     try {
       await commands.toggleHistoryEntrySaved(id);
-      // No need to reload here - the event listener will handle it
     } catch (error) {
       logError(`Failed to toggle saved status: ${error}`, "fe-history");
     }
@@ -101,10 +109,8 @@ export const HistorySettings: React.FC = () => {
         if (IS_LINUX) {
           const fileData = await readFile(result.data);
           const blob = new Blob([fileData], { type: "audio/wav" });
-
           return URL.createObjectURL(blob);
         }
-
         return convertFileSrc(result.data, "asset");
       }
       return null;
@@ -131,90 +137,106 @@ export const HistorySettings: React.FC = () => {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="max-w-3xl w-full mx-auto space-y-6">
-        <div className="space-y-2">
-          <div className="px-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                {t("settings.history.title")}
-              </h2>
-            </div>
-            <OpenRecordingsButton
-              onClick={openRecordingsFolder}
-              label={t("settings.history.openFolder")}
-            />
-          </div>
-          <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
-            <div className="px-4 py-3 text-center text-text/60">
-              {t("settings.history.loading")}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const groupedEntries = useMemo(() => {
+    const groups: { [key: string]: HistoryEntry[] } = {};
+    historyEntries.forEach((entry) => {
+      // Create a localized date string for grouping
+      const dateKey = formatDate(String(entry.timestamp), i18n.language);
+      if (!groups[dateKey]) {
+        groups[dateKey] = [];
+      }
+      groups[dateKey].push(entry);
+    });
+    return groups;
+  }, [historyEntries, i18n.language]);
 
-  if (historyEntries.length === 0) {
-    return (
-      <div className="max-w-3xl w-full mx-auto space-y-6">
-        <div className="space-y-2">
-          <div className="px-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                {t("settings.history.title")}
-              </h2>
-            </div>
-            <OpenRecordingsButton
-              onClick={openRecordingsFolder}
-              label={t("settings.history.openFolder")}
-            />
-          </div>
-          <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
-            <div className="px-4 py-3 text-center text-text/60">
-              {t("settings.history.empty")}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // Sort dates descending (newest first)
+  const sortedDates = Object.keys(groupedEntries).sort((a, b) => {
+    // We can pick the first entry of each group to compare timestamps since they are grouped by date
+    const timestampA = groupedEntries[a][0].timestamp;
+    const timestampB = groupedEntries[b][0].timestamp;
+    return timestampB - timestampA;
+  });
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
-      <div className="space-y-2">
-        <div className="px-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-              {t("settings.history.title")}
-            </h2>
-          </div>
+      <Card className="w-full h-full animate-in fade-in slide-in-from-bottom-2 duration-500 bg-card/60 backdrop-blur-sm border-border/60 hover:border-border/80 transition-colors">
+        <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-primary font-heading">
+            {t("settings.history.title")}
+          </CardTitle>
           <OpenRecordingsButton
             onClick={openRecordingsFolder}
             label={t("settings.history.openFolder")}
           />
-        </div>
-        <div className="bg-background border border-mid-gray/20 rounded-lg overflow-visible">
-          <div className="divide-y divide-mid-gray/20">
-            {historyEntries.map((entry) => (
-              <HistoryEntryComponent
-                key={entry.id}
-                entry={entry}
-                onToggleSaved={() => toggleSaved(entry.id)}
-                onCopyText={() => copyToClipboard(entry.transcription_text)}
-                getAudioUrl={getAudioUrl}
-                deleteAudio={deleteAudioEntry}
-              />
-            ))}
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="min-h-[300px]">
+            {loading ? (
+              <div className="p-6 space-y-6">
+                {[1, 2].map((i) => (
+                  <div key={i} className="space-y-4">
+                    <Skeleton className="h-4 w-32" />
+                    <div className="space-y-3">
+                      <Skeleton className="h-20 w-full" />
+                      <Skeleton className="h-20 w-full" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : historyEntries.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                <div className="bg-muted/50 p-4 rounded-full mb-4">
+                  <FolderOpen className="w-8 h-8 text-muted-foreground/50" />
+                </div>
+                <p className="text-muted-foreground font-medium mb-1">
+                  {t("settings.history.empty")}
+                </p>
+                <p className="text-xs text-muted-foreground/70 max-w-xs">
+                  {t("settings.history.emptyDescription")}
+                </p>
+              </div>
+            ) : (
+              <ScrollArea className="h-[600px] w-full">
+                <div className="pb-8 px-6">
+                  <TooltipProvider delayDuration={300}>
+                    {sortedDates.map((date, groupIndex) => (
+                      <div
+                        key={date}
+                        className="mb-8 last:mb-0 animate-in slide-in-from-bottom-2 fade-in duration-500 fill-mode-both"
+                        style={{ animationDelay: `${groupIndex * 100}ms` }}
+                      >
+                        <div className="sticky top-0 z-10 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/75 py-3 mb-2 border-b border-border/40">
+                          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                            {date}
+                          </h3>
+                        </div>
+                        <div className="space-y-1">
+                          {groupedEntries[date].map((entry) => (
+                            <TimelineItem
+                              key={entry.id}
+                              entry={entry}
+                              onToggleSaved={() => toggleSaved(entry.id)}
+                              onCopyText={() => copyToClipboard(entry.transcription_text)}
+                              getAudioUrl={getAudioUrl}
+                              deleteAudio={deleteAudioEntry}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </TooltipProvider>
+                </div>
+              </ScrollArea>
+            )}
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
 
-interface HistoryEntryProps {
+interface TimelineItemProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
   onCopyText: () => void;
@@ -222,7 +244,7 @@ interface HistoryEntryProps {
   deleteAudio: (id: number) => Promise<void>;
 }
 
-const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
+const TimelineItem: React.FC<TimelineItemProps> = ({
   entry,
   onToggleSaved,
   onCopyText,
@@ -232,6 +254,7 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   const { t, i18n } = useTranslation();
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [showCopied, setShowCopied] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,7 +262,6 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
 
     const loadAudio = async () => {
       const url = await getAudioUrl(entry.file_name);
-
       if (!cancelled) {
         urlToRevoke = url;
         setAudioUrl(url);
@@ -252,12 +274,11 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
 
     return () => {
       cancelled = true;
-
       if (urlToRevoke?.startsWith("blob:")) {
         URL.revokeObjectURL(urlToRevoke);
       }
     };
-  }, [entry.file_name]);
+  }, [entry.file_name, getAudioUrl]);
 
   const handleCopyText = () => {
     onCopyText();
@@ -266,64 +287,124 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   };
 
   const handleDeleteEntry = async () => {
+    if (isDeleting) return;
+    setIsDeleting(true);
     try {
       await deleteAudio(entry.id);
     } catch (error) {
       logError(`Failed to delete entry: ${error}`, "fe-history");
-      alert("Failed to delete entry. Please try again.");
+      setIsDeleting(false);
     }
   };
 
-  const formattedDate = formatDateTime(String(entry.timestamp), i18n.language);
+  // Format time (e.g., "06:45 PM")
+  const formattedTime = new Intl.DateTimeFormat(i18n.language, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(entry.timestamp * 1000));
 
   return (
-    <div className="px-4 py-2 pb-5 flex flex-col gap-3">
-      <div className="flex justify-between items-center">
-        <p className="text-sm font-medium">{formattedDate}</p>
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handleCopyText}
-            className="text-text/50 hover:text-logo-primary  hover:border-logo-primary transition-colors cursor-pointer"
-            title={t("settings.history.copyToClipboard")}
-          >
-            {showCopied ? (
-              <Check width={16} height={16} />
-            ) : (
-              <Copy width={16} height={16} />
-            )}
-          </button>
-          <button
-            onClick={onToggleSaved}
-            className={`p-2 rounded  transition-colors cursor-pointer ${
-              entry.saved
-                ? "text-logo-primary hover:text-logo-primary/80"
-                : "text-text/50 hover:text-logo-primary"
-            }`}
-            title={
-              entry.saved
-                ? t("settings.history.unsave")
-                : t("settings.history.save")
-            }
-          >
-            <Star
-              width={16}
-              height={16}
-              fill={entry.saved ? "currentColor" : "none"}
-            />
-          </button>
-          <button
-            onClick={handleDeleteEntry}
-            className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer"
-            title={t("settings.history.delete")}
-          >
-            <Trash2 width={16} height={16} />
-          </button>
-        </div>
+    <div className="group flex flex-row items-start py-4 px-2 rounded-md hover:bg-muted/30 transition-colors gap-4 border-b border-border/20 last:border-b-0">
+      {/* Time Column */}
+      <div className="w-20 shrink-0 pt-0.5">
+        <span className="text-xs font-medium text-muted-foreground/80 tabular-nums">
+          {formattedTime}
+        </span>
       </div>
-      <p className="italic text-text/90 text-sm pb-2 select-text cursor-text">
-        {entry.transcription_text}
-      </p>
-      {audioUrl && <AudioPlayer src={audioUrl} className="w-full" />}
+
+      {/* Content Column */}
+      <div className="flex-1 min-w-0 space-y-3">
+        <p className="text-sm leading-relaxed text-foreground/90 select-text cursor-text break-words">
+          {entry.transcription_text}
+        </p>
+        {audioUrl && (
+            <AudioPlayer src={audioUrl} className="w-full max-w-md" />
+        )}
+      </div>
+
+      {/* Actions Column - Visible on Group Hover */}
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0 self-start">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleCopyText}
+            >
+              {showCopied ? (
+                <Check className="w-4 h-4 text-green-500" />
+              ) : (
+                <Copy className="w-4 h-4 text-muted-foreground" />
+              )}
+              <span className="sr-only">
+                {t("settings.history.copyToClipboard")}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>
+              {showCopied
+                ? t("common.copied")
+                : t("settings.history.copyToClipboard")}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 ${
+                entry.saved
+                  ? "text-yellow-500 hover:text-yellow-600"
+                  : "text-muted-foreground"
+              }`}
+              onClick={onToggleSaved}
+            >
+              <Star
+                className="w-4 h-4"
+                fill={entry.saved ? "currentColor" : "none"}
+              />
+              <span className="sr-only">
+                {entry.saved
+                  ? t("settings.history.unsave")
+                  : t("settings.history.save")}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>
+              {entry.saved
+                ? t("settings.history.unsave")
+                : t("settings.history.save")}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              onClick={handleDeleteEntry}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4" />
+              )}
+              <span className="sr-only">{t("settings.history.delete")}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{t("settings.history.delete")}</p>
+          </TooltipContent>
+        </Tooltip>
+      </div>
     </div>
   );
 };

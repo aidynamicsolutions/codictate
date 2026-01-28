@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { logInfo } from "@/utils/logging";
 import { useSettings } from "../../hooks/useSettings";
 import { commands, type ModelUnloadTimeout } from "@/bindings";
 import { Dropdown } from "../ui/Dropdown";
@@ -60,6 +61,7 @@ export const ModelUnloadTimeoutSetting: React.FC<ModelUnloadTimeoutProps> = ({
     const newTimeout = event.target.value as ModelUnloadTimeout;
 
     try {
+      logInfo(`Model unload timeout changed: ${newTimeout}`, "fe");
       await commands.setModelUnloadTimeout(newTimeout);
       updateSetting("model_unload_timeout", newTimeout);
     } catch (error) {

@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { logInfo } from "@/utils/logging";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
 
@@ -18,13 +19,15 @@ export const StartHidden: React.FC<StartHiddenProps> = React.memo(
     return (
       <ToggleSwitch
         checked={startHidden}
-        onChange={(enabled) => updateSetting("start_hidden", enabled)}
+        onChange={(enabled) => {
+          logInfo(`Start hidden toggled: ${enabled}`, "fe");
+          updateSetting("start_hidden", enabled);
+        }}
         isUpdating={isUpdating("start_hidden")}
         label={t("settings.advanced.startHidden.label")}
         description={t("settings.advanced.startHidden.description")}
         descriptionMode={descriptionMode}
         grouped={grouped}
-        tooltipPosition="bottom"
       />
     );
   },

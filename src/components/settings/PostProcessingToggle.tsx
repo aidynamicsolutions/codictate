@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { logInfo } from "@/utils/logging";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
 
@@ -18,7 +19,10 @@ export const PostProcessingToggle: React.FC<PostProcessingToggleProps> =
     return (
       <ToggleSwitch
         checked={enabled}
-        onChange={(enabled) => updateSetting("post_process_enabled", enabled)}
+        onChange={(enabled) => {
+          logInfo(`Post processing toggled: ${enabled}`, "fe");
+          updateSetting("post_process_enabled", enabled);
+        }}
         isUpdating={isUpdating("post_process_enabled")}
         label={t("settings.debug.postProcessingToggle.label")}
         description={t("settings.debug.postProcessingToggle.description")}

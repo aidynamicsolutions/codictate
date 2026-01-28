@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { logInfo } from "@/utils/logging";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
 
@@ -18,7 +19,10 @@ export const AutostartToggle: React.FC<AutostartToggleProps> = React.memo(
     return (
       <ToggleSwitch
         checked={autostartEnabled}
-        onChange={(enabled) => updateSetting("autostart_enabled", enabled)}
+        onChange={(enabled) => {
+          logInfo(`Autostart toggled: ${enabled}`, "fe");
+          updateSetting("autostart_enabled", enabled);
+        }}
         isUpdating={isUpdating("autostart_enabled")}
         label={t("settings.advanced.autostart.label")}
         description={t("settings.advanced.autostart.description")}

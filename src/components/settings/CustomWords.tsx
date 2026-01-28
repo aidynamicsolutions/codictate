@@ -4,6 +4,8 @@ import { useSettings } from "../../hooks/useSettings";
 import { Input } from "@/components/shared/ui/input";
 import { Button } from "@/components/shared/ui/button";
 import { SettingContainer } from "../ui/SettingContainer";
+import { logInfo } from "@/utils/logging";
+import { X } from "lucide-react";
 
 interface CustomWordsProps {
   descriptionMode?: "inline" | "tooltip";
@@ -26,12 +28,14 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
         sanitizedWord.length <= 50 &&
         !customWords.includes(sanitizedWord)
       ) {
+        logInfo(`Added custom word: ${sanitizedWord}`, "fe");
         updateSetting("custom_words", [...customWords, sanitizedWord]);
         setNewWord("");
       }
     };
 
     const handleRemoveWord = (wordToRemove: string) => {
+      logInfo(`Removed custom word: ${wordToRemove}`, "fe");
       updateSetting(
         "custom_words",
         customWords.filter((word) => word !== wordToRemove),
@@ -46,7 +50,7 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
     };
 
     return (
-      <>
+      <div className="space-y-4">
         <SettingContainer
           title={t("settings.advanced.customWords.title")}
           description={t("settings.advanced.customWords.description")}
@@ -56,12 +60,11 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
           <div className="flex items-center gap-2">
             <Input
               type="text"
-              className="max-w-40"
+              className="max-w-xs"
               value={newWord}
               onChange={(e) => setNewWord(e.target.value)}
               onKeyDown={handleKeyPress}
               placeholder={t("settings.advanced.customWords.placeholder")}
-              
               disabled={isUpdating("custom_words")}
             />
             <Button
@@ -73,45 +76,39 @@ export const CustomWords: React.FC<CustomWordsProps> = React.memo(
                 isUpdating("custom_words")
               }
               variant="default"
-              
             >
               {t("settings.advanced.customWords.add")}
             </Button>
           </div>
         </SettingContainer>
+        
         {customWords.length > 0 && (
-          <div
-            className={`px-4 p-2 ${grouped ? "" : "rounded-lg border border-mid-gray/20"} flex flex-wrap gap-1`}
-          >
-            {customWords.map((word) => (
-              <Button
-                key={word}
-                onClick={() => handleRemoveWord(word)}
-                disabled={isUpdating("custom_words")}
-                variant="secondary"
-                size="sm"
-                className="inline-flex items-center gap-1 cursor-pointer"
-                aria-label={t("settings.advanced.customWords.remove", { word })}
-              >
-                <span>{word}</span>
-                <svg
-                  className="w-3 h-3"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+          <div className="bg-accent/30 rounded-lg p-6 flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-2">
+              {t("settings.advanced.customWords.addedWords")}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {customWords.map((word) => (
+                <div
+                  key={word}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full border transition-all bg-background border-border hover:bg-muted/50 hover:border-destructive/50 group"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </Button>
-            ))}
+                  <span className="text-foreground font-medium">{word}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveWord(word)}
+                    disabled={isUpdating("custom_words")}
+                    className="ml-1 text-muted-foreground hover:text-destructive transition-colors focus:outline-none"
+                    aria-label={t("settings.advanced.customWords.remove", { word })}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
-      </>
+      </div>
     );
   },
 );

@@ -5,6 +5,8 @@ import { Download, Trash2, RotateCcw, X, Loader2, Check, FolderOpen } from "luci
 import { useMlxModels } from "@/hooks/useMlxModels";
 import { commands, type MlxModelInfo } from "@/bindings";
 import { Button } from "@/components/shared/ui/button";
+import { Badge } from "@/components/shared/ui/badge";
+import { Progress } from "@/components/shared/ui/progress";
 import { SettingContainer } from "../ui/SettingContainer";
 
 /** Format bytes to human readable size */
@@ -120,14 +122,14 @@ const ModelItem: React.FC<ModelItemProps> = ({
               {model.display_name}
             </h4>
             {model.is_default && (
-              <span className="text-xs px-1.5 py-0.5 bg-accent/20 text-accent rounded">
+              <Badge variant="secondary" className="bg-accent/20 text-accent hover:bg-accent/30 font-normal">
                 {t("settings.postProcessing.mlx.recommended")}
-              </span>
+              </Badge>
             )}
             {isSelected && (
-              <span className="text-xs px-1.5 py-0.5 bg-green-500/20 text-green-500 rounded">
+              <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20 hover:bg-green-500/20 font-normal">
                 {t("settings.postProcessing.mlx.default")}
-              </span>
+              </Badge>
             )}
           </div>
           <p className="text-xs text-mid-gray mt-0.5 line-clamp-2">
@@ -155,16 +157,13 @@ const ModelItem: React.FC<ModelItemProps> = ({
           {/* Download progress bar with detailed info */}
           {isDownloading && (
             <div className="mt-2 space-y-1">
-              <div className="h-3 bg-mid-gray/30 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-blue-500 transition-all duration-150 ease-out"
-                  style={{
-                    width: downloadProgress && downloadProgress.totalBytes > 0
-                      ? `${Math.max(2, (downloadProgress.downloadedBytes / downloadProgress.totalBytes) * 100)}%`
-                      : `${Math.max(2, model.download_progress * 100)}%`
-                  }}
-                />
-              </div>
+              <Progress 
+                value={downloadProgress && downloadProgress.totalBytes > 0
+                  ? (downloadProgress.downloadedBytes / downloadProgress.totalBytes) * 100
+                  : model.download_progress * 100
+                } 
+                className="h-2"
+              />
               <div className="flex items-center justify-between text-xs text-mid-gray">
                 <span>
                   {downloadProgress

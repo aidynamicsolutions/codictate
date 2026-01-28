@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { logInfo } from "@/utils/logging";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
@@ -34,9 +35,10 @@ export const ShowOverlay: React.FC<ShowOverlayProps> = React.memo(
         <Dropdown
           options={overlayOptions}
           selectedValue={selectedPosition}
-          onSelect={(value) =>
-            updateSetting("overlay_position", value as OverlayPosition)
-          }
+          onSelect={(value) => {
+            logInfo(`Overlay position selected: ${value}`, "fe");
+            updateSetting("overlay_position", value as OverlayPosition);
+          }}
           disabled={isUpdating("overlay_position")}
         />
       </SettingContainer>
