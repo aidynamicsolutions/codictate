@@ -9,6 +9,7 @@ import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { useSettings } from "./hooks/useSettings";
 import { commands } from "@/bindings";
 import { initLogging } from "@/utils/logging";
+import { useModelStore } from "./stores/modelStore";
 
 const renderSettingsContent = (section: SidebarSection) => {
   const ActiveComponent =
@@ -26,6 +27,11 @@ function App() {
   useEffect(() => {
     const cleanup = initLogging();
     return cleanup;
+  }, []);
+
+  // Initialize model store
+  useEffect(() => {
+    useModelStore.getState().initialize();
   }, []);
 
   useEffect(() => {

@@ -1,17 +1,16 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Dropdown } from "../ui/Dropdown";
-import { SettingContainer } from "../ui/SettingContainer";
-import { ResetButton } from "../ui/ResetButton";
+import { DeviceSelector } from "./DeviceSelector";
 import { useSettings } from "../../hooks/useSettings";
+import { logInfo } from "@/utils/logging";
 
 interface MicrophoneSelectorProps {
   descriptionMode?: "inline" | "tooltip";
-  grouped?: boolean;
+  grouped?: boolean; // Kept for compatibility
 }
 
 export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "tooltip" }) => {
     const { t } = useTranslation();
     const {
       getSetting,
@@ -30,29 +29,31 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
       }
     }, [audioDevices.length, refreshAudioDevices]);
 
-    // Find the real system default device (ignoring the "Default" placeholder added by the store)
+    // Find the real system default device
     const systemDefaultMic = audioDevices.find((d) => d.is_default && d.name !== "Default" && d.name !== "default");
     
-    // If setting is "Default" (or "default"), we conceptually select the system default device
-    // But we still display it as its real name + (Default)
+    // If setting is "Default", we conceptually select the system default device
     const effectiveSelectedMic = 
       (getSetting("selected_microphone") === "default" || getSetting("selected_microphone") === "Default")
         ? systemDefaultMic?.name || "Default" 
         : getSetting("selected_microphone") || "Default";
 
     const handleMicrophoneSelect = async (deviceName: string) => {
-      // If user selected the system default device, save "Default" 
-      // OR save the actual name? User request: "remove default as an option".
-      // Onboarding saves the specific name. So we save the specific name.
+      logInfo(`Microphone selected: ${deviceName}`, "fe");
       await updateSetting("selected_microphone", deviceName);
     };
 
     const handleReset = async () => {
+      logInfo("Microphone setting reset", "fe");
       await resetSetting("selected_microphone");
     };
 
-    // Filter out "Default" from the list, relying on is_default flag to identify the default device
-    // Fallback: If no system default is detected, we MUST show the "Default" option, otherwise the user sees "Select microphone..." with no valid option.
+    const handleRefresh = async () => {
+        logInfo("Refreshing audio devices", "fe");
+        await refreshAudioDevices();
+    };
+
+    // Filter out "Default" from the list
     const showDefaultOption = !systemDefaultMic;
 
     const microphoneOptions = audioDevices
@@ -66,40 +67,27 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
         const isDefault = device.is_default;
         return {
           value: device.name,
-          label: isDefault ? `${device.name} (${t("common.default")})` : device.name, // Assuming we have a translation for "default", otherwise hardcode or use existing key
+          label: isDefault ? `${device.name} (${t("common.default")})` : device.name,
         };
       });
 
     return (
-      <SettingContainer
-        title={t("settings.sound.microphone.title")}
+      <DeviceSelector
+        label={t("settings.sound.microphone.title")}
         description={t("settings.sound.microphone.description")}
+        value={effectiveSelectedMic}
+        options={microphoneOptions}
+        onSelect={handleMicrophoneSelect}
+        onRefresh={handleRefresh}
+        onReset={handleReset}
+        isLoading={isLoading}
+        isUpdating={isUpdating("selected_microphone")}
+        placeholder={t("settings.sound.microphone.placeholder")}
+        loadingLabel={t("settings.sound.microphone.loading")}
+        refreshLabel={t("common.refresh")}
+        resetLabel={t("common.reset")}
         descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div className="flex items-center space-x-1">
-          <Dropdown
-            options={microphoneOptions}
-            selectedValue={effectiveSelectedMic}
-            onSelect={handleMicrophoneSelect}
-            placeholder={
-              isLoading || audioDevices.length === 0
-                ? t("settings.sound.microphone.loading")
-                : t("settings.sound.microphone.placeholder")
-            }
-            disabled={
-              isUpdating("selected_microphone") ||
-              isLoading ||
-              audioDevices.length === 0
-            }
-            onRefresh={refreshAudioDevices}
-          />
-          <ResetButton
-            onClick={handleReset}
-            disabled={isUpdating("selected_microphone") || isLoading}
-          />
-        </div>
-      </SettingContainer>
+      />
     );
   },
 );

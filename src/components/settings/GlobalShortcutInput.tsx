@@ -1,14 +1,21 @@
 import React, { useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil } from "lucide-react";
+import { Pencil, InfoIcon } from "lucide-react";
 import { formatKeyCombination, type OSType } from "../../lib/utils/keyboard";
-import { SettingContainer } from "../ui/SettingContainer";
 import { useSettings } from "../../hooks/useSettings";
 import { useShortcutRecorder } from "../../hooks/useShortcutRecorder";
 import { commands } from "@/bindings";
 import { toast } from "sonner";
 import { type } from "@tauri-apps/plugin-os";
 import { logError } from "@/utils/logging";
+import { Label } from "@/components/shared/ui/label";
+import { Button } from "@/components/shared/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/shared/ui/tooltip";
 
 interface HandyShortcutProps {
   descriptionMode?: "inline" | "tooltip";
@@ -19,7 +26,6 @@ interface HandyShortcutProps {
 
 export const HandyShortcut: React.FC<HandyShortcutProps> = ({
   descriptionMode = "tooltip",
-  grouped = false,
   shortcutId,
   disabled = false,
 }) => {
@@ -39,7 +45,6 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
     return "unknown";
   })();
 
-  // Use the shared shortcut recorder hook
   const { isRecording, displayKeys, startRecording, error, warning } = useShortcutRecorder({
     onSave: async (shortcut) => {
       try {
@@ -51,74 +56,39 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
             error: String(err),
           })
         );
-        throw err; // Re-throw to let hook handle it
+        throw err;
       }
     },
     onCancel: () => {
-      // Resume the suspended binding on cancel
       commands.resumeBinding(shortcutId).catch((err) =>
         logError(`Failed to resume binding: ${err}`, "fe-shortcuts")
       );
     },
     onRecordingStart: () => {
-      // Suspend the binding while recording to avoid triggering actions
       commands.suspendBinding(shortcutId).catch((err) =>
         logError(`Failed to suspend binding: ${err}`, "fe-shortcuts")
       );
     },
     onRecordingEnd: () => {
-      // Resume the binding after recording (success case)
-      // Note: on cancel, onCancel is called which also resumes
     },
     requireModifier: true,
     containerRef,
     t,
   });
 
-  // If still loading, show loading state
   if (isLoading) {
     return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div className="text-sm text-mid-gray">
-          {t("settings.general.shortcut.loading")}
+        <div className="flex items-center justify-between py-4">
+             <div className="text-sm text-muted-foreground">{t("settings.general.shortcut.loading")}</div>
         </div>
-      </SettingContainer>
     );
   }
 
-  // If no bindings are loaded, show empty state
-  if (Object.keys(bindings).length === 0) {
-    return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div className="text-sm text-mid-gray">
-          {t("settings.general.shortcut.none")}
+  if (Object.keys(bindings).length === 0 || !binding) {
+     return (
+        <div className="flex items-center justify-between py-4">
+             <div className="text-sm text-muted-foreground">{t("settings.general.shortcut.none")}</div>
         </div>
-      </SettingContainer>
-    );
-  }
-
-  if (!binding) {
-    return (
-      <SettingContainer
-        title={t("settings.general.shortcut.title")}
-        description={t("settings.general.shortcut.notFound")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
-      >
-        <div className="text-sm text-mid-gray">
-          {t("settings.general.shortcut.none")}
-        </div>
-      </SettingContainer>
     );
   }
 
@@ -132,41 +102,57 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
     binding.description
   );
 
-  // Format display keys for recording state
   const formatCurrentKeys = (): string => {
     if (displayKeys.length === 0) return t("settings.general.shortcut.pressKeys");
     return formatKeyCombination(displayKeys.join("+"), osType);
   };
 
   return (
-    <SettingContainer
-      title={translatedName}
-      description={translatedDescription}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
-      disabled={disabled}
-      layout="horizontal"
-    >
-      <div className="flex flex-col items-end gap-1">
-        <div className="flex items-center" ref={containerRef}>
-          {isRecording ? (
-            <div className="px-3 py-1.5 text-sm font-semibold border border-logo-primary bg-logo-primary/30 rounded min-w-[120px] text-center">
-              {formatCurrentKeys()}
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="flex items-center gap-2 px-3 py-1.5 text-sm font-semibold bg-muted/50 border border-border hover:bg-muted rounded cursor-pointer hover:border-primary/50 transition-colors"
-              onClick={startRecording}
-            >
-              <span>{formatKeyCombination(binding.current_binding, osType)}</span>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-          )}
+    <div className={`flex items-center justify-between py-4 ${disabled ? "opacity-50 pointer-events-none" : ""}`}>
+         <div className="flex items-center gap-2">
+            <Label className="text-sm font-medium">
+                {translatedName}
+            </Label>
+            {descriptionMode === "tooltip" && (
+                <TooltipProvider>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                    <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent>
+                    <p className="max-w-xs">{translatedDescription}</p>
+                    </TooltipContent>
+                </Tooltip>
+                </TooltipProvider>
+            )}
         </div>
-        {error && <span className="text-xs text-destructive">{error}</span>}
-        {warning && !error && <span className="text-xs text-yellow-600 dark:text-yellow-500">{warning}</span>}
-      </div>
-    </SettingContainer>
+        <div className="flex flex-col items-end gap-1">
+             <div className="flex items-center" ref={containerRef}>
+                {isRecording ? (
+                    <div className="px-3 py-2 text-sm font-semibold border border-primary bg-primary/10 rounded-md min-w-[120px] text-center">
+                    {formatCurrentKeys()}
+                    </div>
+                ) : (
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        className="font-mono"
+                        onClick={startRecording}
+                        disabled={disabled}
+                    >
+                    <span>{formatKeyCombination(binding.current_binding, osType)}</span>
+                    <Pencil className="ml-2 h-3.5 w-3.5" />
+                    </Button>
+                )}
+             </div>
+             {error && <span className="text-xs text-destructive">{error}</span>}
+             {warning && !error && <span className="text-xs text-yellow-600 dark:text-yellow-500">{warning}</span>}
+        </div>
+        {descriptionMode === "inline" && (
+                <p className="text-sm text-muted-foreground mt-1 col-span-2">
+                    {translatedDescription}
+                </p>
+        )}
+    </div>
   );
 };

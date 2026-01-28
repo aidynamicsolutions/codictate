@@ -1,33 +1,35 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { ToggleSwitch } from "../ui/ToggleSwitch";
+import { ToggleSwitch } from "@/components/ui/ToggleSwitch";
 import { useSettings } from "../../hooks/useSettings";
-import { VolumeSlider } from "./VolumeSlider";
-import { SoundPicker } from "./SoundPicker";
+import { logInfo } from "@/utils/logging";
 
 interface AudioFeedbackProps {
   descriptionMode?: "inline" | "tooltip";
-  grouped?: boolean;
+  grouped?: boolean; // Kept for compatibility
 }
 
 export const AudioFeedback: React.FC<AudioFeedbackProps> = React.memo(
-  ({ descriptionMode = "tooltip", grouped = false }) => {
+  ({ descriptionMode = "tooltip" }) => {
     const { t } = useTranslation();
     const { getSetting, updateSetting, isUpdating } = useSettings();
     const audioFeedbackEnabled = getSetting("audio_feedback") || false;
 
+    const handleCheckedChange = (checked: boolean) => {
+      logInfo(`Audio feedback changed to: ${checked}`, "fe");
+      updateSetting("audio_feedback", checked);
+    };
+
     return (
-      <div className="flex flex-col">
-        <ToggleSwitch
-          checked={audioFeedbackEnabled}
-          onChange={(enabled) => updateSetting("audio_feedback", enabled)}
-          isUpdating={isUpdating("audio_feedback")}
-          label={t("settings.sound.audioFeedback.label")}
-          description={t("settings.sound.audioFeedback.description")}
-          descriptionMode={descriptionMode}
-          grouped={grouped}
-        />
-      </div>
+      <ToggleSwitch
+        checked={audioFeedbackEnabled}
+        onChange={handleCheckedChange}
+        disabled={isUpdating("audio_feedback")}
+        label={t("settings.sound.audioFeedback.label")}
+        description={t("settings.sound.audioFeedback.description")}
+        descriptionMode={descriptionMode}
+        id="audio-feedback"
+      />
     );
   },
 );

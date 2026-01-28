@@ -1,5 +1,13 @@
 import React from "react";
-import { SettingContainer } from "./SettingContainer";
+import { Switch } from "@/components/shared/ui/switch";
+import { Label } from "@/components/shared/ui/label";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/shared/ui/tooltip";
+import { InfoIcon } from "lucide-react";
 
 interface ToggleSwitchProps {
   checked: boolean;
@@ -9,8 +17,9 @@ interface ToggleSwitchProps {
   label: string;
   description: string;
   descriptionMode?: "inline" | "tooltip";
-  grouped?: boolean;
-  tooltipPosition?: "top" | "bottom";
+  id?: string;
+  className?: string;
+  grouped?: boolean; // Kept for compatibility with legacy calls
 }
 
 export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
@@ -21,36 +30,41 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
   label,
   description,
   descriptionMode = "tooltip",
-  grouped = false,
-  tooltipPosition = "top",
+  id,
+  className = "",
 }) => {
+  const switchId = id || label.toLowerCase().replace(/\s+/g, "-");
+
   return (
-    <SettingContainer
-      title={label}
-      description={description}
-      descriptionMode={descriptionMode}
-      grouped={grouped}
-      disabled={disabled}
-      tooltipPosition={tooltipPosition}
-    >
-      <label
-        className={`inline-flex items-center ${disabled || isUpdating ? "cursor-not-allowed" : "cursor-pointer"}`}
-      >
-        <input
-          type="checkbox"
-          value=""
-          className="sr-only peer"
-          checked={checked}
-          disabled={disabled || isUpdating}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-        <div className="relative w-11 h-6 bg-mid-gray/20 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-logo-primary rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-background-ui peer-disabled:opacity-50"></div>
-      </label>
-      {isUpdating && (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="w-4 h-4 border-2 border-logo-primary border-t-transparent rounded-full animate-spin"></div>
-        </div>
+    <div className={`flex items-center justify-between py-4 ${className}`}>
+      <div className="flex items-center gap-2">
+        <Label htmlFor={switchId} className="text-sm font-medium">
+          {label}
+        </Label>
+        {descriptionMode === "tooltip" && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-xs">{description}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </div>
+      <Switch
+        id={switchId}
+        checked={checked}
+        onCheckedChange={onChange}
+        disabled={disabled || isUpdating}
+      />
+      {descriptionMode === "inline" && (
+        <p className="text-sm text-muted-foreground mt-1 col-span-2">
+          {description}
+        </p>
       )}
-    </SettingContainer>
+    </div>
   );
 };
