@@ -18,7 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/shared/ui/tooltip";
 import { useSettings } from "../../hooks/useSettings";
-import { LANGUAGES } from "../../lib/constants/languages";
+import { WHISPER_LANGUAGES } from "../../lib/constants/languageData";
 import { logInfo } from "@/utils/logging";
 
 interface LanguageSelectorProps {
@@ -77,8 +77,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
           <SelectContent position="popper" className="max-h-[300px]">
              {/* Explicitly add Auto option if not in the list (though it is) */}
              <SelectItem value="auto">{t("settings.general.language.auto")}</SelectItem>
-            {LANGUAGES.filter(l => l.value !== "auto").map((language) => (
-              <SelectItem key={language.value} value={language.value}>
+            {WHISPER_LANGUAGES.map((language) => (
+              <SelectItem key={language.code} value={language.code}>
                 {language.label}
               </SelectItem>
             ))}
