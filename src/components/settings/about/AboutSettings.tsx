@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Card,
   CardContent,
@@ -9,7 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/shared/ui/card";
-import { Button } from "@/components/shared/ui/button";
+
 import { Label } from "@/components/shared/ui/label";
 import {
   Tooltip,
@@ -68,14 +67,6 @@ export const AboutSettings: React.FC = () => {
     fetchVersion();
   }, []);
 
-  const handleDonateClick = async () => {
-    try {
-      await openUrl("https://handy.computer/donate");
-    } catch (error) {
-      console.error("Failed to open donate link:", error);
-    }
-  };
-
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <Card className="w-full animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both bg-card/60 backdrop-blur-sm border-border/60 hover:border-border/80 transition-colors">
@@ -114,33 +105,6 @@ export const AboutSettings: React.FC = () => {
                  <AppDataDirectory descriptionMode="tooltip" grouped={true} />
             </div>
 
-            <SettingsRow
-              label={t("settings.about.sourceCode.title")}
-              description={t("settings.about.sourceCode.description")}
-            >
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs font-medium"
-                onClick={() => openUrl("https://github.com/cjpais/Handy")}
-              >
-                {t("settings.about.sourceCode.button")}
-              </Button>
-            </SettingsRow>
-
-            <SettingsRow
-              label={t("settings.about.supportDevelopment.title")}
-              description={t("settings.about.supportDevelopment.description")}
-            >
-              <Button 
-                variant="default" 
-                size="sm"
-                className="h-8 text-xs font-medium bg-red-500 hover:bg-red-600 text-white border-none shadow-sm"
-                onClick={handleDonateClick}
-              >
-                {t("settings.about.supportDevelopment.button")}
-              </Button>
-            </SettingsRow>
           </div>
         </CardContent>
       </Card>
