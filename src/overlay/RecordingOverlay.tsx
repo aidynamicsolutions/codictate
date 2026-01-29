@@ -11,6 +11,7 @@ import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
 import { colors } from "@/theme";
 import { logInfo, logWarn, logDebug } from "@/utils/logging";
+import { AudioAGC } from "@/utils/audioAGC";
 
 
 type OverlayState = "recording" | "transcribing" | "processing";
@@ -41,6 +42,7 @@ const RecordingOverlay: React.FC = () => {
   const [state, setState] = useState<OverlayState>("recording");
   const [levels, setLevels] = useState<number[]>(Array(16).fill(0));
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
+  const agcRef = useRef(new AudioAGC());
   
   // Recording time state
   const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -82,6 +84,7 @@ const RecordingOverlay: React.FC = () => {
         // Reset time when showing overlay in recording state
         if (overlayState === "recording") {
           setElapsedSecs(0);
+          agcRef.current.reset();
         }
         
         // Sync language from settings (async, but UI is already updated)
@@ -123,7 +126,10 @@ const RecordingOverlay: React.FC = () => {
         });
 
         smoothedLevelsRef.current = smoothed;
-        setLevels(smoothed.slice(0, 16));
+        
+        // Apply AGC normalization
+        const normalized = agcRef.current.process(smoothed.slice(0, 16));
+        setLevels(normalized);
       });
       
       if (ignore) {
@@ -203,9 +209,10 @@ const RecordingOverlay: React.FC = () => {
                   key={i}
                   className="bar"
                   style={{
-                    height: `${Math.min(20, 4 + Math.pow(v, 0.7) * 16)}px`,
+                    // Height scales from 4px to 20px based on normalized level (0-1)
+                    height: `${4 + v * 16}px`,
                     transition: "height 60ms ease-out, opacity 120ms ease-out",
-                    opacity: Math.max(0.2, v * 1.7),
+                    opacity: Math.max(0.4, Math.min(1, 0.4 + v * 0.6)),
                   }}
                 />
               ))}
