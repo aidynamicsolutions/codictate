@@ -23,6 +23,13 @@ function App() {
     useState<SidebarSection>("general");
   const { settings, updateSetting } = useSettings();
 
+  // Show window when the app is ready (prevents flash of white)
+  useEffect(() => {
+    commands.showMainWindow().catch((e: any) => {
+      console.error("Failed to show main window:", e);
+    });
+  }, []);
+
   // Initialize unified logging system
   useEffect(() => {
     const cleanup = initLogging();

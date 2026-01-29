@@ -337,6 +337,7 @@ pub fn run() {
         // Permission commands
         permissions::open_accessibility_settings,
         permissions::open_microphone_settings,
+        commands::window::show_main_window,
     ]);
 
     // On other platforms, exclude MLX commands
@@ -431,6 +432,7 @@ pub fn run() {
         // Permission commands
         permissions::open_accessibility_settings,
         permissions::open_microphone_settings,
+        commands::window::show_main_window,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -494,13 +496,7 @@ pub fn run() {
 
             initialize_core_logic(&app_handle);
 
-            // Show main window only if not starting hidden
-            if !settings.start_hidden {
-                if let Some(main_window) = app_handle.get_webview_window("main") {
-                    main_window.show().unwrap();
-                    main_window.set_focus().unwrap();
-                }
-            }
+
 
             Ok(())
         })

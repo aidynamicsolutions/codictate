@@ -21,7 +21,14 @@
         "minHeight": 700,
         "resizable": true,
         "maximizable": false,
-        "visible": false
+        "visible": false,
+        "transparent": true,
+        "windowEffects": {
+          "effects": [
+            "hudWindow"
+          ],
+          "state": "active"
+        }
       }
     ],
     "security": {
