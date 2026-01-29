@@ -58,8 +58,9 @@ static PTT_STARTED: AtomicBool = AtomicBool::new(false);
 /// This prevents stale timers from triggering if Fn was released and pressed again
 static FN_PRESS_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// Track if we are debouncing a Fn key release (to handle key bounce/glitch)
-static DEBOUNCING_RELEASE: AtomicBool = AtomicBool::new(false);
+/// Generation counter for release events
+/// Any new event (press or release) increments this, invalidating previous pending actions
+static RELEASE_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Debounce time for Fn key release (ms)
 const RELEASE_DEBOUNCE_MS: u64 = 150;
@@ -189,7 +190,6 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                     FN_TRANSCRIPTION_ENABLED.store(false, Ordering::SeqCst);
                     FN_SPACE_TRIGGERED.store(false, Ordering::SeqCst);
                     PTT_STARTED.store(false, Ordering::SeqCst);
-                    DEBOUNCING_RELEASE.store(false, Ordering::SeqCst);
                     
                     // Stop the run loop immediately - this is the key to releasing the event tap
                     stop_stored_run_loop();
@@ -394,12 +394,14 @@ fn handle_fn_pressed(app: &AppHandle) {
     debug!("Fn key pressed");
     let _ = app.emit("fn-key-down", ());
 
-    // Check if we are in a release debounce window (key bounce)
-    if DEBOUNCING_RELEASE.load(Ordering::SeqCst) {
-        debug!("Bounce detected: Press occurred during release debounce. Restoring session.");
-        // Cancel the impending release
-        DEBOUNCING_RELEASE.store(false, Ordering::SeqCst);
-        // Do NOT reset PTT_STARTED or start a new timer - continue existing session
+    // Increment generation to invalidate any pending release threads immediately
+    RELEASE_GENERATION.fetch_add(1, Ordering::SeqCst);
+
+    // Bounce detection: If PTT is already started, this press is likely a result of 
+    // a key bounce (or rapid repress) cancelling the release debounce.
+    // We want to continue the existing session, not reset it.
+    if PTT_STARTED.load(Ordering::SeqCst) {
+        debug!("Bounce detected: PTT already active. Continuing session.");
         return;
     }
 
@@ -491,24 +493,29 @@ fn handle_fn_released(app: &AppHandle) {
         // If push-to-talk was started, we need to stop it
         // Check PTT_STARTED separately to handle debouncing
         if PTT_STARTED.load(Ordering::SeqCst) {
-            // Start debounce for release to handle key bounces (50ms)
-            // This prevents "flickering" if the key briefly reports release then press
-            DEBOUNCING_RELEASE.store(true, Ordering::SeqCst);
+            // Increment generation to track this specific release event
+            // This invalidates any previous debounce threads
+            let gen = RELEASE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
             
             let app_clone = app.clone();
             std::thread::spawn(move || {
                 // Wait to see if this is a real release or a bounce
                 std::thread::sleep(Duration::from_millis(RELEASE_DEBOUNCE_MS));
                 
-                // Check if cancelled by a subsequent press (bounce)
-                if !DEBOUNCING_RELEASE.load(Ordering::SeqCst) {
-                    debug!("Release debounce cancelled by press (bounce detected)");
+                // Check if generation changed (meaning a new press or release happened)
+                let current_gen = RELEASE_GENERATION.load(Ordering::SeqCst);
+                if current_gen != gen {
+                    debug!("Release debounce cancelled by new activity (gen {} -> {}), likely bounce", gen, current_gen);
                     return;
                 }
                 
-                // Confirmed release - clear debounce flag
-                DEBOUNCING_RELEASE.store(false, Ordering::SeqCst);
+                // Double check key state (should be released)
+                if FN_KEY_WAS_PRESSED.load(Ordering::SeqCst) {
+                    debug!("Release debounce cancelled: key is pressed again");
+                    return;
+                }
                 
+                // Confirmed release
                 // Now actually stop PTT
                 // Atomically swap PTT_STARTED to false to ensure we only stop once
                 if PTT_STARTED.swap(false, Ordering::SeqCst) {
@@ -606,7 +613,10 @@ pub fn stop_fn_key_monitor() -> Result<(), String> {
     FN_TRANSCRIPTION_ENABLED.store(false, Ordering::SeqCst);
     FN_SPACE_TRIGGERED.store(false, Ordering::SeqCst);
     PTT_STARTED.store(false, Ordering::SeqCst);
-    DEBOUNCING_RELEASE.store(false, Ordering::SeqCst);
+    
+    // Reset counters to clean state (improves debuggability)
+    FN_PRESS_COUNTER.store(0, Ordering::SeqCst);
+    RELEASE_GENERATION.store(0, Ordering::SeqCst);
 
     // Clear the app handle safely
     set_app_handle(None);

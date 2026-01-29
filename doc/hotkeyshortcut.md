@@ -75,25 +75,30 @@ If user presses Space after the 150ms delay (PTT already started):
 
 ### Key Bounce Handling (Debounce)
 
-To prevent accidental recording stops due to key "bounces" (brief release-then-press events, common with mechanical keys or after system sleep), a **150ms debounce** is applied to the Fn key release.
-
+### Key Bounce Handling (Debounce)
+ 
+To prevent accidental recording stops due to key "bounces" (brief release-then-press events, common with mechanical keys or after system sleep), a **150ms debounce** is applied to the Fn key release using a **Generation Counter** approach.
+ 
+**Logic**:
+1. Every `Press` or `Release` event increments a global `RELEASE_GENERATION` counter.
+2. On `Release`, a thread waits 150ms.
+3. After waiting, check: `if current_generation != my_generation { abort }`
+4. This ensures *any* new activity (press or release) immediately invalidates pending stop actions.
+ 
+**Bounce Preservation**:
+If a KeyDown event occurs while a Release debounce is pending (i.e. a bounce), we also check:
+ 
+```rust
+// In handle_fn_pressed:
+if PTT_STARTED {
+    // Bounce detected! We are already recording.
+    // The previous Release thread was killed by generation change.
+    // We just return early to keep the current session alive.
+    return;
+}
 ```
-  Fn Up            150ms debounce          Fn Down (bounce)
-    │                    │                        │
-    ▼                    ▼                        ▼
-┌────────┐         ┌──────────┐             ┌──────────┐
-│ Detect │  ───▶   │ Wait for │   ───▶      │ Release  │
-│ Release│         │ confirm  │             │ cancelled│
-└────────┘         └──────────┘             └──────────┘
-                         │
-                         ▼
-                   (No bounced press)
-                         │
-                         ▼
-                   ┌───────────┐
-                   │ Stop PTT  │
-                   └───────────┘
-```
+ 
+This prevents the app from entering a "zombie" state where the backend resets flags but the recording continues (or vice versa).
 
 ## Implementation
 
@@ -112,7 +117,7 @@ FN_KEY_WAS_PRESSED    // Tracks if Fn is currently held
 FN_SPACE_TRIGGERED    // True if fn+space was used this session
 PTT_STARTED           // True if push-to-talk recording started
 FN_PRESS_COUNTER      // Invalidates stale timers on rapid presses
-DEBOUNCING_RELEASE    // True if checking for key release bounce
+RELEASE_GENERATION    // Counts events to invalidate stale release threads
 RELEASE_DEBOUNCE_MS   // Debounce duration (150ms)
 ```
 
