@@ -73,6 +73,28 @@ If user presses Space after the 150ms delay (PTT already started):
                                                       └─────────────┘
 ```
 
+### Key Bounce Handling (Debounce)
+
+To prevent accidental recording stops due to key "bounces" (brief release-then-press events, common with mechanical keys or after system sleep), a **150ms debounce** is applied to the Fn key release.
+
+```
+  Fn Up            150ms debounce          Fn Down (bounce)
+    │                    │                        │
+    ▼                    ▼                        ▼
+┌────────┐         ┌──────────┐             ┌──────────┐
+│ Detect │  ───▶   │ Wait for │   ───▶      │ Release  │
+│ Release│         │ confirm  │             │ cancelled│
+└────────┘         └──────────┘             └──────────┘
+                         │
+                         ▼
+                   (No bounced press)
+                         │
+                         ▼
+                   ┌───────────┐
+                   │ Stop PTT  │
+                   └───────────┘
+```
+
 ## Implementation
 
 ### Backend Files
@@ -90,6 +112,8 @@ FN_KEY_WAS_PRESSED    // Tracks if Fn is currently held
 FN_SPACE_TRIGGERED    // True if fn+space was used this session
 PTT_STARTED           // True if push-to-talk recording started
 FN_PRESS_COUNTER      // Invalidates stale timers on rapid presses
+DEBOUNCING_RELEASE    // True if checking for key release bounce
+RELEASE_DEBOUNCE_MS   // Debounce duration (150ms)
 ```
 
 ### Mutual Exclusivity

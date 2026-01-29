@@ -58,6 +58,12 @@ static PTT_STARTED: AtomicBool = AtomicBool::new(false);
 /// This prevents stale timers from triggering if Fn was released and pressed again
 static FN_PRESS_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+/// Track if we are debouncing a Fn key release (to handle key bounce/glitch)
+static DEBOUNCING_RELEASE: AtomicBool = AtomicBool::new(false);
+
+/// Debounce time for Fn key release (ms)
+const RELEASE_DEBOUNCE_MS: u64 = 150;
+
 /// Flag to signal the permission check thread to stop
 static PERMISSION_CHECK_ACTIVE: AtomicBool = AtomicBool::new(false);
 
@@ -183,6 +189,7 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                     FN_TRANSCRIPTION_ENABLED.store(false, Ordering::SeqCst);
                     FN_SPACE_TRIGGERED.store(false, Ordering::SeqCst);
                     PTT_STARTED.store(false, Ordering::SeqCst);
+                    DEBOUNCING_RELEASE.store(false, Ordering::SeqCst);
                     
                     // Stop the run loop immediately - this is the key to releasing the event tap
                     stop_stored_run_loop();
@@ -387,6 +394,15 @@ fn handle_fn_pressed(app: &AppHandle) {
     debug!("Fn key pressed");
     let _ = app.emit("fn-key-down", ());
 
+    // Check if we are in a release debounce window (key bounce)
+    if DEBOUNCING_RELEASE.load(Ordering::SeqCst) {
+        debug!("Bounce detected: Press occurred during release debounce. Restoring session.");
+        // Cancel the impending release
+        DEBOUNCING_RELEASE.store(false, Ordering::SeqCst);
+        // Do NOT reset PTT_STARTED or start a new timer - continue existing session
+        return;
+    }
+
     // Reset flags for this new Fn press
     FN_SPACE_TRIGGERED.store(false, Ordering::SeqCst);
     PTT_STARTED.store(false, Ordering::SeqCst);
@@ -470,15 +486,43 @@ fn handle_fn_released(app: &AppHandle) {
     debug!("Fn key released");
     let _ = app.emit("fn-key-up", ());
 
-    // If transcription is enabled and push-to-talk was started, stop it
+    // If transcription is enabled...
     if FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst) {
-        if PTT_STARTED.swap(false, Ordering::SeqCst) {
-            // Push-to-talk was started, stop it now
-            debug!("Stopping push-to-talk recording");
-            if let Some(action) = ACTION_MAP.get("transcribe") {
-                action.stop(app, "transcribe", "fn");
-            }
-        } else if FN_SPACE_TRIGGERED.load(Ordering::SeqCst) {
+        // If push-to-talk was started, we need to stop it
+        // Check PTT_STARTED separately to handle debouncing
+        if PTT_STARTED.load(Ordering::SeqCst) {
+            // Start debounce for release to handle key bounces (50ms)
+            // This prevents "flickering" if the key briefly reports release then press
+            DEBOUNCING_RELEASE.store(true, Ordering::SeqCst);
+            
+            let app_clone = app.clone();
+            std::thread::spawn(move || {
+                // Wait to see if this is a real release or a bounce
+                std::thread::sleep(Duration::from_millis(RELEASE_DEBOUNCE_MS));
+                
+                // Check if cancelled by a subsequent press (bounce)
+                if !DEBOUNCING_RELEASE.load(Ordering::SeqCst) {
+                    debug!("Release debounce cancelled by press (bounce detected)");
+                    return;
+                }
+                
+                // Confirmed release - clear debounce flag
+                DEBOUNCING_RELEASE.store(false, Ordering::SeqCst);
+                
+                // Now actually stop PTT
+                // Atomically swap PTT_STARTED to false to ensure we only stop once
+                if PTT_STARTED.swap(false, Ordering::SeqCst) {
+                    debug!("Stopping push-to-talk recording (after debounce)");
+                    if let Some(action) = ACTION_MAP.get("transcribe") {
+                        action.stop(&app_clone, "transcribe", "fn");
+                    }
+                }
+            });
+            return;
+        } 
+        
+        // Handle other cases (fn+space, or release before PTT start)
+        if FN_SPACE_TRIGGERED.load(Ordering::SeqCst) {
             // fn+space was triggered, hands-free is managing its own state
             debug!("fn+space was used, hands-free mode is active");
         } else {
@@ -562,6 +606,7 @@ pub fn stop_fn_key_monitor() -> Result<(), String> {
     FN_TRANSCRIPTION_ENABLED.store(false, Ordering::SeqCst);
     FN_SPACE_TRIGGERED.store(false, Ordering::SeqCst);
     PTT_STARTED.store(false, Ordering::SeqCst);
+    DEBOUNCING_RELEASE.store(false, Ordering::SeqCst);
 
     // Clear the app handle safely
     set_app_handle(None);

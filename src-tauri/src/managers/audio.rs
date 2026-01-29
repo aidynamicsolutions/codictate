@@ -529,6 +529,17 @@ impl AudioRecordingManager {
                 // Pad if very short
                 let s_len = samples.len();
                 // debug!("Got {} samples", s_len);
+                
+                // Check for 0 samples - this likely means the audio stream died (e.g. sleep/wake)
+                // Force a restart of the stream for the next attempt
+                if s_len == 0 {
+                    tracing::warn!("Recording yielded 0 samples, forcing microphone stream restart to recover");
+                    self.stop_microphone_stream();
+                    // If in AlwaysOn mode, we should ideally restart it immediately, 
+                    // but stop_microphone_stream() just closes it.
+                    // The next try_start_recording call will re-open it because we set is_open=false.
+                }
+
                 if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
                     let mut padded = samples;
                     padded.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
