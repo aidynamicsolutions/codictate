@@ -367,9 +367,6 @@ impl ShortcutAction for TranscribeAction {
 
         change_tray_icon(app, TrayIconState::Transcribing);
         
-        info!("TranscribeAction::stop: about to call show_transcribing_overlay (binding={})", binding_id);
-        show_transcribing_overlay(app);
-
         // Unmute before playing audio feedback so the stop sound is audible
         rm.remove_mute();
 
@@ -393,6 +390,10 @@ impl ShortcutAction for TranscribeAction {
 
                 let stop_recording_time = Instant::now();
                 if let Some(samples) = rm.stop_recording(&binding_id) {
+                    // Start showing transcribing overlay NOW, after we have confirmed valid samples.
+                    // This protects against "phantom stops" from double-triggers showing the overlay incorrectly.
+                    show_transcribing_overlay(&ah);
+                    
                     debug!(
                         "Recording stopped and samples retrieved in {:?}, sample count: {}",
                         stop_recording_time.elapsed(),
@@ -469,28 +470,30 @@ impl ShortcutAction for TranscribeAction {
                                         ),
                                         Err(e) => error!("Failed to paste transcription: {}", e),
                                     }
-                                    utils::hide_recording_overlay(&ah_clone);
+                                    utils::hide_overlay_after_transcription(&ah_clone);
                                     change_tray_icon(&ah_clone, TrayIconState::Idle);
                                 })
                                 .unwrap_or_else(|e| {
                                     error!("Failed to run paste on main thread: {:?}", e);
-                                    utils::hide_recording_overlay(&ah);
+                                    utils::hide_overlay_after_transcription(&ah);
                                     change_tray_icon(&ah, TrayIconState::Idle);
                                 });
                             } else {
-                                utils::hide_recording_overlay(&ah);
+                                utils::hide_overlay_after_transcription(&ah);
                                 change_tray_icon(&ah, TrayIconState::Idle);
                             }
                         }
                         Err(err) => {
                             debug!("Global Shortcut Transcription error: {}", err);
-                            utils::hide_recording_overlay(&ah);
+                            utils::hide_overlay_after_transcription(&ah);
                             change_tray_icon(&ah, TrayIconState::Idle);
                         }
                     }
                 } else {
                     debug!("No samples retrieved from recording stop");
-                    utils::hide_recording_overlay(&ah);
+                    // Use SAFE hide. If another thread is actively transcribing, this "failed stop" 
+                    // should not interrupt it.
+                    utils::hide_overlay_if_recording(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
                 }
 

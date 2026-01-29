@@ -100,6 +100,18 @@ if PTT_STARTED {
  
 This prevents the app from entering a "zombie" state where the backend resets flags but the recording continues (or vice versa).
 
+### Race Condition Protection
+
+To prevent "phantom" overlay hiding when rapid actions occur (e.g. starting a new recording while the previous one is finishing transcription), the overlay system uses **State Protection**:
+
+1. **State Tracking**: The overlay tracks its current mode: `Hidden` | `Recording` | `Transcribing` | `Processing`.
+2. **Safe Hide**: The `hide_overlay_after_transcription` function checks the current state before hiding.
+3. **Logic**:
+    - If state is `Transcribing` or `Processing` → Safe to hide (transition to Hidden).
+    - If state is `Recording` → **ABORT HIDE**. This means a new recording session has started.
+
+This ensures that the "cleanup" phase of Session 1 does not inadvertently hide the UI for the active Session 2.
+
 ## Implementation
 
 ### Backend Files

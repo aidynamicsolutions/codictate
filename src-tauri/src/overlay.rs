@@ -131,6 +131,38 @@ fn calculate_overlay_position(app_handle: &AppHandle) -> Option<(f64, f64)> {
     None
 }
 
+use std::sync::Mutex;
+use once_cell::sync::Lazy;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverlayState {
+    Hidden,
+    Recording,
+    Transcribing,
+    Processing,
+}
+
+static OVERLAY_STATE: Lazy<Mutex<OverlayState>> = Lazy::new(|| Mutex::new(OverlayState::Hidden));
+
+pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
+    // emit levels to main app
+    let _ = app_handle.emit("mic-level", levels);
+
+    // also emit to the recording overlay if it's open
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.emit("mic-level", levels);
+    }
+}
+
+/// Emit recording time progress to the overlay
+/// elapsed_secs: seconds elapsed since recording started
+/// max_secs: maximum allowed recording time in seconds
+pub fn emit_recording_time(app_handle: &AppHandle, elapsed_secs: u32, max_secs: u32) {
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.emit("recording-time", (elapsed_secs, max_secs));
+    }
+}
+
 /// Creates the recording overlay window and keeps it hidden by default
 #[cfg(not(target_os = "macos"))]
 pub fn create_recording_overlay(app_handle: &AppHandle) {
@@ -210,6 +242,11 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
     
     debug!("show_recording_overlay: entry");
     
+    // Update state to Recording
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        *state = OverlayState::Recording;
+    }
+
     // Check if overlay should be shown based on position setting
     let settings = settings::get_settings(app_handle);
     if settings.overlay_position == OverlayPosition::None {
@@ -253,6 +290,11 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
     
     debug!("show_transcribing_overlay: entry");
     
+    // Update state to Transcribing
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        *state = OverlayState::Transcribing;
+    }
+
     // Check if overlay should be shown based on position setting
     let settings = settings::get_settings(app_handle);
     if settings.overlay_position == OverlayPosition::None {
@@ -287,6 +329,11 @@ pub fn show_processing_overlay(app_handle: &AppHandle) {
     
     debug!("show_processing_overlay: entry");
     
+    // Update state to Processing
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        *state = OverlayState::Processing;
+    }
+
     let settings = settings::get_settings(app_handle);
     if settings.overlay_position == OverlayPosition::None {
         debug!("show_processing_overlay: overlay disabled in settings, skipping");
@@ -316,8 +363,13 @@ pub fn update_overlay_position(app_handle: &AppHandle) {
 pub fn hide_recording_overlay(app_handle: &AppHandle) {
     use tracing::{debug, warn};
     
-    debug!("hide_recording_overlay: entry");
+    debug!("hide_recording_overlay: entry (FORCE)");
     
+    // Always hide and reset state (Force Hide)
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        *state = OverlayState::Hidden;
+    }
+
     // Always hide the overlay regardless of settings - if setting was changed while recording,
     // we still want to hide it properly
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
@@ -337,22 +389,69 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
-pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
-    // emit levels to main app
-    let _ = app_handle.emit("mic-level", levels);
+/// Safely hides the overlay only if it is in Recording or Hidden state.
+/// This prevents clobbering a transition to Transcribing or Processing.
+pub fn hide_overlay_if_recording(app_handle: &AppHandle) {
+    use tracing::{debug, warn};
 
-    // also emit to the recording overlay if it's open
+    debug!("hide_overlay_if_recording: entry");
+
+    // Check state - bail if we are Transcribing or Processing
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        match *state {
+            OverlayState::Transcribing | OverlayState::Processing => {
+                debug!("hide_overlay_if_recording: Ignoring hide because state is {:?}", *state);
+                return;
+            }
+            _ => {
+                // Proceed to hide
+                *state = OverlayState::Hidden;
+            }
+        }
+    }
+
+    // Reuse the hide logic but with the check above
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
-        let _ = overlay_window.emit("mic-level", levels);
+        let emit_result = overlay_window.emit("hide-overlay", ());
+        debug!("hide_overlay_if_recording: emit('hide-overlay') result={:?}", emit_result);
+        let hide_result = overlay_window.hide();
+        debug!("hide_overlay_if_recording: hide() result={:?}", hide_result);
+    } else {
+        warn!("hide_overlay_if_recording: overlay window NOT FOUND!");
     }
 }
 
-/// Emit recording time progress to the overlay
-/// elapsed_secs: seconds elapsed since recording started
-/// max_secs: maximum allowed recording time in seconds
-pub fn emit_recording_time(app_handle: &AppHandle, elapsed_secs: u32, max_secs: u32) {
+/// Safely hides the overlay after transcription/processing is done.
+/// Only hides if the state is still Transcribing or Processing.
+/// If the state has changed to Recording (new session started), it does NOT hide.
+pub fn hide_overlay_after_transcription(app_handle: &AppHandle) {
+    use tracing::{debug, warn};
+
+    debug!("hide_overlay_after_transcription: entry");
+
+    // Check state - bail if we are Recording (new session)
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        match *state {
+            OverlayState::Recording => {
+                debug!("hide_overlay_after_transcription: Ignoring hide because state is Recording (new session started)");
+                return;
+            }
+            _ => {
+                // Proceed to hide (Transcribing, Processing, or already Hidden)
+                *state = OverlayState::Hidden;
+            }
+        }
+    }
+
+    // Reuse the hide logic
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
-        let _ = overlay_window.emit("recording-time", (elapsed_secs, max_secs));
+        let emit_result = overlay_window.emit("hide-overlay", ());
+        debug!("hide_overlay_after_transcription: emit('hide-overlay') result={:?}", emit_result);
+        
+        let hide_result = overlay_window.hide();
+        debug!("hide_overlay_after_transcription: hide() result={:?}", hide_result);
+    } else {
+        warn!("hide_overlay_after_transcription: overlay window NOT FOUND!");
     }
 }
 
