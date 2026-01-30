@@ -1,4 +1,4 @@
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -153,6 +153,11 @@ const RecordingOverlay: React.FC = () => {
       cleanupFns.push(unlistenTime);
 
       logInfo("RecordingOverlay: All event listeners registered successfully", "fe-overlay");
+      
+      // Signal to Rust that the overlay is ready to receive events
+      // This prevents the race condition where events are emitted before listeners are registered
+      await emit("overlay-ready");
+      logInfo("RecordingOverlay: Emitted overlay-ready signal to Rust", "fe-overlay");
     }
 
     setupListeners();

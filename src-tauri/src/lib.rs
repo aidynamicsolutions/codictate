@@ -41,7 +41,7 @@ use tauri::image::Image;
 
 use tauri::tray::TrayIconBuilder;
 use tauri::Emitter;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Listener, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use crate::settings::get_settings;
@@ -213,6 +213,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Create the recording overlay window (hidden by default)
     utils::create_recording_overlay(app_handle);
+    
+    // Listen for "overlay-ready" event from the frontend
+    // This signals that the React component has registered its event listeners
+    // and is ready to receive show-overlay/hide-overlay events
+    let app_for_overlay_ready = app_handle.clone();
+    app_handle.listen("overlay-ready", move |_event| {
+        overlay::mark_overlay_ready();
+        tracing::debug!("Received overlay-ready event from frontend");
+        // Drop the app handle reference since we only need this once
+        let _ = &app_for_overlay_ready;
+    });
 }
 
 #[tauri::command]

@@ -132,6 +132,7 @@ fn calculate_overlay_position(app_handle: &AppHandle) -> Option<(f64, f64)> {
 }
 
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use once_cell::sync::Lazy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -143,6 +144,18 @@ enum OverlayState {
 }
 
 static OVERLAY_STATE: Lazy<Mutex<OverlayState>> = Lazy::new(|| Mutex::new(OverlayState::Hidden));
+
+/// Track whether the overlay webview is ready to receive events.
+/// This prevents the race condition where show-overlay events are emitted
+/// before the React component has registered its event listeners.
+static OVERLAY_READY: AtomicBool = AtomicBool::new(false);
+
+/// Mark the overlay as ready to receive events.
+/// Called when the frontend emits the "overlay-ready" event.
+pub fn mark_overlay_ready() {
+    tracing::info!("mark_overlay_ready: Overlay webview signaled ready");
+    OVERLAY_READY.store(true, Ordering::SeqCst);
+}
 
 pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
     // emit levels to main app
@@ -239,6 +252,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
 /// Shows the recording overlay window with fade-in animation
 pub fn show_recording_overlay(app_handle: &AppHandle) {
     use tracing::{debug, warn};
+    use std::time::Duration;
     
     debug!("show_recording_overlay: entry");
     
@@ -255,6 +269,24 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
     }
 
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Wait for overlay to be ready (with timeout) on first show
+        // This prevents the race condition where the event is emitted before
+        // React has registered its listeners, causing flicker on first Fn press
+        if !OVERLAY_READY.load(Ordering::SeqCst) {
+            debug!("show_recording_overlay: overlay not ready yet, waiting...");
+            // Short spin-wait with timeout (max ~500ms, checking every 10ms)
+            for _ in 0..50 {
+                if OVERLAY_READY.load(Ordering::SeqCst) {
+                    debug!("show_recording_overlay: overlay became ready");
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            if !OVERLAY_READY.load(Ordering::SeqCst) {
+                warn!("show_recording_overlay: timeout waiting for overlay ready, proceeding anyway");
+            }
+        }
+        
         // Log current visibility state before showing
         let is_visible_before = overlay_window.is_visible().unwrap_or(false);
         debug!("show_recording_overlay: found window, is_visible_before={}", is_visible_before);
@@ -265,16 +297,23 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
                 .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
         }
 
+        // IMPORTANT: Emit the show-overlay event BEFORE showing the native window.
+        // This gives React time to set isVisible=true (which sets opacity: 1) before
+        // the native window becomes visible. Otherwise, the window appears with
+        // opacity: 0 for ~50ms causing a flicker.
+        let emit_result = overlay_window.emit("show-overlay", "recording");
+        debug!("show_recording_overlay: emit('show-overlay', 'recording') result={:?}", emit_result);
+        
+        // Small delay to allow React to process the event and update opacity
+        // before the native window becomes visible
+        std::thread::sleep(Duration::from_millis(20));
+        
         let show_result = overlay_window.show();
         debug!("show_recording_overlay: window.show() result={:?}", show_result);
 
         // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
         #[cfg(target_os = "windows")]
         force_overlay_topmost(&overlay_window);
-
-        // Emit event to trigger fade-in animation with recording state
-        let emit_result = overlay_window.emit("show-overlay", "recording");
-        debug!("show_recording_overlay: emit('show-overlay', 'recording') result={:?}", emit_result);
         
         // Log post-show visibility
         let is_visible_after = overlay_window.is_visible().unwrap_or(false);

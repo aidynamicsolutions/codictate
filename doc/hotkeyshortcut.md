@@ -112,6 +112,44 @@ To prevent "phantom" overlay hiding when rapid actions occur (e.g. starting a ne
 
 This ensures that the "cleanup" phase of Session 1 does not inadvertently hide the UI for the active Session 2.
 
+### Overlay Readiness Signal (Flicker Prevention)
+
+To prevent overlay flicker on the first Fn press after app startup, the system uses a **readiness handshake**:
+
+**Problem**: The overlay webview loads asynchronously after app startup. If the user presses Fn before React has registered its event listeners, the `show-overlay` event may be emitted too early, causing a race condition where the native window appears but React hasn't set `opacity: 1` yet.
+
+**Solution**:
+
+```
+    App Startup                          React Ready                First Fn Press
+         │                                    │                          │
+         ▼                                    ▼                          ▼
+  ┌─────────────┐    ┌───────────────────────────────────┐    ┌─────────────────┐
+  │  Create     │───▶│ React registers event listeners   │───▶│ Check OVERLAY_  │
+  │  overlay    │    │ then emits "overlay-ready"        │    │ READY flag      │
+  │  panel      │    └───────────────────────────────────┘    └─────────────────┘
+  └─────────────┘                   │                                  │
+                                    ▼                                  ▼
+                         ┌───────────────────┐           If ready: proceed immediately
+                         │ Rust marks        │           If not ready: wait up to 500ms
+                         │ OVERLAY_READY=true│
+                         └───────────────────┘
+```
+
+**Show Sequence (Flicker-Free)**:
+
+```
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │ 1. emit("show-overlay", "recording")   ← Send event to React FIRST │
+   │ 2. sleep(20ms)                          ← Let React set opacity: 1  │
+   │ 3. window.show()                        ← Then make window visible  │
+   └─────────────────────────────────────────────────────────────────────┘
+```
+
+**Key Files**:
+- [overlay.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/overlay.rs): `OVERLAY_READY` atomic, `mark_overlay_ready()`, show sequence ordering
+- [RecordingOverlay.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/overlay/RecordingOverlay.tsx): Emits `overlay-ready` after listeners registered
+
 ## Implementation
 
 ### Backend Files
@@ -121,16 +159,22 @@ This ensures that the "cleanup" phase of Session 1 does not inadvertently hide t
 | [fn_key_monitor.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/fn_key_monitor.rs) | CGEventTap-based Fn key detection |
 | [shortcut.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/shortcut.rs) | Global shortcut registration |
 | [actions.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/actions.rs) | `TranscribeAction` start/stop logic |
+| [overlay.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/overlay.rs) | Overlay show/hide, readiness tracking |
 
 ### Key State Variables
 
 ```rust
+// Fn Key State (fn_key_monitor.rs)
 FN_KEY_WAS_PRESSED    // Tracks if Fn is currently held
 FN_SPACE_TRIGGERED    // True if fn+space was used this session
 PTT_STARTED           // True if push-to-talk recording started
 FN_PRESS_COUNTER      // Invalidates stale timers on rapid presses
 RELEASE_GENERATION    // Counts events to invalidate stale release threads
 RELEASE_DEBOUNCE_MS   // Debounce duration (150ms)
+
+// Overlay State (overlay.rs)
+OVERLAY_STATE         // Current mode: Hidden | Recording | Transcribing | Processing
+OVERLAY_READY         // True after React has registered event listeners
 ```
 
 ### Mutual Exclusivity
