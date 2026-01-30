@@ -9,7 +9,7 @@
 //!
 //! Supports two modes:
 //! - Push-to-talk (fn alone): Hold Fn to record, release to stop and transcribe
-//!   NOTE: Push-to-talk has a 150ms delay before starting to distinguish from fn+space
+//!   (If fn+space is detected during PTT, the PTT key press is cancelled to switch to hands-free)
 //! - Hands-free (fn+space): Press combo to toggle recording on/off
 
 use crate::actions::ACTION_MAP;
@@ -27,8 +27,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, error, info, warn};
 
-/// Delay before starting push-to-talk (ms) - allows time to detect fn+space
-const PTT_DELAY_MS: u64 = 150;
+
 
 /// Track whether Fn key monitoring is currently active
 static FN_MONITORING_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -237,6 +236,19 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                     let transcription_enabled = FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst);
                     
                     if keycode == SPACE_KEY && fn_pressed {
+                        // Check for autorepeat events first
+                        // If the user holds down Space, the OS will send repeated KeyDown events.
+                        // We must ignore these to prevent rapid toggling of Hands-Free mode.
+                        let is_autorepeat = event.get_integer_value_field(
+                            core_graphics::event::EventField::KEYBOARD_EVENT_AUTOREPEAT
+                        ) != 0;
+                        
+                        if is_autorepeat {
+                            debug!("Ignoring autorepeat Space key event");
+                            // Still drop it to prevent typing "     "
+                            return CallbackResult::Drop; 
+                        }
+
                         if transcription_enabled {
                             // Mark that fn+space was triggered - this prevents delayed PTT from starting
                             FN_SPACE_TRIGGERED.store(true, Ordering::SeqCst);
@@ -251,8 +263,13 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                                     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
                                     audio_manager.cancel_recording();
                                     shortcut::unregister_cancel_shortcut(app);
-                                    crate::utils::hide_recording_overlay(app);
-                                    crate::tray::change_tray_icon(app, crate::tray::TrayIconState::Idle);
+                                    
+                                    // NOTE: We do NOT hide the overlay or change the tray icon here.
+                                    // We want the overlay to remain visible ("Seamless Mode Switching")
+                                    // while we transition from PTT to Hands-Free.
+                                    // The audio_manager.cancel_recording() stops the PTT session/timer,
+                                    // and handle_handsfree_toggle() below will start a new session/timer.
+                                    // Visually, the user just sees "Recording" continue.
                                 }
                                 
                                 // Now toggle hands-free mode
@@ -412,71 +429,63 @@ fn handle_fn_pressed(app: &AppHandle) {
     // Increment the press counter to invalidate any stale timers
     let press_id = FN_PRESS_COUNTER.fetch_add(1, Ordering::SeqCst) + 1;
 
-    // If transcription is enabled, start a delayed timer for push-to-talk
+    // If transcription is enabled, start push-to-talk immediately
+    // We no longer wait PTT_DELAY_MS to distinguish from fn+space.
+    // Instead, if fn+space is pressed later, the event tap callback will:
+    // 1. Detect space key
+    // 2. Cancel this PTT recording (discarding the short audio)
+    // 3. Start hands-free mode
     if FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst) {
-        debug!("Starting {}ms delay before push-to-talk (press_id: {})", PTT_DELAY_MS, press_id);
+        debug!("Starting push-to-talk recording immediately (press_id: {})", press_id);
         
-        // Clone app handle for the timer thread
-        let app_clone = app.clone();
+        // Check microphone permission BEFORE starting recording
+        // This must happen before setting PTT_STARTED to prevent
+        // the "Transcribing..." overlay from appearing on fn release
+        #[cfg(target_os = "macos")]
+        {
+            use crate::permissions::{check_microphone_permission, MicrophonePermission};
+            use tauri::Emitter;
+            
+            if check_microphone_permission() == MicrophonePermission::Denied {
+                warn!("Microphone permission denied, showing permission dialog");
+                // Show the main window and emit event for permission dialog
+                crate::show_main_window(app);
+                let _ = app.emit("microphone-permission-denied", ());
+                return; // Don't set PTT_STARTED or start recording
+            }
+        }
         
-        // Spawn a timer thread
-        std::thread::spawn(move || {
-            // Wait for the delay
-            std::thread::sleep(Duration::from_millis(PTT_DELAY_MS));
-            
-            // Check if this timer is still valid (same press session)
-            let current_press_id = FN_PRESS_COUNTER.load(Ordering::SeqCst);
-            if current_press_id != press_id {
-                debug!("Timer expired but press_id changed ({} != {}), ignoring", press_id, current_press_id);
-                return;
-            }
-            
-            // Check if Fn is still pressed
-            if !FN_KEY_WAS_PRESSED.load(Ordering::SeqCst) {
-                debug!("Timer expired but Fn was released, ignoring");
-                return;
-            }
-            
-            // Check if fn+space was triggered during the delay
-            if FN_SPACE_TRIGGERED.load(Ordering::SeqCst) {
-                debug!("Timer expired but fn+space was triggered, ignoring");
-                return;
-            }
-            
-            // Check microphone permission BEFORE starting recording
-            // This must happen before setting PTT_STARTED to prevent
-            // the "Transcribing..." overlay from appearing on fn release
-            #[cfg(target_os = "macos")]
-            {
-                use crate::permissions::{check_microphone_permission, MicrophonePermission};
-                use tauri::Emitter;
+        // Check if Hands-Free mode is already active
+        // If it is, we should NOT start a PTT session.
+        // This allows the user to press Fn + Space to toggle it OFF without interference.
+        {
+            let toggle_state_manager = app.state::<ManagedToggleState>();
+            let is_handsfree = toggle_state_manager.lock()
+                .map(|states| states.active_toggles.get("transcribe_handsfree") == Some(&true))
+                .unwrap_or(false);
                 
-                if check_microphone_permission() == MicrophonePermission::Denied {
-                    warn!("Microphone permission denied, showing permission dialog");
-                    // Show the main window and emit event for permission dialog
-                    crate::show_main_window(&app_clone);
-                    let _ = app_clone.emit("microphone-permission-denied", ());
-                    return; // Don't set PTT_STARTED or start recording
-                }
+            if is_handsfree {
+                debug!("Hands-free active, ignoring Fn press (so we don't start PTT on top of it)");
+                return;
             }
-            
-            // All checks passed - start push-to-talk recording
-            info!("handle_fn_pressed: PTT delay expired, starting push-to-talk recording (press_id={})", press_id);
-            PTT_STARTED.store(true, Ordering::SeqCst);
-            
-            // Reset hands-free toggle state to ensure mutual exclusivity
-            // This prevents stale toggle state if hands-free was previously active
-            {
-                let toggle_state_manager = app_clone.state::<ManagedToggleState>();
-                if let Ok(mut states) = toggle_state_manager.lock() {
-                    states.active_toggles.insert("transcribe_handsfree".to_string(), false);
-                };
-            }
-            
-            if let Some(action) = ACTION_MAP.get("transcribe") {
-                action.start(&app_clone, "transcribe", "fn");
-            }
-        });
+        }
+
+        // All checks passed - start push-to-talk recording
+        info!("handle_fn_pressed: Starting push-to-talk recording (press_id={})", press_id);
+        PTT_STARTED.store(true, Ordering::SeqCst);
+        
+        // Reset hands-free toggle state to ensure mutual exclusivity
+        // This prevents stale toggle state if hands-free was previously active
+        {
+            let toggle_state_manager = app.state::<ManagedToggleState>();
+            if let Ok(mut states) = toggle_state_manager.lock() {
+                states.active_toggles.insert("transcribe_handsfree".to_string(), false);
+            };
+        }
+        
+        if let Some(action) = ACTION_MAP.get("transcribe") {
+            action.start(app, "transcribe", "fn");
+        }
     }
 }
 

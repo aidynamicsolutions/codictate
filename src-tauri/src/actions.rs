@@ -262,95 +262,118 @@ impl ShortcutAction for TranscribeAction {
         // Emit session ID to frontend for correlated logging
         use tauri::Emitter;
         let _ = app.emit("session-started", &session_id);
-        
-        // Check microphone permission BEFORE showing any UI
-        // This prevents the overlay from appearing when permission is denied
-        #[cfg(target_os = "macos")]
-        {
-            use crate::permissions::{check_microphone_permission, MicrophonePermission};
+
+        let app_clone = app.clone();
+        let binding_id_clone = binding_id.to_string();
+
+        // Spawn a thread to avoid blocking the event tap/caller
+        std::thread::spawn(move || {
+            let app = &app_clone;
+            let binding_id = &binding_id_clone;
             
-            if check_microphone_permission() == MicrophonePermission::Denied {
-                error!("Microphone permission denied, cannot start recording");
+            // Check microphone permission BEFORE showing any UI
+            // This prevents the overlay from appearing when permission is denied
+            #[cfg(target_os = "macos")]
+            {
+                use crate::permissions::{check_microphone_permission, MicrophonePermission};
                 
-                // Show the main window so the permission dialog modal can be seen
-                // (the app usually runs in the background)
-                crate::show_main_window(app);
-                
-                // Emit event to frontend to show permission dialog
-                let _ = app.emit("microphone-permission-denied", ());
-                return; // Don't show overlay or start recording
+                if check_microphone_permission() == MicrophonePermission::Denied {
+                    error!("Microphone permission denied, cannot start recording");
+                    
+                    // Show the main window so the permission dialog modal can be seen
+                    // (the app usually runs in the background)
+                    crate::show_main_window(app);
+                    
+                    // Emit event to frontend to show permission dialog
+                    let _ = app.emit("microphone-permission-denied", ());
+                    return; // Don't show overlay or start recording
+                }
             }
-        }
-        
-        let start_time = Instant::now();
-        info!("Recording started for binding: {}", binding_id);
+            
+            let start_time = Instant::now();
+            info!("Recording started for binding: {}", binding_id);
 
-        // Load model in the background
-        let tm = app.state::<Arc<TranscriptionManager>>();
-        tm.initiate_model_load();
+            // Load model in the background
+            let tm = app.state::<Arc<TranscriptionManager>>();
+            tm.initiate_model_load();
 
-        let binding_id = binding_id.to_string();
-        change_tray_icon(app, TrayIconState::Recording);
-        
-        info!("TranscribeAction::start: about to call show_recording_overlay (binding={})", binding_id);
-        show_recording_overlay(app);
-        info!("TranscribeAction::start: show_recording_overlay returned");
+            change_tray_icon(app, TrayIconState::Recording);
+            
+            let rm = app.state::<Arc<AudioRecordingManager>>();
 
-        let rm = app.state::<Arc<AudioRecordingManager>>();
+            // Get the microphone mode to determine audio feedback timing
+            let settings = get_settings(app);
+            let is_always_on = settings.always_on_microphone;
+            debug!("Microphone mode - always_on: {}", is_always_on);
 
-        // Get the microphone mode to determine audio feedback timing
-        let settings = get_settings(app);
-        let is_always_on = settings.always_on_microphone;
-        debug!("Microphone mode - always_on: {}", is_always_on);
-
-        let mut recording_started = false;
-        if is_always_on {
-            // Always-on mode: Play audio feedback immediately, then apply mute after sound finishes
-            debug!("Always-on mode: Playing audio feedback immediately");
-            let rm_clone = Arc::clone(&rm);
-            let app_clone = app.clone();
-            // The blocking helper exits immediately if audio feedback is disabled,
-            // so we can always reuse this thread to ensure mute happens right after playback.
-            std::thread::spawn(move || {
-                play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                rm_clone.apply_mute();
-            });
-
-            recording_started = rm.try_start_recording(&binding_id, &session_id);
-            debug!("Recording started: {}", recording_started);
-        } else {
-            // On-demand mode: Start recording first, then play audio feedback, then apply mute
-            // This allows the microphone to be activated before playing the sound
-            debug!("On-demand mode: Starting recording first, then audio feedback");
-            let recording_start_time = Instant::now();
-            if rm.try_start_recording(&binding_id, &session_id) {
-                recording_started = true;
-                debug!("Recording started in {:?}", recording_start_time.elapsed());
-                // Small delay to ensure microphone stream is active
-                let app_clone = app.clone();
+            let mut recording_started = false;
+            
+            // NOTE: try_start_recording is now BLOCKING until the audio stream is ready (in OnDemand mode).
+            // This ensures we don't show the overlay until we are actually recording.
+            
+            if is_always_on {
+                // Always-on mode: Play audio feedback immediately, then apply mute after sound finishes
+                debug!("Always-on mode: Playing audio feedback immediately");
                 let rm_clone = Arc::clone(&rm);
+                let app_clone = app.clone();
+                // The blocking helper exits immediately if audio feedback is disabled,
+                // so we can always reuse this thread to ensure mute happens right after playback.
                 std::thread::spawn(move || {
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-                    debug!("Handling delayed audio feedback/mute sequence");
-                    // Helper handles disabled audio feedback by returning early, so we reuse it
-                    // to keep mute sequencing consistent in every mode.
                     play_feedback_sound_blocking(&app_clone, SoundType::Start);
                     rm_clone.apply_mute();
                 });
+
+                if rm.try_start_recording(binding_id, &session_id) {
+                    recording_started = true;
+                    // Show overlay only after recording started success
+                    info!("TranscribeAction::start: showing recording overlay (always-on)");
+                    show_recording_overlay(app);
+                } else {
+                    debug!("Failed to start recording (always-on)");
+                }
             } else {
-                debug!("Failed to start recording");
+                // On-demand mode: Start recording first, then play audio feedback, then apply mute
+                // This allows the microphone to be activated before playing the sound
+                debug!("On-demand mode: Starting recording first (blocking), then audio feedback");
+                let recording_start_time = Instant::now();
+                
+                // Blocks here until Mic is ready (~100-300ms)
+                if rm.try_start_recording(binding_id, &session_id) {
+                    recording_started = true;
+                    debug!("Recording started in {:?}", recording_start_time.elapsed());
+                    
+                    // Show overlay NOW - verified recording is active.
+                    info!("TranscribeAction::start: showing recording overlay (on-demand)");
+                    show_recording_overlay(app);
+                    
+                    // Small delay to ensure microphone stream is active (extra safety)
+                    let app_clone = app.clone();
+                    let rm_clone = Arc::clone(&rm);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                        debug!("Handling delayed audio feedback/mute sequence");
+                        // Helper handles disabled audio feedback by returning early, so we reuse it
+                        // to keep mute sequencing consistent in every mode.
+                        play_feedback_sound_blocking(&app_clone, SoundType::Start);
+                        rm_clone.apply_mute();
+                    });
+                } else {
+                    debug!("Failed to start recording (on-demand)");
+                    // Ensure icon is reset if we failed
+                    change_tray_icon(app, TrayIconState::Idle);
+                }
             }
-        }
 
-        if recording_started {
-            // Dynamically register the cancel shortcut in a separate task to avoid deadlock
-            shortcut::register_cancel_shortcut(app);
-        }
+            if recording_started {
+                // Dynamically register the cancel shortcut in a separate task to avoid deadlock
+                shortcut::register_cancel_shortcut(app);
+            }
 
-        debug!(
-            "TranscribeAction::start completed in {:?}",
-            start_time.elapsed()
-        );
+            debug!(
+                "TranscribeAction::start completed in {:?}",
+                start_time.elapsed()
+            );
+        });
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {

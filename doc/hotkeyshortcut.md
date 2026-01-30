@@ -12,68 +12,70 @@ Concise documentation of Codictate's keyboard shortcut system for speech-to-text
 
 ## How It Works
 
-### Mode Detection (150ms delay)
+### Mode Detection (Immediate Start)
+ 
+ ```
+  User presses Fn
+        │
+        ▼
+  ┌─────────────────┐
+  │ Start Recording │  ──▶ PUSH-TO-TALK MODE
+  │  Immediately    │      (recording active)
+  └─────────────────┘
+        │
+        ├──── Space pressed while holding Fn ──▶ HANDS-FREE MODE (Cancel PTT, Start Hands-free)
+        │
+        └──── Released without Space ──────────▶ TRANSCRIBE (Normal PTT end)
+ ```
+ 
+ ### Push-to-Talk Flow (Wait for Ready)
+ 
+ ```
+   Fn Down          Mic Init           Recording           Fn Up
+      │                │                  │                  │
+      ▼                ▼                  ▼                  ▼
+  ┌──────────┐     ┌──────────┐       ┌──────────┐       ┌───────────┐
+  │ Start    │ ──▶ │ Block    │ ────▶ │ Overlay  │ ────▶ │Transcribe │
+  │ record   │     │ until OK │       │ appears  │       │   & type  │
+  └──────────┘     └──────────┘       └──────────┘       └───────────┘
+ ```
 
-```
- User presses Fn
-       │
-       ▼
- ┌─────────────────┐
- │  Start 150ms    │
- │    timer        │
- └─────────────────┘
-       │
-       ├──── Space pressed within 150ms ──▶ HANDS-FREE MODE
-       │                                    (toggle on/off)
-       │
-       └──── 150ms expires without Space ──▶ PUSH-TO-TALK MODE
-                                             (hold to record)
-```
+ ### Audio Latency Optimization
+ 
+ To eliminate audio cutoff (the "first word missing" problem), the system employs two strategies:
+ 
+ 1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time from ~300ms to ~100ms.
+ 2. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
+    - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
+    - **Cons**: Small initial delay (~100-200ms) before UI appears.
+    - **Implementation**: `TranscribeAction::start` spawns a thread that calls `try_start_recording` (blocking), and only calls `show_recording_overlay` upon success.
+ 
+### Seamless Mode Switching
 
-### Push-to-Talk Flow
+To prevent UI flashing when transitioning from PTT to Hands-Free (Fn held -> Space pressed):
+- The `hide_recording_overlay()` call is **skipped** during the transition.
+- The overlay remains visible ("Recording") while the backend stops the PTT session and starts the Hands-Free session immediately.
+- Visually, the user sees a single continuous recording session.
 
-```
-  Fn Down          150ms delay          Recording          Fn Up
-     │                 │                   │                  │
-     ▼                 ▼                   ▼                  ▼
- ┌───────┐        ┌─────────┐        ┌──────────┐       ┌───────────┐
- │ Start │  ───▶  │  Timer  │  ───▶  │ Overlay  │ ───▶  │Transcribe │
- │ timer │        │ expires │        │ appears  │       │   & type  │
- └───────┘        └─────────┘        └──────────┘       └───────────┘
-```
+### Rapid Toggle Prevention (Autorepeat)
+
+To prevent crash/lockup when holding `Fn + Space`:
+- The system checks `KEYBOARD_EVENT_AUTOREPEAT` on the Space key.
+- Autorepeat events are **ignored** (dropped), ensuring the toggle logic only fires once per physical press.
 
 ### Hands-Free Flow
 
-```
-  fn+space          fn+space (again)
-     │                   │
-     ▼                   ▼
- ┌───────────┐      ┌───────────┐
- │  Toggle   │      │  Toggle   │
- │    ON     │ ───▶ │    OFF    │
- │ (record)  │      │(transcribe)│
- └───────────┘      └───────────┘
-     │                   │
-     ▼                   ▼
-  Overlay            Overlay
-  appears            disappears
-```
-
-### Late fn+space Detection
-
-If user presses Space after the 150ms delay (PTT already started):
-
-```
-  Fn Down    ───▶    150ms    ───▶   PTT starts   ───▶  Space pressed
-                                                             │
-                                                             ▼
-                                                      ┌─────────────┐
-                                                      │ Cancel PTT  │
-                                                      │ Start HF    │
-                                                      └─────────────┘
-```
-
-### Key Bounce Handling (Debounce)
+ ```
+   fn (down)        space (down)        fn+space (again)
+      │                │                     │
+      ▼                ▼                     ▼
+  ┌──────────┐     ┌──────────┐        ┌───────────┐
+  │ Start    │     │ Cancel   │        │  Toggle   │
+  │ PTT      │ ──▶ │ PTT &    │  ───▶  │    OFF    │
+  │ record   │     │ Start HF │        │(transcribe)│
+  └──────────┘     └──────────┘        └───────────┘
+                    (seamless)
+ ```
 
 ### Key Bounce Handling (Debounce)
  

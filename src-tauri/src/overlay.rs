@@ -305,8 +305,8 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
         debug!("show_recording_overlay: emit('show-overlay', 'recording') result={:?}", emit_result);
         
         // Small delay to allow React to process the event and update opacity
-        // before the native window becomes visible
-        std::thread::sleep(Duration::from_millis(20));
+        // before the native window becomes visible. Increased to 50ms to be safe.
+        std::thread::sleep(Duration::from_millis(50));
         
         let show_result = overlay_window.show();
         debug!("show_recording_overlay: window.show() result={:?}", show_result);

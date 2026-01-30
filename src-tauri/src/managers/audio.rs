@@ -484,6 +484,11 @@ impl AudioRecordingManager {
     }
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {
+        // Reset cache to ensure we fetch fresh config for the new device
+        if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
+            rec.reset_cache();
+        }
+
         // If currently open, restart the microphone stream to use the new device
         if *self.is_open.lock().unwrap() {
             self.stop_microphone_stream();
