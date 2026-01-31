@@ -11,16 +11,22 @@ import { commands } from "@/bindings";
 import { initLogging } from "@/utils/logging";
 import { useModelStore } from "./stores/modelStore";
 
-const renderSettingsContent = (section: SidebarSection) => {
+const renderSettingsContent = (
+  section: SidebarSection,
+  onNavigate: (section: SidebarSection) => void
+) => {
   const ActiveComponent =
-    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.general.component;
-  return <ActiveComponent />;
+    SECTIONS_CONFIG[section]?.component || SECTIONS_CONFIG.home.component;
+
+  // Check if component accepts onNavigate (safely pass it to all setting components)
+  // In a cleaner app we might have a specific type for ContentComponent
+  return <ActiveComponent onNavigate={onNavigate} />;
 };
 
 function App() {
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+    useState<SidebarSection>("home");
   const { settings, updateSetting } = useSettings();
 
   // Show window when the app is ready (prevents flash of white)
@@ -126,7 +132,7 @@ function App() {
             <div className="flex flex-col items-center p-4 gap-4">
               <AccessibilityPermissions />
               <MicrophonePermissions />
-              {renderSettingsContent(currentSection)}
+              {renderSettingsContent(currentSection, setCurrentSection)}
             </div>
           </div>
         </div>

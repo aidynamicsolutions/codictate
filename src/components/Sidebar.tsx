@@ -1,8 +1,9 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles } from "lucide-react";
+import { Cog, FlaskConical, History, Info, Sparkles, Home, Sliders } from "lucide-react";
 import CodictateLogo from "./icons/CodictateLogo";
 import { useSettings } from "../hooks/useSettings";
+import HomeContent from "./home/Home";
 import {
   GeneralSettings,
   AdvancedSettings,
@@ -25,20 +26,26 @@ interface IconProps {
 interface SectionConfig {
   labelKey: string;
   icon: React.ComponentType<IconProps>;
-  component: React.ComponentType;
+  component: React.ComponentType<any>;
   enabled: (settings: any) => boolean;
 }
 
 export const SECTIONS_CONFIG = {
-  general: {
-    labelKey: "sidebar.general",
-    icon: CodictateLogo,
+  home: {
+    labelKey: "sidebar.home",
+    icon: Home,
+    component: HomeContent,
+    enabled: () => true,
+  },
+  settings: {
+    labelKey: "sidebar.settings",
+    icon: Cog,
     component: GeneralSettings,
     enabled: () => true,
   },
   advanced: {
     labelKey: "sidebar.advanced",
-    icon: Cog,
+    icon: Sliders,
     component: AdvancedSettings,
     enabled: () => true,
   },

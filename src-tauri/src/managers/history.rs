@@ -31,6 +31,18 @@ static MIGRATIONS: &[M] = &[
     ),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
+    M::up("ALTER TABLE transcription_history ADD COLUMN duration_ms INTEGER DEFAULT 0;"),
+    M::up(
+        "CREATE TABLE IF NOT EXISTS user_stats (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            total_words INTEGER DEFAULT 0,
+            total_duration_ms INTEGER DEFAULT 0,
+            total_transcriptions INTEGER DEFAULT 0,
+            first_transcription_date INTEGER,
+            last_transcription_date INTEGER,
+            transcription_dates TEXT DEFAULT '[]'
+        );",
+    ),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -43,6 +55,17 @@ pub struct HistoryEntry {
     pub transcription_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
+    pub duration_ms: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct HomeStats {
+    pub total_words: i64,
+    pub total_duration_minutes: f64,
+    pub wpm: f64,
+    pub time_saved_minutes: f64,
+    pub streak_days: i64,
+    pub faster_than_typing_percentage: f64,
 }
 
 pub struct HistoryManager {
@@ -110,6 +133,27 @@ impl HistoryManager {
             );
         } else {
             debug!("Database already at latest version {}", version_after);
+        }
+
+        // Initialize user stats if needed
+        self.initialize_user_stats(&conn)?;
+
+        Ok(())
+    }
+
+    fn initialize_user_stats(&self, conn: &Connection) -> Result<()> {
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM user_stats",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0);
+
+        if count == 0 {
+            conn.execute(
+                "INSERT INTO user_stats (id, total_words, total_duration_ms, total_transcriptions, transcription_dates) VALUES (1, 0, 0, 0, '[]')",
+                [],
+            )?;
+            debug!("Initialized empty user stats");
         }
 
         Ok(())
@@ -183,6 +227,7 @@ impl HistoryManager {
         transcription_text: String,
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
+        duration_ms: i64,
     ) -> Result<()> {
         let timestamp = Utc::now().timestamp();
         let file_name = format!("codictate-{}.wav", timestamp);
@@ -200,14 +245,18 @@ impl HistoryManager {
             transcription_text,
             post_processed_text,
             post_process_prompt,
+            duration_ms,
         )?;
 
         // Clean up old entries
         self.cleanup_old_entries()?;
 
         // Emit history updated event
+        info!("Emitting history-updated event");
         if let Err(e) = self.app_handle.emit("history-updated", ()) {
             error!("Failed to emit history-updated event: {}", e);
+        } else {
+            debug!("Successfully emitted history-updated event");
         }
 
         Ok(())
@@ -221,14 +270,63 @@ impl HistoryManager {
         transcription_text: String,
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
+        duration_ms: i64,
     ) -> Result<()> {
-        let conn = self.get_connection()?;
-        conn.execute(
-            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![file_name, timestamp, false, title, transcription_text, post_processed_text, post_process_prompt],
+        let mut conn = self.get_connection()?;
+        let tx = conn.transaction()?;
+
+        // 1. Insert into transcription_history
+        tx.execute(
+            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![file_name, timestamp, false, title, transcription_text, post_processed_text, post_process_prompt, duration_ms],
         )?;
 
-        debug!("Saved transcription to database");
+        // 2. Update user_stats
+        // Calculate word count
+        let text_content = post_processed_text.clone().unwrap_or(transcription_text.clone());
+        let word_count = if text_content.trim().is_empty() {
+            0
+        } else {
+            text_content.split_whitespace().count() as i64
+        };
+
+        // Get date string for today
+        let today_str = if let Some(dt) = DateTime::from_timestamp(timestamp, 0) {
+            dt.with_timezone(&Local).format("%Y-%m-%d").to_string()
+        } else {
+            // Fallback (unlikely)
+            "1970-01-01".to_string()
+        };
+
+        // Fetch current stats to update dates array
+        let current_dates_json: String = tx.query_row(
+            "SELECT transcription_dates FROM user_stats WHERE id = 1",
+            [],
+            |row| row.get(0),
+        ).unwrap_or_else(|_| "[]".to_string());
+
+        let mut dates: Vec<String> = serde_json::from_str(&current_dates_json).unwrap_or_default();
+        if !dates.contains(&today_str) {
+            dates.push(today_str);
+        }
+        let new_dates_json = serde_json::to_string(&dates).unwrap_or_else(|_| "[]".to_string());
+
+        // Upsert stats (assuming row 1 exists due to backfill/init)
+        tx.execute(
+            "UPDATE user_stats SET 
+                total_words = total_words + ?1,
+                total_duration_ms = total_duration_ms + ?2,
+                total_transcriptions = total_transcriptions + 1,
+                last_transcription_date = ?3,
+                transcription_dates = ?4,
+                first_transcription_date = COALESCE(first_transcription_date, ?3)
+             WHERE id = 1",
+            params![word_count, duration_ms, timestamp, new_dates_json],
+        )?;
+
+        tx.commit()?;
+
+        debug!("Saved transcription to database and updated stats");
         Ok(())
     }
 
@@ -355,7 +453,7 @@ impl HistoryManager {
     pub async fn get_history_entries(&self) -> Result<Vec<HistoryEntry>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt FROM transcription_history ORDER BY timestamp DESC"
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms FROM transcription_history ORDER BY timestamp DESC"
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -368,6 +466,7 @@ impl HistoryManager {
                 transcription_text: row.get("transcription_text")?,
                 post_processed_text: row.get("post_processed_text")?,
                 post_process_prompt: row.get("post_process_prompt")?,
+                duration_ms: row.get("duration_ms")?,
             })
         })?;
 
@@ -386,7 +485,7 @@ impl HistoryManager {
 
     fn get_latest_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms
              FROM transcription_history
              ORDER BY timestamp DESC
              LIMIT 1",
@@ -403,6 +502,7 @@ impl HistoryManager {
                     transcription_text: row.get("transcription_text")?,
                     post_processed_text: row.get("post_processed_text")?,
                     post_process_prompt: row.get("post_process_prompt")?,
+                    duration_ms: row.get("duration_ms")?,
                 })
             })
             .optional()?;
@@ -444,7 +544,7 @@ impl HistoryManager {
     pub async fn get_entry_by_id(&self, id: i64) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms
              FROM transcription_history WHERE id = ?1",
         )?;
 
@@ -459,6 +559,7 @@ impl HistoryManager {
                     transcription_text: row.get("transcription_text")?,
                     post_processed_text: row.get("post_processed_text")?,
                     post_process_prompt: row.get("post_process_prompt")?,
+                    duration_ms: row.get("duration_ms")?,
                 })
             })
             .optional()?;
@@ -497,6 +598,40 @@ impl HistoryManager {
         Ok(())
     }
 
+    /// Clear all history entries, deleting all audio files and database records
+    pub async fn clear_all_entries(&self) -> Result<()> {
+        let conn = self.get_connection()?;
+
+        // Get all entries to delete their audio files
+        let entries = self.get_history_entries().await?;
+        let total = entries.len();
+        
+        info!("Clearing all {} history entries", total);
+
+        // Delete all audio files
+        for entry in entries {
+            let file_path = self.get_audio_file_path(&entry.file_name);
+            if file_path.exists() {
+                if let Err(e) = fs::remove_file(&file_path) {
+                    error!("Failed to delete audio file {}: {}", entry.file_name, e);
+                    // Continue with other deletions
+                }
+            }
+        }
+
+        // Delete all records from database
+        conn.execute("DELETE FROM transcription_history", [])?;
+
+        info!("Cleared all {} history entries", total);
+
+        // Emit history updated event
+        if let Err(e) = self.app_handle.emit("history-updated", ()) {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+
+        Ok(())
+    }
+
     fn format_timestamp_title(&self, timestamp: i64) -> String {
         if let Some(utc_datetime) = DateTime::from_timestamp(timestamp, 0) {
             // Convert UTC to local timezone
@@ -505,6 +640,92 @@ impl HistoryManager {
         } else {
             format!("Recording {}", timestamp)
         }
+    }
+
+    pub fn get_home_stats(&self) -> Result<HomeStats> {
+        let conn = self.get_connection()?;
+        
+        let (total_words, total_duration_ms, transcription_dates_json): (i64, i64, String) = conn.query_row(
+            "SELECT total_words, total_duration_ms, transcription_dates FROM user_stats WHERE id = 1",
+            [],
+            |row| Ok((
+                row.get(0).unwrap_or(0),
+                row.get(1).unwrap_or(0),
+                row.get(2).unwrap_or_else(|_| "[]".to_string())
+            )),
+        ).unwrap_or((0, 0, "[]".to_string()));
+
+        let total_duration_minutes = total_duration_ms as f64 / 60000.0;
+        
+        // WPM Calculation
+        // Note: Ideally we should track "wpm_total_duration" separately to exclude
+        // legacy 0-duration entries if we want perfection, but for lifetime stats 
+        // across many entries, the impact shrinks. 
+        // For now, we utilize the global counters directly.
+        
+        let wpm = if total_duration_minutes > 0.001 {
+            total_words as f64 / total_duration_minutes
+        } else {
+            0.0
+        };
+
+        // Time Saved
+        let time_to_type_minutes = total_words as f64 / 40.0;
+        let time_saved_minutes = time_to_type_minutes - total_duration_minutes;
+
+        info!("Stats from DB: Words={}, Duration={}ms, WPM={:.2}", total_words, total_duration_ms, wpm);
+
+        // Streak calculation
+        let dates: Vec<String> = serde_json::from_str(&transcription_dates_json).unwrap_or_default();
+        
+        // Parse dates to NaiveDate
+        let mut naive_dates: Vec<chrono::NaiveDate> = dates
+            .iter()
+            .filter_map(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+            .collect();
+            
+        naive_dates.sort();
+        naive_dates.dedup();
+        
+        let today = Local::now().date_naive();
+        let mut streak_days = 0;
+        
+        if !naive_dates.is_empty() {
+            let last_date = *naive_dates.last().unwrap();
+            let diff = today.signed_duration_since(last_date).num_days();
+            
+            if diff <= 1 {
+                streak_days = 1;
+                let mut current_expected = last_date.pred_opt().unwrap();
+                
+                for i in (0..naive_dates.len() - 1).rev() {
+                    if naive_dates[i] == current_expected {
+                        streak_days += 1;
+                        if let Some(pred) = current_expected.pred_opt() {
+                            current_expected = pred;
+                        } else {
+                            break;
+                        }
+                    } else if naive_dates[i] < current_expected {
+                        break;
+                    } 
+                }
+            }
+        }
+
+        let mut faster_than_typing_percentage = 0.0;
+        if wpm > 40.0 {
+            faster_than_typing_percentage = ((wpm - 40.0) / 40.0) * 100.0;
+        }
+
+        Ok(HomeStats {
+            total_words,
+            total_duration_minutes,
+            wpm,
+            time_saved_minutes,
+            streak_days,
+            faster_than_typing_percentage,
+        })
     }
 }
 
@@ -524,7 +745,8 @@ mod tests {
                 title TEXT NOT NULL,
                 transcription_text TEXT NOT NULL,
                 post_processed_text TEXT,
-                post_process_prompt TEXT
+                post_process_prompt TEXT,
+                duration_ms INTEGER DEFAULT 0
             );",
         )
         .expect("create transcription_history table");
@@ -533,8 +755,8 @@ mod tests {
 
     fn insert_entry(conn: &Connection, timestamp: i64, text: &str, post_processed: Option<&str>) {
         conn.execute(
-            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 format!("handy-{}.wav", timestamp),
                 timestamp,
@@ -542,7 +764,9 @@ mod tests {
                 format!("Recording {}", timestamp),
                 text,
                 post_processed,
-                Option::<String>::None
+                post_processed,
+                Option::<String>::None,
+                0 // duration_ms
             ],
         )
         .expect("insert history entry");

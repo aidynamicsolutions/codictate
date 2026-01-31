@@ -1,4 +1,4 @@
-use crate::managers::history::{HistoryEntry, HistoryManager};
+use crate::managers::history::{HistoryEntry, HistoryManager, HomeStats};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
@@ -98,4 +98,27 @@ pub async fn update_recording_retention_period(
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_home_stats(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+) -> Result<HomeStats, String> {
+    history_manager
+        .get_home_stats()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn clear_all_history(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+) -> Result<(), String> {
+    history_manager
+        .clear_all_entries()
+        .await
+        .map_err(|e| e.to_string())
 }

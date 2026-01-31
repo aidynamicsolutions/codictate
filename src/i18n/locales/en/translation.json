@@ -8,12 +8,92 @@
     "cancel": "Cancel"
   },
   "sidebar": {
-    "general": "General",
+    "home": "Home",
+    "settings": "Settings",
     "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
     "debug": "Debug",
     "about": "About"
+  },
+  "home": {
+    "welcome": "Welcome back,",
+    "stats": {
+      "timeSaved": "Time Saved",
+      "wpm": "WPM",
+      "words": "Total Words",
+      "streak": "Daily Streak",
+      "days": "days",
+      "day": "day",
+      "minutes": "min",
+      "fasterThanTyping": "{{val}}% faster than typing",
+      "wpmEncouragement": {
+        "zero": "Start speaking to see your speed!"
+      },
+      "streakEncouragement": {
+        "zero": "Let's start a new streak!",
+        "low": "You're off to a great start!",
+        "medium": "Keep the momentum going!",
+        "high": "You're on fire!"
+      },
+      "wordEquivalent": {
+        "tweets": "That's {{count}} tweets!",
+        "blogPosts": "That's {{count}} blog posts!",
+        "articles": "That's {{count}} articles!",
+        "shortStories": "That's {{count}} short stories!",
+        "novellas": "That's {{count}} novellas!",
+        "novels": "That's {{count}} novels!",
+        "zero": "Your story starts here!",
+        "gettingStarted": "Nice start! Keep going!",
+        "almostTweet": "Almost a tweet!"
+      },
+      "timeEquivalent": {
+        "coffeeBreaks": "That's {{count}} coffee breaks!",
+        "showers": "That's {{count}} showers!",
+        "tvEpisodes": "That's {{count}} TV episodes!",
+        "commutes": "That's {{count}} commutes!",
+        "movies": "That's {{count}} movies!",
+        "workdays": "That's {{count}} workdays!",
+        "zero": "Start dictating to save time!",
+        "everySecond": "Every second counts!",
+        "gettingStarted": "Every minute counts!",
+        "almostThere": "Almost a coffee break!"
+      },
+      "whatsNew": {
+        "title": "What's New",
+        "placeholder": "Check back later for updates!"
+      },
+      "tooltips": {
+        "streak": "Consecutive days with at least one transcription.",
+        "wpm": "Words per minute (average dictation speed). Calculated as total words / total duration.",
+        "words": "Total words dictated across all transcriptions.",
+        "timeSaved": "Estimated time saved vs. typing at 40 WPM. Formula: (Total Words / 40) - Total Duration."
+      }
+    },
+    "getStarted": {
+      "title": "Get started",
+      "startRecording": {
+        "title": "Start dictating",
+        "subtitle": "Hold fn to dictate and let Codictate turn your voice to into text"
+      },
+      "customizeShortcuts": {
+        "title": "Customize your shortcuts",
+        "subtitle": "Change the keyboard shortcuts for Codictate."
+      },
+      "createMode": {
+        "title": "Create a mode",
+        "subtitle": "Build the perfect mode for your workflow."
+      },
+      "addVocabulary": {
+        "title": "Add vocabulary",
+        "subtitle": "Teach Codictate custom words, names, or industry terms."
+      }
+    },
+    "hero": {
+      "title": "Hold <strong>fn</strong> to dictate and let Flow format for you",
+      "subtitle": "Press and hold <strong>fn</strong> to dictate in any app. Flow's <strong>Smart Formatting</strong> and <strong>Backtrack</strong> will handle punctuation, new lines, lists, and adjust when you change your mind mid-sentence.",
+      "button": "Get Started"
+    }
   },
   "onboarding": {
     "subtitle": "To get started, choose a transcription model",
@@ -584,6 +664,10 @@
     "history": {
       "title": "History",
       "openFolder": "Open Recordings Folder",
+      "clearAll": "Clear All History",
+      "clearAllConfirmTitle": "Clear All History?",
+      "clearAllConfirmDescription": "This will permanently delete all {{count}} transcriptions and their audio files. This action cannot be undone.",
+      "clearAllConfirmButton": "Delete All",
       "loading": "Loading history...",
       "empty": "No transcriptions yet. Start recording to build your history!",
       "emptyDescription": "Recordings will appear here after you capture them.",

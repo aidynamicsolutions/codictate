@@ -329,6 +329,8 @@ pub fn run() {
         commands::history::delete_history_entry,
         commands::history::update_history_limit,
         commands::history::update_recording_retention_period,
+        commands::history::get_home_stats,
+        commands::history::clear_all_history,
         helpers::clamshell::is_laptop,
         // MLX commands
         commands::mlx::mlx_list_models,
@@ -439,6 +441,8 @@ pub fn run() {
         commands::history::delete_history_entry,
         commands::history::update_history_limit,
         commands::history::update_recording_retention_period,
+        commands::history::get_home_stats,
+        commands::history::clear_all_history,
         helpers::clamshell::is_laptop,
         // Permission commands
         permissions::open_accessibility_settings,

@@ -16,6 +16,14 @@ import {
   TooltipTrigger,
 } from "@/components/shared/ui/tooltip";
 import { Skeleton } from "@/components/shared/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/shared/ui/dialog";
 import { Copy, Star, Check, Trash2, FolderOpen, Loader2 } from "lucide-react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -52,6 +60,8 @@ export const HistorySettings: React.FC = () => {
   const { t, i18n } = useTranslation();
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   const loadHistoryEntries = useCallback(async () => {
     try {
@@ -129,6 +139,20 @@ export const HistorySettings: React.FC = () => {
     }
   };
 
+  const clearAllHistory = async () => {
+    setIsClearing(true);
+    try {
+      logInfo("Clearing all history entries...", "fe-history");
+      await commands.clearAllHistory();
+      logInfo("Successfully cleared all history", "fe-history");
+      setShowClearDialog(false);
+    } catch (error) {
+      logError(`Failed to clear all history: ${error}`, "fe-history");
+    } finally {
+      setIsClearing(false);
+    }
+  };
+
   const openRecordingsFolder = async () => {
     try {
       await commands.openRecordingsFolder();
@@ -165,10 +189,23 @@ export const HistorySettings: React.FC = () => {
           <CardTitle className="text-sm font-semibold uppercase tracking-wide text-primary font-heading">
             {t("settings.history.title")}
           </CardTitle>
-          <OpenRecordingsButton
-            onClick={openRecordingsFolder}
-            label={t("settings.history.openFolder")}
-          />
+          <div className="flex items-center gap-2">
+            {historyEntries.length > 0 && (
+              <Button
+                onClick={() => setShowClearDialog(true)}
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2 h-8 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{t("settings.history.clearAll")}</span>
+              </Button>
+            )}
+            <OpenRecordingsButton
+              onClick={openRecordingsFolder}
+              label={t("settings.history.openFolder")}
+            />
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="min-h-[300px]">
@@ -232,6 +269,41 @@ export const HistorySettings: React.FC = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Clear All Confirmation Dialog */}
+      <Dialog open={showClearDialog} onOpenChange={setShowClearDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("settings.history.clearAllConfirmTitle")}</DialogTitle>
+            <DialogDescription>
+              {t("settings.history.clearAllConfirmDescription", { count: historyEntries.length })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowClearDialog(false)}
+              disabled={isClearing}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={clearAllHistory}
+              disabled={isClearing}
+            >
+              {isClearing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {t("common.loading")}
+                </>
+              ) : (
+                t("settings.history.clearAllConfirmButton")
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

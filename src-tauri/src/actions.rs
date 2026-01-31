@@ -470,12 +470,15 @@ impl ShortcutAction for TranscribeAction {
                                 let hm_clone = Arc::clone(&hm);
                                 let transcription_for_history = transcription.clone();
                                 tauri::async_runtime::spawn(async move {
+                                    // Calculate duration in milliseconds (sample rate is 16kHz)
+                                    let duration_ms = (samples_clone.len() as f64 / 16000.0 * 1000.0) as i64;
                                     if let Err(e) = hm_clone
                                         .save_transcription(
                                             samples_clone,
                                             transcription_for_history,
                                             post_processed_text,
                                             post_process_prompt,
+                                            duration_ms,
                                         )
                                         .await
                                     {
