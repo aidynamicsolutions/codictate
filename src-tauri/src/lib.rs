@@ -219,10 +219,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // and is ready to receive show-overlay/hide-overlay events
     let app_for_overlay_ready = app_handle.clone();
     app_handle.listen("overlay-ready", move |_event| {
-        overlay::mark_overlay_ready();
+        // Pass the app handle so mark_overlay_ready can re-emit state if needed
+        overlay::mark_overlay_ready(&app_for_overlay_ready);
         tracing::debug!("Received overlay-ready event from frontend");
-        // Drop the app handle reference since we only need this once
-        let _ = &app_for_overlay_ready;
     });
 }
 

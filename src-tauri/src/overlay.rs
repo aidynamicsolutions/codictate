@@ -152,9 +152,48 @@ static OVERLAY_READY: AtomicBool = AtomicBool::new(false);
 
 /// Mark the overlay as ready to receive events.
 /// Called when the frontend emits the "overlay-ready" event.
-pub fn mark_overlay_ready() {
+/// If the current state is not Hidden, we re-emit the "show-overlay" event
+/// to ensure the reloaded/remounted frontend receives the correct state.
+pub fn mark_overlay_ready(app_handle: &AppHandle) {
+    use tauri::Manager;
+    
     tracing::info!("mark_overlay_ready: Overlay webview signaled ready");
     OVERLAY_READY.store(true, Ordering::SeqCst);
+    
+    // Check current state
+    if let Ok(state) = OVERLAY_STATE.lock() {
+        let current_state = *state;
+        tracing::debug!("mark_overlay_ready: current backend state is {:?}", current_state);
+        
+        // If we are supposed to be showing something, re-emit the event
+        match current_state {
+            OverlayState::Recording => {
+                if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
+                    tracing::info!("mark_overlay_ready: State is Recording, re-emitting show-overlay");
+                    let _ = overlay.emit("show-overlay", "recording");
+                    
+                    // Also ensure interaction is enabled
+                    let _ = overlay.set_ignore_cursor_events(false);
+                }
+            },
+            OverlayState::Transcribing => {
+                if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
+                    tracing::info!("mark_overlay_ready: State is Transcribing, re-emitting show-overlay");
+                    let _ = overlay.emit("show-overlay", "transcribing");
+                    let _ = overlay.set_ignore_cursor_events(false);
+                }
+            },
+            OverlayState::Processing => {
+                if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
+                    tracing::info!("mark_overlay_ready: State is Processing, re-emitting show-overlay");
+                    let _ = overlay.emit("show-overlay", "processing");
+                }
+            },
+            OverlayState::Hidden => {
+                // Do nothing, correct state matches default frontend state
+            }
+        }
+    }
 }
 
 pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
