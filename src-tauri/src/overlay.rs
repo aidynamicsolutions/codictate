@@ -291,25 +291,33 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
         let is_visible_before = overlay_window.is_visible().unwrap_or(false);
         debug!("show_recording_overlay: found window, is_visible_before={}", is_visible_before);
         
+        // Enable interaction immediately
+        if let Err(e) = overlay_window.set_ignore_cursor_events(false) {
+            warn!("show_recording_overlay: failed to set_ignore_cursor_events(false): {}", e);
+        }
+
         // Update position before showing to prevent flicker from position changes
         if let Some((x, y)) = calculate_overlay_position(app_handle) {
             let _ = overlay_window
                 .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
         }
 
-        // IMPORTANT: Emit the show-overlay event BEFORE showing the native window.
-        // This gives React time to set isVisible=true (which sets opacity: 1) before
-        // the native window becomes visible. Otherwise, the window appears with
-        // opacity: 0 for ~50ms causing a flicker.
+        // IMPORTANT: Emit the show-overlay event.
+        // If window is already visible, this triggers the React fade-in.
         let emit_result = overlay_window.emit("show-overlay", "recording");
         debug!("show_recording_overlay: emit('show-overlay', 'recording') result={:?}", emit_result);
         
-        // Small delay to allow React to process the event and update opacity
-        // before the native window becomes visible. Increased to 50ms to be safe.
-        std::thread::sleep(Duration::from_millis(50));
-        
-        let show_result = overlay_window.show();
-        debug!("show_recording_overlay: window.show() result={:?}", show_result);
+        // If the window is NOT visible (first run or force hidden), show it safely
+        if !is_visible_before {
+            // Small delay to allow React to process the event and update opacity
+            // before the native window becomes visible.
+            std::thread::sleep(Duration::from_millis(50));
+            
+            let show_result = overlay_window.show();
+            debug!("show_recording_overlay: window.show() result={:?}", show_result);
+        } else {
+             debug!("show_recording_overlay: window already visible, skipping native show() to avoid flicker");
+        }
 
         // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
         #[cfg(target_os = "windows")]
@@ -347,8 +355,15 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
         let is_visible_before = overlay_window.is_visible().unwrap_or(false);
         debug!("show_transcribing_overlay: found window, is_visible_before={}", is_visible_before);
         
-        let show_result = overlay_window.show();
-        debug!("show_transcribing_overlay: window.show() result={:?}", show_result);
+        // Ensure interaction is enabled (just in case)
+        let _ = overlay_window.set_ignore_cursor_events(false);
+
+        if !is_visible_before {
+            let show_result = overlay_window.show();
+            debug!("show_transcribing_overlay: window.show() result={:?}", show_result);
+        } else {
+            debug!("show_transcribing_overlay: window already visible, skipping show()");
+        }
 
         // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
         #[cfg(target_os = "windows")]
@@ -419,10 +434,15 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
         let emit_result = overlay_window.emit("hide-overlay", ());
         debug!("hide_recording_overlay: emit('hide-overlay') result={:?}", emit_result);
         
-        // Hide the window immediately - CSS transition already handled the visual fade
-        // No need for a delayed thread which can cause race conditions
-        let hide_result = overlay_window.hide();
-        debug!("hide_recording_overlay: hide() result={:?}", hide_result);
+        // Instead of hiding the window (which causes flicker on next show),
+        // we set it to ignore cursor events and let React render opacity: 0
+        if let Err(e) = overlay_window.set_ignore_cursor_events(true) {
+            warn!("hide_recording_overlay: failed to set_ignore_cursor_events(true): {}", e);
+            // Fallback to hide if ignore events fails?
+            // let _ = overlay_window.hide();
+        } else {
+            debug!("hide_recording_overlay: set_ignore_cursor_events(true) success");
+        }
     } else {
         warn!("hide_recording_overlay: overlay window NOT FOUND!");
     }
@@ -453,8 +473,12 @@ pub fn hide_overlay_if_recording(app_handle: &AppHandle) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         let emit_result = overlay_window.emit("hide-overlay", ());
         debug!("hide_overlay_if_recording: emit('hide-overlay') result={:?}", emit_result);
-        let hide_result = overlay_window.hide();
-        debug!("hide_overlay_if_recording: hide() result={:?}", hide_result);
+        
+        // Use ignore cursor events instead of hide
+        if let Err(e) = overlay_window.set_ignore_cursor_events(true) {
+             warn!("hide_overlay_if_recording: failed to set_ignore_cursor_events: {}", e);
+             // let _ = overlay_window.hide();
+        }
     } else {
         warn!("hide_overlay_if_recording: overlay window NOT FOUND!");
     }
@@ -487,8 +511,11 @@ pub fn hide_overlay_after_transcription(app_handle: &AppHandle) {
         let emit_result = overlay_window.emit("hide-overlay", ());
         debug!("hide_overlay_after_transcription: emit('hide-overlay') result={:?}", emit_result);
         
-        let hide_result = overlay_window.hide();
-        debug!("hide_overlay_after_transcription: hide() result={:?}", hide_result);
+        // Use ignore cursor events instead of hide
+        if let Err(e) = overlay_window.set_ignore_cursor_events(true) {
+             warn!("hide_overlay_after_transcription: failed to set_ignore_cursor_events: {}", e);
+             // let _ = overlay_window.hide();
+        }
     } else {
         warn!("hide_overlay_after_transcription: overlay window NOT FOUND!");
     }

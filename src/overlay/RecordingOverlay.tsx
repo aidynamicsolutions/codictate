@@ -104,8 +104,16 @@ const RecordingOverlay: React.FC = () => {
         logInfo("RecordingOverlay: Received hide-overlay event", "fe-overlay");
         setIsVisible(false);
         setElapsedSecs(0);
-        // Reset state to "recording" so next show doesn't briefly display stale state
-        setState("recording");
+        
+        // Wait for fade-out animation (300ms) to complete before resetting state
+        // This prevents the overlay from switching back to "recording" (audio bars)
+        // while it is still visible fading out.
+        setTimeout(() => {
+          if (!ignore) {
+            setState("recording");
+            logDebug("RecordingOverlay: Reset state to recording after fade-out", "fe-overlay");
+          }
+        }, 350);
       });
       
       if (ignore) {
