@@ -1,6 +1,7 @@
 use tracing::{debug, info};
 use rphonetic::{DoubleMetaphone, Encoder};
 use strsim::{damerau_levenshtein, jaro_winkler};
+use unicode_segmentation::UnicodeSegmentation;
 
 /// Threshold for using Jaro-Winkler vs Damerau-Levenshtein
 /// Jaro-Winkler is better for short strings due to prefix emphasis
@@ -423,6 +424,19 @@ pub fn filter_transcription_output(text: &str) -> String {
     filtered.trim().to_string()
 }
 
+/// Counts words in text using Unicode segmentation rules.
+/// This handles CJK languages correctly where words are not separated by spaces,
+/// as well as standard space-separated languages.
+///
+/// # Arguments
+/// * `text` - The text to count words in
+///
+/// # Returns
+/// The number of words in the text
+pub fn count_words(text: &str) -> usize {
+    text.unicode_words().count()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -543,7 +557,6 @@ mod tests {
         assert_eq!(result, "I love New York City");
     }
 
-    // Test that multi-word matching doesn't over-match
     #[test]
     fn test_no_false_multi_word_match() {
         // "at Anthropic" should NOT match as a phrase
@@ -552,5 +565,40 @@ mod tests {
         let result = apply_custom_words(text, &custom_words, 0.5);
         // Should match "Anthropic" as single word, not consume "at Anthropic"
         assert_eq!(result, "I work at Anthropic");
+    }
+
+    #[test]
+    fn test_count_words_english() {
+        assert_eq!(count_words("Hello world"), 2);
+        assert_eq!(count_words("  Hello   world  "), 2);
+        assert_eq!(count_words("One, two, three."), 3);
+    }
+
+    #[test]
+    fn test_count_words_cjk() {
+        // Chinese: "你好嗎?" (How are you?) -> "你", "好", "嗎" (3 words)
+        // Note: unicode segmentation standard might treat this differently depending on exact rules,
+        // but typically CJK characters are often treated as individual words or segmented by dictionary if available.
+        // The unicode-segmentation crate follows UAX#29.
+        // For "你好嗎?":
+        // "你" (You)
+        // "好" (Good)
+        // "嗎" (Question particle)
+        // "?" (Punctuation - usually ignored or separate depending on rules, but here count is 3 words)
+        // Let's rely on the library's behavior which is better than split_whitespace (1 word).
+        
+        // Chinese: "你好嗎?" (How are you?) -> "你", "好", "嗎" (3 words)
+        let chinese = "你好嗎?";
+        let count = count_words(chinese);
+        assert_eq!(count, 3, "Should identify 3 words in Chinese '你好嗎?', got {}", count);
+        
+        let mixed = "Hello 你好";
+        assert_eq!(count_words(mixed), 3); // "Hello", "你", "好" (likely)
+    }
+
+    #[test]
+    fn test_count_words_mixed_punctuation() {
+        assert_eq!(count_words("Hello, world!"), 2);
+        assert_eq!(count_words("It's a beautiful day."), 4); // "It's", "a", "beautiful", "day"
     }
 }

@@ -844,6 +844,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "transcribe-rs",
+ "unicode-segmentation",
  "uuid",
  "vad-rs",
  "windows 0.61.3",

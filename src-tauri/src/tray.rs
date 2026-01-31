@@ -294,6 +294,7 @@ mod tests {
             transcription_text: transcription.to_string(),
             post_processed_text: post_processed.map(|text| text.to_string()),
             post_process_prompt: None,
+            duration_ms: 0,
         }
     }
 

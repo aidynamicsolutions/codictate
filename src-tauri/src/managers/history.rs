@@ -287,7 +287,7 @@ impl HistoryManager {
         let word_count = if text_content.trim().is_empty() {
             0
         } else {
-            text_content.split_whitespace().count() as i64
+            crate::audio_toolkit::text::count_words(&text_content) as i64
         };
 
         // Get date string for today
@@ -763,7 +763,6 @@ mod tests {
                 false,
                 format!("Recording {}", timestamp),
                 text,
-                post_processed,
                 post_processed,
                 Option::<String>::None,
                 0 // duration_ms
