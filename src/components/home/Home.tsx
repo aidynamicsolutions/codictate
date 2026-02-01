@@ -6,6 +6,8 @@ import { listen } from "@tauri-apps/api/event";
 import { GettingStarted } from "./GettingStarted";
 import { WhatsNew } from "./WhatsNew";
 import { StatsOverview } from "./StatsOverview";
+import { useHistory } from "@/hooks/useHistory";
+import { HistoryList } from "@/components/shared/HistoryList";
 
 interface Stats {
   total_words: number;
@@ -24,6 +26,16 @@ export default function Home({
   const { t } = useTranslation();
   const [username, setUsername] = useState("User");
   const [stats, setStats] = useState<Stats | null>(null);
+
+  const {
+    historyEntries,
+    loading: historyLoading,
+    groupedEntries,
+    sortedDates,
+    toggleSaved,
+    deleteAudioEntry,
+    getAudioUrl,
+  } = useHistory();
 
   useEffect(() => {
     logInfo("[Home] Component mounted, loading initial data...", "fe-home");
@@ -91,17 +103,47 @@ export default function Home({
   };
 
   return (
-    <div className="flex flex-col gap-8 p-8 max-w-5xl mx-auto w-full pb-20 animate-in fade-in slide-in-from-bottom-2 duration-500">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-4xl font-bold tracking-tight">
-          {t("home.welcome")} {username}
-        </h1>
+    <div className="flex flex-col h-full overflow-hidden w-full animate-in fade-in slide-in-from-bottom-2 duration-500">
+      {/* Static Header & Stats Section */}
+      <div className="flex-none p-8 pb-8 flex flex-col gap-6 max-w-5xl mx-auto w-full">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-4xl font-bold tracking-tight">
+            {t("home.welcome")} {username}
+          </h1>
+        </div>
+
+        <StatsOverview stats={stats} />
       </div>
 
-      <StatsOverview stats={stats} />
+      {/* Scrollable Content (WhatsNew, History, GettingStarted) */}
+      <div className="flex-1 overflow-y-auto pb-20 w-full scrollbar-thin scrollbar-thumb-muted/50 scrollbar-track-transparent">
+        <div className="max-w-5xl mx-auto w-full flex flex-col gap-8 px-8">
+          <WhatsNew />
+          
+          <GettingStarted onNavigate={onNavigate} />
 
-      <WhatsNew />
-      <GettingStarted onNavigate={onNavigate} />
+          <div className="flex flex-col gap-4">
+            <h2 className="text-xl font-semibold tracking-tight sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-4 -mt-4 border-b border-border/40">
+              {t("settings.history.title")}
+            </h2>
+            <div className="bg-card/50 rounded-xl border border-border/50 backdrop-blur-sm min-h-[300px] flex flex-col">
+                 <HistoryList
+                  loading={historyLoading}
+                  historyEntries={historyEntries}
+                  sortedDates={sortedDates}
+                  groupedEntries={groupedEntries}
+                  onToggleSaved={toggleSaved}
+                  onDelete={deleteAudioEntry}
+                  getAudioUrl={getAudioUrl}
+                  emptyMessage={t("settings.history.empty")}
+                  emptyDescription={t("settings.history.emptyDescription")}
+                  disableScrollArea={true}
+                  stickyTopOffset={57}
+                />
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
