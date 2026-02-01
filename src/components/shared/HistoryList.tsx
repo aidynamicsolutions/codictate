@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from "react";
-import { ScrollArea } from "@/components/shared/ui/scroll-area";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -13,6 +12,8 @@ import { AudioPlayer } from "@/components/ui/AudioPlayer";
 import { useTranslation } from "react-i18next";
 import { type HistoryEntry } from "@/bindings";
 import { logError } from "@/utils/logging";
+import { GroupedVirtuoso, GroupedVirtuosoHandle } from "react-virtuoso";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 interface HistoryListProps {
   loading: boolean;
@@ -21,13 +22,15 @@ interface HistoryListProps {
   groupedEntries: { [key: string]: HistoryEntry[] };
   onToggleSaved: (id: number) => Promise<void>;
   onDelete: (id: number) => Promise<void>;
-  getAudioUrl: (fileName: string) => Promise<string | null>;
   className?: string; // Allow external styling (e.g., for height/scrolling)
   emptyMessage?: string;
   emptyDescription?: string;
   disableScrollArea?: boolean;
   searchQuery?: string;
   stickyTopOffset?: number | string;
+  loadMore?: () => void;
+  hasMore?: boolean;
+  scrollContainer?: HTMLElement | null;
 }
 
 export const HistoryList: React.FC<HistoryListProps> = React.memo(({
@@ -37,15 +40,19 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(({
   groupedEntries,
   onToggleSaved,
   onDelete,
-  getAudioUrl,
   className,
   emptyMessage,
   emptyDescription,
   disableScrollArea = false,
   searchQuery = "",
   stickyTopOffset = 0,
+  loadMore,
+  hasMore = false,
+  scrollContainer,
 }) => {
   const { t } = useTranslation();
+  const [currentGroupIndex, setCurrentGroupIndex] = useState(0);
+  const virtuosoRef = useRef<GroupedVirtuosoHandle>(null);
 
   const copyToClipboard = async (text: string) => {
     try {
@@ -55,7 +62,37 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(({
     }
   };
 
-  if (loading) {
+  // Calculate group counts for Virtuoso
+  const groupCounts = useMemo(() => {
+    return sortedDates.map(date => groupedEntries[date]?.length || 0);
+  }, [sortedDates, groupedEntries]);
+
+  // Flatten entries for item access
+  const flattenedEntries = useMemo(() => {
+     return sortedDates.flatMap(date => groupedEntries[date] || []);
+  }, [sortedDates, groupedEntries]);
+
+  // Calculate cumulative item counts to determine which group an item belongs to
+  const cumulativeCounts = useMemo(() => {
+    let sum = 0;
+    return groupCounts.map(count => {
+      const result = sum;
+      sum += count;
+      return result;
+    });
+  }, [groupCounts]);
+
+  // Determine which group a given item index belongs to
+  const getGroupForItem = useCallback((itemIndex: number) => {
+    for (let i = cumulativeCounts.length - 1; i >= 0; i--) {
+      if (itemIndex >= cumulativeCounts[i]) {
+        return i;
+      }
+    }
+    return 0;
+  }, [cumulativeCounts]);
+
+  if (loading && historyEntries.length === 0) {
     return (
       <div className="p-6 space-y-6">
         {[1, 2].map((i) => (
@@ -71,7 +108,7 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(({
     );
   }
 
-  if (historyEntries.length === 0) {
+  if (historyEntries.length === 0 && !loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center py-20 text-center px-4">
         <div className="bg-muted/50 p-4 rounded-full mb-4">
@@ -87,50 +124,95 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(({
     );
   }
 
-  const Content = (
-    <div className="pb-8 px-6">
-      <TooltipProvider delayDuration={300}>
-        {sortedDates.map((date, groupIndex) => (
-          <div
-            key={date}
-            className="mb-8 last:mb-0 animate-in slide-in-from-bottom-2 fade-in duration-500 fill-mode-both"
-            style={{ animationDelay: `${groupIndex * 100}ms` }}
-          >
-            <div
-              className="sticky z-10 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 py-3 mb-2 border-b border-border/60 shadow-sm -mx-6 px-6"
-              style={{ top: stickyTopOffset }}
-            >
-              <h3 className="text-xs font-bold text-primary/80 uppercase tracking-widest px-1">
-                {date}
-              </h3>
-            </div>
-            <div className="space-y-1">
-              {groupedEntries[date].map((entry) => (
-                <TimelineItem
-                  key={entry.id}
-                  entry={entry}
-                  onToggleSaved={() => onToggleSaved(entry.id)}
-                  onCopyText={() => copyToClipboard(entry.transcription_text)}
-                  getAudioUrl={getAudioUrl}
-                  deleteAudio={onDelete}
-                  searchQuery={searchQuery}
-                />
-              ))}
-            </div>
-          </div>
-        ))}
-      </TooltipProvider>
-    </div>
-  );
-
-  if (disableScrollArea) {
-    return <div className={`flex-1 w-full ${className}`}>{Content}</div>;
+  const renderItem = (index: number) => {
+    const entry = flattenedEntries[index];
+    if (!entry) return null;
+    return (
+        <div className="px-6 pb-1">
+            <TimelineItem
+                entry={entry}
+                onToggleSaved={() => onToggleSaved(entry.id)}
+                onCopyText={() => copyToClipboard(entry.transcription_text)}
+                deleteAudio={onDelete}
+                searchQuery={searchQuery}
+            />
+        </div>
+    );
+  }
+  
+  const renderGroup = (index: number) => {
+      const date = sortedDates[index];
+      // Hide the first group header when using customScrollParent since
+      // the external sticky header already shows it
+      if (scrollContainer && index === 0) {
+        return <div className="h-0" />;
+      }
+      return (
+        <div
+          className="bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 py-3 mb-2 border-b border-border/60 shadow-sm px-6"
+        >
+          <h3 className="text-xs font-bold text-primary/80 uppercase tracking-widest px-1">
+            {date}
+          </h3>
+        </div>
+      );
+  }
+  
+  const Footer = () => {
+    // Try to maintain consistent height to avoid jumps
+    // py-4 (1rem top + 1rem bottom = 32px) + icon (24px) = 56px => h-14
+    return (
+        <div className="h-14 flex justify-center w-full items-center">
+            {loading && hasMore && (
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            )}
+        </div>
+    )
   }
 
+  const topValue = typeof stickyTopOffset === 'number' ? `${stickyTopOffset}px` : stickyTopOffset;
+  const currentDate = sortedDates[currentGroupIndex] || sortedDates[0];
+
   return (
-    <ScrollArea className={`flex-1 w-full min-h-0 ${className}`}>
-      {Content}
-    </ScrollArea>
+    <TooltipProvider delayDuration={300}>
+        {/* External sticky header - only shown when using customScrollParent */}
+        {scrollContainer && sortedDates.length > 0 && (
+          <div
+            className="bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 py-3 border-b border-border/60 shadow-sm px-6"
+            style={{ position: 'sticky', top: topValue, zIndex: 15 }}
+          >
+            <h3 className="text-xs font-bold text-primary/80 uppercase tracking-widest px-1">
+              {currentDate}
+            </h3>
+          </div>
+        )}
+        <GroupedVirtuoso
+            ref={virtuosoRef}
+            style={scrollContainer ? { height: 'auto' } : { height: '100%', flex: 1 }}
+            customScrollParent={scrollContainer || undefined}
+            groupCounts={groupCounts}
+            groupContent={renderGroup}
+            itemContent={renderItem}
+            components={{
+              Footer: Footer,
+            }}
+            rangeChanged={(range) => {
+              // Update the current group based on the first visible item
+              if (range.startIndex !== undefined) {
+                const newGroupIndex = getGroupForItem(range.startIndex);
+                if (newGroupIndex !== currentGroupIndex) {
+                  setCurrentGroupIndex(newGroupIndex);
+                }
+              }
+            }}
+            endReached={() => {
+                if (hasMore && !loading && loadMore) {
+                    loadMore();
+                }
+            }}
+            overscan={600}
+        />
+    </TooltipProvider>
   );
 });
 
@@ -138,7 +220,6 @@ interface TimelineItemProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
   onCopyText: () => void;
-  getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
   searchQuery?: string;
 }
@@ -147,38 +228,19 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(({
   entry,
   onToggleSaved,
   onCopyText,
-  getAudioUrl,
   deleteAudio,
   searchQuery = "",
 }) => {
   const { t, i18n } = useTranslation();
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [showCopied, setShowCopied] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    let urlToRevoke: string | null = null;
-
-    const loadAudio = async () => {
-      const url = await getAudioUrl(entry.file_name);
-      if (!cancelled) {
-        urlToRevoke = url;
-        setAudioUrl(url);
-      } else if (url?.startsWith("blob:")) {
-        URL.revokeObjectURL(url);
-      }
-    };
-
-    loadAudio();
-
-    return () => {
-      cancelled = true;
-      if (urlToRevoke?.startsWith("blob:")) {
-        URL.revokeObjectURL(urlToRevoke);
-      }
-    };
-  }, [entry.file_name, getAudioUrl]);
+  
+  // Convert native path to asset URL synchronously
+  // This avoids the async waterfall effect during fast scroll
+  const audioUrl = useMemo(() => {
+      if (!entry.file_path) return null;
+      return convertFileSrc(entry.file_path);
+  }, [entry.file_path]);
 
   const handleCopyText = () => {
     onCopyText();

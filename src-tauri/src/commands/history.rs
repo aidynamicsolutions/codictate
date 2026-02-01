@@ -7,9 +7,12 @@ use tauri::{AppHandle, State};
 pub async fn get_history_entries(
     _app: AppHandle,
     history_manager: State<'_, Arc<HistoryManager>>,
+    limit: usize,
+    offset: usize,
+    search_query: Option<String>,
 ) -> Result<Vec<HistoryEntry>, String> {
     history_manager
-        .get_history_entries()
+        .get_history_entries(limit, offset, search_query)
         .await
         .map_err(|e| e.to_string())
 }

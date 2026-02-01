@@ -56,6 +56,7 @@ pub struct HistoryEntry {
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
     pub duration_ms: i64,
+    pub file_path: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -529,13 +530,45 @@ impl HistoryManager {
         Ok(count)
     }
 
-    pub async fn get_history_entries(&self) -> Result<Vec<HistoryEntry>> {
+    pub async fn get_history_entries(
+        &self,
+        limit: usize,
+        offset: usize,
+        search_query: Option<String>,
+    ) -> Result<Vec<HistoryEntry>> {
         let conn = self.get_connection()?;
-        let mut stmt = conn.prepare(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms FROM transcription_history ORDER BY timestamp DESC"
-        )?;
+        let mut query = String::from(
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms 
+             FROM transcription_history"
+        );
 
-        let rows = stmt.query_map([], |row| {
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        let mut param_index = 1;
+
+        if let Some(query_str) = search_query {
+            if !query_str.trim().is_empty() {
+                query.push_str(" WHERE transcription_text LIKE ?");
+                query.push_str(&param_index.to_string());
+                params.push(Box::new(format!("%{}%", query_str)));
+                param_index += 1;
+            }
+        }
+
+        query.push_str(" ORDER BY timestamp DESC LIMIT ?");
+        query.push_str(&param_index.to_string());
+        params.push(Box::new(limit as i64));
+        param_index += 1;
+
+        query.push_str(" OFFSET ?");
+        query.push_str(&param_index.to_string());
+        params.push(Box::new(offset as i64));
+
+        let mut stmt = conn.prepare(&query)?;
+
+        // rusqlite's params_from_iter expects a reference to a slice of dyn ToSql
+        let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+
+        let rows = stmt.query_map(rusqlite::params_from_iter(params_refs), |row| {
             Ok(HistoryEntry {
                 id: row.get("id")?,
                 file_name: row.get("file_name")?,
@@ -546,6 +579,7 @@ impl HistoryManager {
                 post_processed_text: row.get("post_processed_text")?,
                 post_process_prompt: row.get("post_process_prompt")?,
                 duration_ms: row.get("duration_ms")?,
+                file_path: self.recordings_dir.join(row.get::<_, String>("file_name")?).to_string_lossy().to_string(),
             })
         })?;
 
@@ -559,10 +593,10 @@ impl HistoryManager {
 
     pub fn get_latest_entry(&self) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
-        Self::get_latest_entry_with_conn(&conn)
+        Self::get_latest_entry_with_conn(&conn, &self.recordings_dir)
     }
 
-    fn get_latest_entry_with_conn(conn: &Connection) -> Result<Option<HistoryEntry>> {
+    fn get_latest_entry_with_conn(conn: &Connection, recordings_dir: &PathBuf) -> Result<Option<HistoryEntry>> {
         let mut stmt = conn.prepare(
             "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms
              FROM transcription_history
@@ -582,6 +616,7 @@ impl HistoryManager {
                     post_processed_text: row.get("post_processed_text")?,
                     post_process_prompt: row.get("post_process_prompt")?,
                     duration_ms: row.get("duration_ms")?,
+                    file_path: recordings_dir.join(row.get::<_, String>("file_name")?).to_string_lossy().to_string(),
                 })
             })
             .optional()?;
@@ -639,6 +674,7 @@ impl HistoryManager {
                     post_processed_text: row.get("post_processed_text")?,
                     post_process_prompt: row.get("post_process_prompt")?,
                     duration_ms: row.get("duration_ms")?,
+                    file_path: self.recordings_dir.join(row.get::<_, String>("file_name")?).to_string_lossy().to_string(),
                 })
             })
             .optional()?;
@@ -682,7 +718,9 @@ impl HistoryManager {
         let conn = self.get_connection()?;
 
         // Get all entries to delete their audio files
-        let entries = self.get_history_entries().await?;
+        // Use a large limit to get all entries. Since we are clearing everything, pagination isn't strictly needed here 
+        // but the method signature changed.
+        let entries = self.get_history_entries(usize::MAX, 0, None).await?;
         let total = entries.len();
         
         info!("Clearing all {} history entries", total);

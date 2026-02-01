@@ -18,6 +18,8 @@ export interface UseHistoryReturn {
   groupedEntries: { [key: string]: HistoryEntry[] };
   sortedDates: string[];
   loadHistoryEntries: () => Promise<void>;
+  loadMore: () => Promise<void>;
+  hasMore: boolean;
   toggleSaved: (id: number) => Promise<void>;
   deleteAudioEntry: (id: number) => Promise<void>;
   clearAllHistory: () => Promise<void>;
@@ -32,31 +34,80 @@ export interface UseHistoryReturn {
 export const useHistory = (): UseHistoryReturn => {
   const { i18n } = useTranslation();
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start false, logic handles it
+  const [hasMore, setHasMore] = useState(true);
+  const [offset, setOffset] = useState(0);
   const [isClearing, setIsClearing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
-  const loadHistoryEntries = useCallback(async () => {
+  const LIMIT = 50;
+
+  // Reset offset and entries when search query changes
+  useEffect(() => {
+    setOffset(0);
+    setHasMore(true);
+    // We intentionally don't clear entries here to avoid flicker, the next load will replace them
+    // But for correct UX we should probably trigger a load immediately or rely on the effect below
+  }, [debouncedSearchQuery]);
+
+  const loadHistoryEntries = useCallback(async (isLoadMore = false) => {
+    // If we receive a request to load more but we know there's no more, stop.
+    // However, we must allow the first load (offset 0) even if hasMore might seem false (it resets on search)
+    if (isLoadMore && !hasMore) return;
+
+    setLoading(true);
     try {
-      const result = await commands.getHistoryEntries();
+      // Use current offset if loading more, otherwise 0
+      const currentOffset = isLoadMore ? offset : 0;
+      
+      const result = await commands.getHistoryEntries(LIMIT, currentOffset, debouncedSearchQuery || null);
+      
       if (result.status === "ok") {
-        setHistoryEntries(result.data);
+        const newEntries = result.data;
+        
+        if (isLoadMore) {
+          setHistoryEntries(prev => [...prev, ...newEntries]);
+        } else {
+          setHistoryEntries(newEntries);
+        }
+
+        // Prepare offset for next load
+        if (newEntries.length < LIMIT) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+          setOffset(currentOffset + LIMIT);
+        }
       }
     } catch (error) {
       logError(`Failed to load history entries: ${error}`, "fe-history");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [offset, hasMore, debouncedSearchQuery]);
+
+  // Initial load and search reaction
+  // We use a ref to track if it's the very first mount vs search update
+  useEffect(() => {
+    loadHistoryEntries(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchQuery]); 
+
+  // Reload on updates (e.g. deletion)
+  // Logic: if an item is deleted, re-fetching whole list might be expensive.
+  // Ideally, we just remove it locally.
+  // For now, we'll keep the simple "reload from start" logic but it might be jarring for deep scroll.
+  // TODO: Optimistically update local state instead of full reload for deletions.
 
   useEffect(() => {
-    loadHistoryEntries();
-
     const setupListener = async () => {
       const unlisten = await listen("history-updated", () => {
         logInfo("History updated, reloading entries...", "fe-history");
-        loadHistoryEntries();
+        // For simplicity, reload from scratch to ensure consistency
+        setOffset(0);
+        setHasMore(true);
+        loadHistoryEntries(false);
       });
       return unlisten;
     };
@@ -73,6 +124,8 @@ export const useHistory = (): UseHistoryReturn => {
   const toggleSaved = async (id: number) => {
     try {
       await commands.toggleHistoryEntrySaved(id);
+      // Optimistic update
+      setHistoryEntries(prev => prev.map(e => e.id === id ? { ...e, saved: !e.saved } : e));
     } catch (error) {
       logError(`Failed to toggle saved status: ${error}`, "fe-history");
     }
@@ -99,6 +152,8 @@ export const useHistory = (): UseHistoryReturn => {
   const deleteAudioEntry = async (id: number) => {
     try {
       await commands.deleteHistoryEntry(id);
+      // Optimistic update
+      setHistoryEntries(prev => prev.filter(e => e.id !== id));
     } catch (error) {
       logError(`Failed to delete audio entry: ${error}`, "fe-history");
       throw error;
@@ -111,6 +166,9 @@ export const useHistory = (): UseHistoryReturn => {
       logInfo("Clearing all history entries...", "fe-history");
       await commands.clearAllHistory();
       logInfo("Successfully cleared all history", "fe-history");
+      setHistoryEntries([]);
+      setOffset(0);
+      setHasMore(false);
     } catch (error) {
       logError(`Failed to clear all history: ${error}`, "fe-history");
       throw error;
@@ -119,15 +177,8 @@ export const useHistory = (): UseHistoryReturn => {
     }
   };
 
-  const filteredEntries = useMemo(() => {
-    if (!debouncedSearchQuery.trim()) {
-      return historyEntries;
-    }
-    const lowerQuery = debouncedSearchQuery.toLowerCase();
-    return historyEntries.filter((entry) =>
-      entry.transcription_text.toLowerCase().includes(lowerQuery)
-    );
-  }, [historyEntries, debouncedSearchQuery]);
+  // We no longer filter client side
+  const filteredEntries = historyEntries;
 
   const groupedEntries = useMemo(() => {
     const groups: { [key: string]: HistoryEntry[] } = {};
@@ -144,6 +195,8 @@ export const useHistory = (): UseHistoryReturn => {
 
   // Sort dates descending (newest first)
   const sortedDates = useMemo(() => {
+    // Original order from DB should already be sorted descending generally,
+    // but preserving strict order of keys here
     return Object.keys(groupedEntries).sort((a, b) => {
       // We can pick the first entry of each group to compare timestamps since they are grouped by date
       const timestampA = groupedEntries[a][0].timestamp;
@@ -157,7 +210,9 @@ export const useHistory = (): UseHistoryReturn => {
     loading,
     groupedEntries,
     sortedDates,
-    loadHistoryEntries,
+    loadHistoryEntries: () => loadHistoryEntries(false), // Reset-load
+    loadMore: () => loadHistoryEntries(true), // Append-load
+    hasMore,
     toggleSaved,
     deleteAudioEntry,
     clearAllHistory,
@@ -165,7 +220,7 @@ export const useHistory = (): UseHistoryReturn => {
     isClearing,
     searchQuery,
     setSearchQuery,
-    filteredEntries,
+    filteredEntries, // Kept for interface compatibility but same as historyEntries
     debouncedSearchQuery,
   };
 };

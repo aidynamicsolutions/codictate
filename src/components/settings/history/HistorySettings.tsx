@@ -269,6 +269,8 @@ export const HistorySettings: React.FC = () => {
     groupedEntries,
     sortedDates,
     loadHistoryEntries,
+    loadMore,
+    hasMore,
     toggleSaved,
     deleteAudioEntry,
     clearAllHistory,
@@ -367,8 +369,9 @@ export const HistorySettings: React.FC = () => {
               groupedEntries={groupedEntries}
               onToggleSaved={toggleSaved}
               onDelete={deleteAudioEntry}
-              getAudioUrl={getAudioUrl}
               searchQuery={debouncedSearchQuery}
+              loadMore={loadMore}
+              hasMore={hasMore}
             />
           </div>
         </CardContent>

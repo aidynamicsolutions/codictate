@@ -26,6 +26,7 @@ export default function Home({
   const { t } = useTranslation();
   const [username, setUsername] = useState("User");
   const [stats, setStats] = useState<Stats | null>(null);
+  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
 
   const {
     historyEntries,
@@ -35,6 +36,8 @@ export default function Home({
     toggleSaved,
     deleteAudioEntry,
     getAudioUrl,
+    loadMore,
+    hasMore,
   } = useHistory();
 
   useEffect(() => {
@@ -103,9 +106,9 @@ export default function Home({
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden w-full animate-in fade-in slide-in-from-bottom-2 duration-500">
+    <div className="flex flex-col h-full overflow-hidden w-full animate-in fade-in slide-in-from-bottom-2 duration-500 relative">
       {/* Static Header & Stats Section */}
-      <div className="flex-none p-8 pb-8 flex flex-col gap-6 max-w-5xl mx-auto w-full">
+      <div className="flex-none p-8 pb-4 flex flex-col gap-6 max-w-5xl mx-auto w-full">
         <div className="flex flex-col gap-2">
           <h1 className="text-4xl font-bold tracking-tight">
             {t("home.welcome")} {username}
@@ -116,7 +119,10 @@ export default function Home({
       </div>
 
       {/* Scrollable Content (WhatsNew, History, GettingStarted) */}
-      <div className="flex-1 overflow-y-auto pb-20 w-full scrollbar-thin scrollbar-thumb-muted/50 scrollbar-track-transparent">
+      <div 
+        ref={setScrollElement}
+        className="flex-1 overflow-y-auto pb-20 w-full scrollbar-thin scrollbar-thumb-muted/50 scrollbar-track-transparent bg-background/50 h-full"
+      >
         <div className="max-w-5xl mx-auto w-full flex flex-col gap-8 px-8">
           <WhatsNew />
           
@@ -134,16 +140,21 @@ export default function Home({
                   groupedEntries={groupedEntries}
                   onToggleSaved={toggleSaved}
                   onDelete={deleteAudioEntry}
-                  getAudioUrl={getAudioUrl}
                   emptyMessage={t("settings.history.empty")}
                   emptyDescription={t("settings.history.emptyDescription")}
-                  disableScrollArea={true}
+                  scrollContainer={scrollElement}
                   stickyTopOffset={57}
+                  loadMore={loadMore}
+                  hasMore={hasMore}
                 />
             </div>
           </div>
         </div>
       </div>
+
+      
+      {/* Bottom fade/blur effect */}
+      <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-background via-background/60 to-transparent pointer-events-none z-10 backdrop-blur-[1px]" />
     </div>
   );
 }

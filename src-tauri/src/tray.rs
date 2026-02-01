@@ -236,7 +236,7 @@ fn build_and_set_tray_menu(
 async fn has_history_entries_async(app: &AppHandle) -> bool {
     if let Some(history_manager) = app.try_state::<Arc<HistoryManager>>() {
         let manager = history_manager.inner().clone();
-        match manager.get_history_entries().await {
+        match manager.get_history_entries(1, 0, None).await {
             Ok(entries) => !entries.is_empty(),
             Err(e) => {
                 tracing::warn!("Failed to check history entries: {}", e);
@@ -295,6 +295,7 @@ mod tests {
             post_processed_text: post_processed.map(|text| text.to_string()),
             post_process_prompt: None,
             duration_ms: 0,
+            file_path: String::new(),
         }
     }
 

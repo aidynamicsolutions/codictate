@@ -593,7 +593,7 @@ impl ShortcutAction for PasteLastTranscriptAction {
         tauri::async_runtime::spawn(async move {
             let text = if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
                 let manager = history_manager.inner().clone();
-                match manager.get_history_entries().await {
+                match manager.get_history_entries(1, 0, None).await {
                     Ok(entries) => {
                         if let Some(latest) = entries.first() {
                             // Prefer post-processed text if available, otherwise use raw transcription
