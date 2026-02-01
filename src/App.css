@@ -80,38 +80,69 @@
 }
 
 .dark {
-  /* Richer dark mode background (Slate/Charcoal) instead of flat black */
-  --background: oklch(0.13 0.02 240); /* #1a1e23 approx */
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.15 0.02 240); /* Slightly lighter than background */
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.15 0.02 240);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.637 0.237 25.331);
-  --primary-foreground: oklch(0.971 0.013 17.38);
-  --secondary: oklch(0.20 0.03 240);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.20 0.03 240);
-  --muted-foreground: oklch(0.70 0 0);
-  --accent: oklch(0.25 0.04 240);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(0.30 0.03 240 / 0.4); /* Subtle borders */
-  --input: oklch(0.20 0.03 240);
-  --ring: oklch(0.637 0.237 25.331); /* Match primary */
-  --chart-1: oklch(0.808 0.114 19.571);
-  --chart-2: oklch(0.637 0.237 25.331);
-  --chart-3: oklch(0.577 0.245 27.325);
-  --chart-4: oklch(0.505 0.213 27.518);
-  --chart-5: oklch(0.444 0.177 26.899);
-  --sidebar: oklch(0.13 0.02 240);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.637 0.237 25.331);
-  --sidebar-primary-foreground: oklch(0.971 0.013 17.38);
-  --sidebar-accent: oklch(0.20 0.03 240);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.30 0.03 240 / 0.4);
-  --sidebar-ring: oklch(0.637 0.237 25.331);
+  /* 
+   * PREMIUM DARK MODE PALETTE ("Midnight Slate")
+   * Based on modern UI trends (2025):
+   * - Avoids pure black (uses deep slate/charcoal)
+   * - High contrast text (off-white, not pure white)
+   * - Rich, subtle undertones (Hue 245 approx for that "tech" blue-grey)
+   */
+  
+  /* Background: Deep, rich slate. Not too blue, not too grey. */
+  --background: oklch(0.13 0.02 255); 
+  --foreground: oklch(0.98 0.005 255); /* Soft off-white */
+
+  /* Cards: Slightly larger lightness step for clear separation without borders */
+  --card: oklch(0.17 0.02 255);
+  --card-foreground: oklch(0.98 0.005 255);
+
+  /* Popovers: Same as card, maybe slightly lighter to lift up */
+  --popover: oklch(0.17 0.02 255);
+  --popover-foreground: oklch(0.98 0.005 255);
+
+  /* Primary: Vibrant but accessible brand color approximation or distinct accent */
+  /* Keeping close to the red brand color but ensuring it pops on dark */
+  --primary: oklch(0.65 0.22 25); 
+  --primary-foreground: oklch(0.98 0.005 255);
+
+  /* Secondary: Subtle surface for less important actions */
+  --secondary: oklch(0.22 0.03 255);
+  --secondary-foreground: oklch(0.98 0.005 255);
+
+  /* Muted: Subtle text and backgrounds */
+  --muted: oklch(0.22 0.03 255);
+  --muted-foreground: oklch(0.65 0.02 255);
+
+  /* Accent: Used for hover states, slightly brighter/more colorful than secondary */
+  --accent: oklch(0.25 0.04 255);
+  --accent-foreground: oklch(0.98 0.005 255);
+
+  /* Destructive: Muted red for dark mode */
+  --destructive: oklch(0.55 0.20 25);
+  --destructive-foreground: oklch(0.98 0.005 255);
+
+  /* Borders: Very subtle, letting background difference do the work */
+  --border: oklch(0.25 0.03 255);
+  --input: oklch(0.22 0.03 255);
+  --ring: oklch(0.65 0.22 25);
+
+  /* Charts: Adjusted for dark background visibility */
+  --chart-1: oklch(0.70 0.15 255); /* Blue-ish */
+  --chart-2: oklch(0.65 0.18 160); /* Green-ish */
+  --chart-3: oklch(0.70 0.15 30);  /* Orange-ish */
+  --chart-4: oklch(0.65 0.18 280); /* Purple-ish */
+  --chart-5: oklch(0.70 0.15 340); /* Pink-ish */
+
+  /* Sidebar: Matches background or slightly darker */
+  --sidebar: oklch(0.13 0.02 255);
+  --sidebar-foreground: oklch(0.98 0.005 255);
+  --sidebar-primary: oklch(0.65 0.22 25);
+  --sidebar-primary-foreground: oklch(0.98 0.005 255);
+  --sidebar-accent: oklch(0.20 0.03 255);
+  --sidebar-accent-foreground: oklch(0.98 0.005 255);
+  --sidebar-border: oklch(0.25 0.03 255);
+  --sidebar-ring: oklch(0.65 0.22 25);
+
 
   /* Brand colors - Dark Theme */
   --color-text: #fbfbfb;
