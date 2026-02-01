@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/shared/ui/select";
 import { Skeleton } from "@/components/shared/ui/skeleton";
+import { Input } from "@/components/shared/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +25,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/shared/ui/dialog";
-import { Trash2, FolderOpen, Loader2 } from "lucide-react";
+import { Trash2, FolderOpen, Loader2, Search } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { commands, type HistoryStats } from "@/bindings";
 import { logError } from "@/utils/logging";
@@ -273,7 +274,26 @@ export const HistorySettings: React.FC = () => {
     clearAllHistory,
     getAudioUrl,
     isClearing,
+    searchQuery,
+    setSearchQuery,
+    filteredEntries,
+    debouncedSearchQuery,
   } = useHistory();
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "f") {
+        e.preventDefault();
+        const input = document.getElementById("history-search-input");
+        if (input) {
+          input.focus();
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleClearAllHistory = async () => {
     await clearAllHistory();
@@ -308,6 +328,37 @@ export const HistorySettings: React.FC = () => {
           </div>
         </CardHeader>
         <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+          <div className="p-4 border-b border-border/50 bg-muted/20">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                id="history-search-input"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t("settings.history.searchPlaceholder")}
+                className="pl-9 pr-24 h-9 bg-background/50"
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none border border-border rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/50">
+                {searchQuery ? (
+                  <span>
+                    {t(
+                      filteredEntries.length === 1
+                        ? "settings.history.foundResult"
+                        : "settings.history.foundResults",
+                      {
+                        count: filteredEntries.length,
+                      }
+                    )}
+                  </span>
+                ) : (
+                  <>
+                    {/* eslint-disable-next-line i18next/no-literal-string */}
+                    <span className="text-xs">⌘</span>F
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
           <div className="flex-1 min-h-0 flex flex-col">
             <HistoryList
               loading={loading}
@@ -317,6 +368,7 @@ export const HistorySettings: React.FC = () => {
               onToggleSaved={toggleSaved}
               onDelete={deleteAudioEntry}
               getAudioUrl={getAudioUrl}
+              searchQuery={debouncedSearchQuery}
             />
           </div>
         </CardContent>

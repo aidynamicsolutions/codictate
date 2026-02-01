@@ -26,10 +26,11 @@ interface HistoryListProps {
   emptyMessage?: string;
   emptyDescription?: string;
   disableScrollArea?: boolean;
+  searchQuery?: string;
   stickyTopOffset?: number | string;
 }
 
-export const HistoryList: React.FC<HistoryListProps> = ({
+export const HistoryList: React.FC<HistoryListProps> = React.memo(({
   loading,
   historyEntries,
   sortedDates,
@@ -41,6 +42,7 @@ export const HistoryList: React.FC<HistoryListProps> = ({
   emptyMessage,
   emptyDescription,
   disableScrollArea = false,
+  searchQuery = "",
   stickyTopOffset = 0,
 }) => {
   const { t } = useTranslation();
@@ -111,6 +113,7 @@ export const HistoryList: React.FC<HistoryListProps> = ({
                   onCopyText={() => copyToClipboard(entry.transcription_text)}
                   getAudioUrl={getAudioUrl}
                   deleteAudio={onDelete}
+                  searchQuery={searchQuery}
                 />
               ))}
             </div>
@@ -129,7 +132,7 @@ export const HistoryList: React.FC<HistoryListProps> = ({
       {Content}
     </ScrollArea>
   );
-};
+});
 
 interface TimelineItemProps {
   entry: HistoryEntry;
@@ -137,14 +140,16 @@ interface TimelineItemProps {
   onCopyText: () => void;
   getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
+  searchQuery?: string;
 }
 
-const TimelineItem: React.FC<TimelineItemProps> = ({
+const TimelineItem: React.FC<TimelineItemProps> = React.memo(({
   entry,
   onToggleSaved,
   onCopyText,
   getAudioUrl,
   deleteAudio,
+  searchQuery = "",
 }) => {
   const { t, i18n } = useTranslation();
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -198,6 +203,26 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
     minute: "2-digit",
   }).format(new Date(entry.timestamp * 1000));
 
+  const highlightText = (text: string, query: string) => {
+    if (!query || query.length === 0) return text;
+
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const parts = text.split(new RegExp(`(${escapedQuery})`, "gi"));
+
+    return parts.map((part, i) =>
+      part.toLowerCase() === query.toLowerCase() ? (
+        <span
+          key={i}
+          className="bg-yellow-500/30 text-foreground rounded-[2px] px-0.5 -mx-0.5 font-medium"
+        >
+          {part}
+        </span>
+      ) : (
+        part
+      )
+    );
+  };
+
   return (
     <div className="group flex flex-row items-start py-4 px-3 rounded-lg hover:bg-accent/40 transition-all duration-200 gap-4 border border-transparent hover:border-border/50 mb-1">
       {/* Time Column */}
@@ -210,7 +235,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
       {/* Content Column */}
       <div className="flex-1 min-w-0 space-y-3">
         <p className="text-sm leading-relaxed text-foreground/90 select-text cursor-text break-words">
-          {entry.transcription_text}
+          {highlightText(entry.transcription_text, searchQuery)}
         </p>
         {audioUrl && (
           <AudioPlayer src={audioUrl} className="w-full max-w-md" />
@@ -302,4 +327,4 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
       </div>
     </div>
   );
-};
+});

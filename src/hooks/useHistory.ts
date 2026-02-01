@@ -10,6 +10,8 @@ import { formatDate } from "@/utils/dateFormat";
 
 const IS_LINUX = platform() === "linux";
 
+import { useDebounce } from "./useDebounce";
+
 export interface UseHistoryReturn {
   historyEntries: HistoryEntry[];
   loading: boolean;
@@ -21,6 +23,10 @@ export interface UseHistoryReturn {
   clearAllHistory: () => Promise<void>;
   getAudioUrl: (fileName: string) => Promise<string | null>;
   isClearing: boolean;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  filteredEntries: HistoryEntry[];
+  debouncedSearchQuery: string;
 }
 
 export const useHistory = (): UseHistoryReturn => {
@@ -28,6 +34,8 @@ export const useHistory = (): UseHistoryReturn => {
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [isClearing, setIsClearing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearchQuery = useDebounce(searchQuery, 300);
 
   const loadHistoryEntries = useCallback(async () => {
     try {
@@ -111,9 +119,19 @@ export const useHistory = (): UseHistoryReturn => {
     }
   };
 
+  const filteredEntries = useMemo(() => {
+    if (!debouncedSearchQuery.trim()) {
+      return historyEntries;
+    }
+    const lowerQuery = debouncedSearchQuery.toLowerCase();
+    return historyEntries.filter((entry) =>
+      entry.transcription_text.toLowerCase().includes(lowerQuery)
+    );
+  }, [historyEntries, debouncedSearchQuery]);
+
   const groupedEntries = useMemo(() => {
     const groups: { [key: string]: HistoryEntry[] } = {};
-    historyEntries.forEach((entry) => {
+    filteredEntries.forEach((entry) => {
       // Create a localized date string for grouping
       const dateKey = formatDate(String(entry.timestamp), i18n.language);
       if (!groups[dateKey]) {
@@ -122,7 +140,7 @@ export const useHistory = (): UseHistoryReturn => {
       groups[dateKey].push(entry);
     });
     return groups;
-  }, [historyEntries, i18n.language]);
+  }, [filteredEntries, i18n.language]);
 
   // Sort dates descending (newest first)
   const sortedDates = useMemo(() => {
@@ -145,5 +163,9 @@ export const useHistory = (): UseHistoryReturn => {
     clearAllHistory,
     getAudioUrl,
     isClearing,
+    searchQuery,
+    setSearchQuery,
+    filteredEntries,
+    debouncedSearchQuery,
   };
 };
