@@ -1,4 +1,4 @@
-use crate::managers::history::{HistoryEntry, HistoryManager, HomeStats};
+use crate::managers::history::{HistoryEntry, HistoryManager, HistoryStats, HomeStats};
 use std::sync::Arc;
 use tauri::{AppHandle, State};
 
@@ -120,5 +120,28 @@ pub async fn clear_all_history(
     history_manager
         .clear_all_entries()
         .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_history_storage_usage(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+) -> Result<HistoryStats, String> {
+    history_manager
+        .get_storage_usage()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub async fn prune_history(
+    _app: AppHandle,
+    history_manager: State<'_, Arc<HistoryManager>>,
+    days: u64,
+) -> Result<usize, String> {
+    history_manager
+        .prune_older_than(days)
         .map_err(|e| e.to_string())
 }

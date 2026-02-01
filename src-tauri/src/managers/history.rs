@@ -59,6 +59,12 @@ pub struct HistoryEntry {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
+pub struct HistoryStats {
+    pub total_size_bytes: u64,
+    pub total_entries: i64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Type)]
 pub struct HomeStats {
     pub total_words: i64,
     pub total_duration_minutes: f64,
@@ -448,6 +454,79 @@ impl HistoryManager {
         }
 
         Ok(())
+    }
+
+    pub fn get_storage_usage(&self) -> Result<HistoryStats> {
+        let conn = self.get_connection()?;
+        
+        let total_entries: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM transcription_history",
+            [],
+            |row| row.get(0),
+        ).unwrap_or(0);
+
+        // Calculate size of all WAV files in the recordings directory
+        let mut total_size_bytes: u64 = 0;
+        if self.recordings_dir.exists() {
+            match fs::read_dir(&self.recordings_dir) {
+                Ok(entries) => {
+                    for entry in entries.flatten() {
+                        if let Ok(metadata) = entry.metadata() {
+                            if metadata.is_file() {
+                                total_size_bytes += metadata.len();
+                            }
+                        }
+                    }
+                }
+                Err(e) => error!("Failed to read recordings directory: {}", e),
+            }
+        }
+        
+        Ok(HistoryStats {
+            total_size_bytes,
+            total_entries,
+        })
+    }
+
+    pub fn prune_older_than(&self, days: u64) -> Result<usize> {
+        let now = Utc::now().timestamp();
+        let cutoff_timestamp = now - (days as i64 * 24 * 60 * 60);
+
+        debug!("Pruning history older than {} days (cutoff: {}, now: {})", days, cutoff_timestamp, now);
+
+        let conn = self.get_connection()?;
+        
+        // Get entries older than cutoff
+        let mut stmt = conn.prepare(
+            "SELECT id, file_name, timestamp, saved FROM transcription_history WHERE timestamp < ?1 AND saved = 0",
+        )?;
+
+        let rows = stmt.query_map(params![cutoff_timestamp], |row| {
+            let id: i64 = row.get("id")?;
+            let ts: i64 = row.get("timestamp")?;
+            let saved: bool = row.get("saved")?;
+            debug!("Found candidate for pruning: ID={}, TS={}, Saved={}", id, ts, saved);
+            Ok((id, row.get::<_, String>("file_name")?))
+        })?;
+
+        let mut entries_to_delete: Vec<(i64, String)> = Vec::new();
+        for row in rows {
+            entries_to_delete.push(row?);
+        }
+
+        info!("Found {} unsaved entries older than {} days to delete", entries_to_delete.len(), days);
+
+        let count = self.delete_entries_and_files(&entries_to_delete)?;
+        debug!("Pruned {} entries older than {} days", count, days);
+        
+        // Emit history updated event if we deleted anything
+        if count > 0 {
+            if let Err(e) = self.app_handle.emit("history-updated", ()) {
+                error!("Failed to emit history-updated event: {}", e);
+            }
+        }
+
+        Ok(count)
     }
 
     pub async fn get_history_entries(&self) -> Result<Vec<HistoryEntry>> {

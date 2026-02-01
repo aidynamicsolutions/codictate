@@ -20,7 +20,7 @@ const renderSettingsContent = (
 
   // Check if component accepts onNavigate (safely pass it to all setting components)
   // In a cleaner app we might have a specific type for ContentComponent
-  return <ActiveComponent onNavigate={onNavigate} />;
+  return <ActiveComponent onNavigate={(s: string) => onNavigate(s as SidebarSection)} />;
 };
 
 function App() {
@@ -128,8 +128,12 @@ function App() {
         />
         {/* Scrollable content area */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <div className="flex flex-col items-center p-4 gap-4">
+          <div
+            className={`flex-1 flex flex-col ${
+              currentSection === "history" ? "overflow-hidden" : "overflow-y-auto"
+            }`}
+          >
+            <div className="flex-1 flex flex-col items-center p-4 gap-4 min-h-0 w-full">
               <AccessibilityPermissions />
               <MicrophonePermissions />
               {renderSettingsContent(currentSection, setCurrentSection)}

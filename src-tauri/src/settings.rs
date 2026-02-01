@@ -342,7 +342,7 @@ fn default_word_correction_threshold() -> f64 {
 }
 
 fn default_history_limit() -> usize {
-    5
+    1_000_000
 }
 
 fn default_recording_retention_period() -> RecordingRetentionPeriod {

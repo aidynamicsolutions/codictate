@@ -330,6 +330,8 @@ pub fn run() {
         commands::history::update_recording_retention_period,
         commands::history::get_home_stats,
         commands::history::clear_all_history,
+        commands::history::get_history_storage_usage,
+        commands::history::prune_history,
         helpers::clamshell::is_laptop,
         // MLX commands
         commands::mlx::mlx_list_models,
@@ -442,6 +444,8 @@ pub fn run() {
         commands::history::update_recording_retention_period,
         commands::history::get_home_stats,
         commands::history::clear_all_history,
+        commands::history::get_history_storage_usage,
+        commands::history::prune_history,
         helpers::clamshell::is_laptop,
         // Permission commands
         permissions::open_accessibility_settings,

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 import { AudioPlayer } from "../../ui/AudioPlayer";
 import { Button } from "@/components/shared/ui/button";
@@ -15,6 +16,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/shared/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/shared/ui/select";
 import { Skeleton } from "@/components/shared/ui/skeleton";
 import {
   Dialog,
@@ -29,7 +37,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
 import { readFile } from "@tauri-apps/plugin-fs";
-import { commands, type HistoryEntry } from "@/bindings";
+import { commands, type HistoryEntry, type HistoryStats } from "@/bindings";
 import { formatDate } from "@/utils/dateFormat";
 import { logError, logInfo } from "@/utils/logging";
 
@@ -55,6 +63,181 @@ const OpenRecordingsButton: React.FC<OpenRecordingsButtonProps> = ({
     <span>{label}</span>
   </Button>
 );
+
+const HistoryStorage: React.FC<{ 
+    onPrune: () => void;
+    onClearAll: () => void;
+    hasHistory: boolean;
+}> = ({ onPrune, onClearAll, hasHistory }) => {
+  const { t } = useTranslation();
+  const [stats, setStats] = useState<HistoryStats | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [pruning, setPruning] = useState(false);
+  const [pruneDays, setPruneDays] = useState<number | null>(null);
+
+  const loadStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await commands.getHistoryStorageUsage();
+      if (result.status === "ok") {
+        setStats(result.data);
+      }
+    } catch (error) {
+      logError(`Failed to load history stats: ${error}`, "fe-history");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+    
+    const unlistenPromise = listen("history-updated", () => {
+        loadStats();
+    });
+
+    return () => {
+        unlistenPromise.then(unlisten => unlisten());
+    };
+  }, [loadStats]);
+
+  const handlePruneConfirm = async () => {
+    if (!pruneDays) return;
+    
+    setPruning(true);
+    try {
+      const result = await commands.pruneHistory(pruneDays);
+      if (result.status === "ok") {
+        const count = result.data;
+        await loadStats();
+        onPrune();
+        
+        toast.success(t("settings.history.pruneSuccessTitle", "History Pruned"), {
+            description: t("settings.history.pruneSuccessDescription", { 
+                count, 
+                days: pruneDays 
+            })
+        });
+      }
+    } catch (error) {
+      logError(`Failed to prune history: ${error}`, "fe-history");
+      toast.error(t("common.error"), {
+        description: t("settings.history.pruneError", "Failed to prune history")
+      });
+    } finally {
+      setPruning(false);
+      setPruneDays(null);
+    }
+  };
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  if (loading && !stats) return <Skeleton className="h-20 w-full" />;
+
+  return (
+    <>
+        <Card className="bg-card/50 border-border/50 backdrop-blur supports-[backdrop-filter]:bg-card/50">
+        <CardContent className="p-4 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+            <div>
+                <h4 className="text-sm font-medium">{t("settings.history.storageTitle", "History storage usage")}</h4>
+                <p className="text-xs text-muted-foreground mt-1">
+                {stats ? (
+                    t("settings.history.storageDescription", { 
+                        size: formatBytes(stats.total_size_bytes), 
+                        count: stats.total_entries 
+                    })
+                ) : (
+                    "..."
+                )}
+                </p>
+            </div>
+            <div className="flex gap-3 items-center">
+                <Select
+                    disabled={pruning}
+                    onValueChange={(val) => setPruneDays(parseInt(val))}
+                    value="" // Always reset to empty to allow re-selection
+                >
+                    <SelectTrigger className="w-[150px] h-8 text-xs">
+                        <SelectValue placeholder={t("settings.history.prunePlaceholder", "Prune history...")} />
+                    </SelectTrigger>
+                    <SelectContent position="popper">
+                        {[
+                            { days: 3, label: t("settings.history.pruneOptions.3d") },
+                            { days: 7, label: t("settings.history.pruneOptions.7d") },
+                            { days: 30, label: t("settings.history.pruneOptions.30d") },
+                            { days: 90, label: t("settings.history.pruneOptions.3m") },
+                            { days: 365, label: t("settings.history.pruneOptions.1y") }
+                        ].map(({ days, label }) => (
+                            <SelectItem key={days} value={days.toString()} className="text-xs">
+                                {t("settings.history.pruneLabel", { 
+                                    label 
+                                })}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
+                <Button
+                    onClick={onClearAll}
+                    disabled={!hasHistory}
+                    variant="outline"
+                    size="sm"
+                    className="flex items-center gap-2 h-8 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
+                >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{t("settings.history.clearAll")}</span>
+                </Button>
+            </div>
+            </div>
+        </CardContent>
+        </Card>
+
+        {/* Prune Confirmation Dialog */}
+        <Dialog open={pruneDays !== null} onOpenChange={(open) => !open && setPruneDays(null)}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>{t("settings.history.pruneConfirmTitle", "Prune History")}</DialogTitle>
+                    <DialogDescription>
+                        {t("settings.history.pruneConfirmDescription", { 
+                            days: pruneDays 
+                        })}
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <Button
+                        variant="outline"
+                        onClick={() => setPruneDays(null)}
+                        disabled={pruning}
+                    >
+                        {t("common.cancel")}
+                    </Button>
+                    <Button
+                        variant="destructive"
+                        onClick={handlePruneConfirm}
+                        disabled={pruning}
+                    >
+                        {pruning ? (
+                            <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                {t("common.pruning", "Pruning...")}
+                            </>
+                        ) : (
+                            t("common.confirm", "Confirm")
+                        )}
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    </>
+  );
+};
 
 export const HistorySettings: React.FC = () => {
   const { t, i18n } = useTranslation();
@@ -183,32 +366,26 @@ export const HistorySettings: React.FC = () => {
   });
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
-      <Card className="w-full h-full animate-in fade-in slide-in-from-bottom-2 duration-500 bg-card/60 backdrop-blur-sm border-border/60 hover:border-border/80 transition-colors">
+    <div className="max-w-3xl w-full mx-auto space-y-6 flex flex-col flex-1 min-h-0">
+      <HistoryStorage 
+        onPrune={loadHistoryEntries} 
+        onClearAll={() => setShowClearDialog(true)}
+        hasHistory={historyEntries.length > 0}
+      />
+      <Card className="w-full flex-1 min-h-0 flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-500 bg-card border-border shadow-sm">
         <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-sm font-semibold uppercase tracking-wide text-primary font-heading">
             {t("settings.history.title")}
           </CardTitle>
           <div className="flex items-center gap-2">
-            {historyEntries.length > 0 && (
-              <Button
-                onClick={() => setShowClearDialog(true)}
-                variant="outline"
-                size="sm"
-                className="flex items-center gap-2 h-8 text-xs font-medium text-destructive hover:bg-destructive/10 hover:text-destructive border-destructive/30"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>{t("settings.history.clearAll")}</span>
-              </Button>
-            )}
             <OpenRecordingsButton
               onClick={openRecordingsFolder}
               label={t("settings.history.openFolder")}
             />
           </div>
         </CardHeader>
-        <CardContent className="p-0">
-          <div className="min-h-[300px]">
+        <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 flex flex-col">
             {loading ? (
               <div className="p-6 space-y-6">
                 {[1, 2].map((i) => (
@@ -222,7 +399,7 @@ export const HistorySettings: React.FC = () => {
                 ))}
               </div>
             ) : historyEntries.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+              <div className="flex-1 flex flex-col items-center justify-center py-20 text-center px-4">
                 <div className="bg-muted/50 p-4 rounded-full mb-4">
                   <FolderOpen className="w-8 h-8 text-muted-foreground/50" />
                 </div>
@@ -234,7 +411,7 @@ export const HistorySettings: React.FC = () => {
                 </p>
               </div>
             ) : (
-              <ScrollArea className="h-[600px] w-full">
+              <ScrollArea className="flex-1 w-full min-h-0">
                 <div className="pb-8 px-6">
                   <TooltipProvider delayDuration={300}>
                     {sortedDates.map((date, groupIndex) => (
@@ -243,8 +420,8 @@ export const HistorySettings: React.FC = () => {
                         className="mb-8 last:mb-0 animate-in slide-in-from-bottom-2 fade-in duration-500 fill-mode-both"
                         style={{ animationDelay: `${groupIndex * 100}ms` }}
                       >
-                        <div className="sticky top-0 z-10 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/75 py-3 mb-2 border-b border-border/40">
-                          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                        <div className="sticky top-0 z-10 bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 py-3 mb-2 border-b border-border/60 shadow-sm">
+                          <h3 className="text-xs font-bold text-primary/80 uppercase tracking-widest px-1">
                             {date}
                           </h3>
                         </div>
@@ -376,7 +553,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
   }).format(new Date(entry.timestamp * 1000));
 
   return (
-    <div className="group flex flex-row items-start py-4 px-2 rounded-md hover:bg-muted/30 transition-colors gap-4 border-b border-border/20 last:border-b-0">
+    <div className="group flex flex-row items-start py-4 px-3 rounded-lg hover:bg-accent/40 transition-all duration-200 gap-4 border border-transparent hover:border-border/50 mb-1">
       {/* Time Column */}
       <div className="w-20 shrink-0 pt-0.5">
         <span className="text-xs font-medium text-muted-foreground/80 tabular-nums">
@@ -395,7 +572,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
       </div>
 
       {/* Actions Column - Visible on Group Hover */}
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0 self-start">
+      <div className="flex items-center gap-1 ml-2 shrink-0 self-start text-muted-foreground/40 hover:text-muted-foreground transition-colors duration-200">
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -407,7 +584,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
               {showCopied ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
-                <Copy className="w-4 h-4 text-muted-foreground" />
+                <Copy className="w-4 h-4" />
               )}
               <span className="sr-only">
                 {t("settings.history.copyToClipboard")}
@@ -431,7 +608,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
               className={`h-8 w-8 ${
                 entry.saved
                   ? "text-yellow-500 hover:text-yellow-600"
-                  : "text-muted-foreground"
+                  : ""
               }`}
               onClick={onToggleSaved}
             >
@@ -460,7 +637,7 @@ const TimelineItem: React.FC<TimelineItemProps> = ({
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+              className="h-8 w-8 hover:text-destructive hover:bg-destructive/10"
               onClick={handleDeleteEntry}
               disabled={isDeleting}
             >
