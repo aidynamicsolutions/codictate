@@ -31,6 +31,15 @@ pub fn init_shortcuts(app: &AppHandle) {
             .cloned()
             .unwrap_or(default_binding);
 
+        // Skip registration for fn-based shortcuts (handled by fn_key_monitor.rs)
+        let binding_lower = binding.current_binding.to_lowercase();
+        if binding_lower == "fn"
+            || binding_lower.starts_with("fn+")
+            || binding_lower.contains("+fn")
+        {
+            continue;
+        }
+
         if let Err(e) = register_shortcut(app, binding) {
             error!("Failed to register shortcut {} during init: {}", id, e);
         }
