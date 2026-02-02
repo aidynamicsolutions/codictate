@@ -318,6 +318,17 @@ impl HistoryManager {
         }
         let new_dates_json = serde_json::to_string(&dates).unwrap_or_else(|_| "[]".to_string());
 
+        // Adjust duration for stats by removing VAD padding (approx 900ms: 15 pre + 15 post frames @ 30ms)
+        // This ensures WPM reflects "speech rate" rather than "recording efficiency", correcting for the
+        // "decreasing WPM" trend caused by the fixed overhead on short recordings.
+        let vad_overhead_ms = 900;
+        let effective_duration_ms = if duration_ms > vad_overhead_ms {
+            duration_ms - vad_overhead_ms
+        } else {
+            // For very short recordings, keep a fraction of the duration to represent the speech
+            std::cmp::max(duration_ms / 2, 100)
+        };
+
         // Upsert stats (assuming row 1 exists due to backfill/init)
         tx.execute(
             "UPDATE user_stats SET 
@@ -328,7 +339,7 @@ impl HistoryManager {
                 transcription_dates = ?4,
                 first_transcription_date = COALESCE(first_transcription_date, ?3)
              WHERE id = 1",
-            params![word_count, duration_ms, timestamp, new_dates_json],
+            params![word_count, effective_duration_ms, timestamp, new_dates_json],
         )?;
 
         tx.commit()?;
