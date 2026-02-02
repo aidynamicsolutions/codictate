@@ -21,11 +21,29 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
-  const [loadedSrc, setLoadedSrc] = useState<string | null>(initialSrc ?? null);
+  // lazySrc is ONLY used for dynamically loaded audio (via onLoadRequest, e.g., Linux blob URLs)
+  // For eager loading (initialSrc provided), we use initialSrc directly to avoid stale state
+  // when virtualized lists recycle component instances
+  const [lazySrc, setLazySrc] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Reset lazySrc when onLoadRequest changes (component recycled for a different entry in lazy-load mode)
+  // This prevents stale blob URLs from being used for the wrong entry
+  const prevOnLoadRequest = useRef(onLoadRequest);
+  useEffect(() => {
+    if (onLoadRequest !== prevOnLoadRequest.current) {
+      // Clean up old blob URL if present
+      if (lazySrc?.startsWith("blob:")) {
+        URL.revokeObjectURL(lazySrc);
+      }
+      setLazySrc(null);
+      prevOnLoadRequest.current = onLoadRequest;
+    }
+  }, [onLoadRequest, lazySrc]);
+
   const audioRef = useRef<HTMLAudioElement>(null);
-  const src = loadedSrc;
+  // Use initialSrc directly if provided (eager loading), otherwise use lazySrc (lazy loading)
+  const src = initialSrc ?? lazySrc;
   const animationRef = useRef<number>();
   const dragTimeRef = useRef<number>(0);
 
@@ -109,26 +127,26 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   }, []);
 
   // Auto-play when src becomes available (via onLoadRequest or autoPlay prop)
-  const prevLoadedSrc = useRef<string | null>(null);
+  const prevLazySrc = useRef<string | null>(null);
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    // Play when loadedSrc changes from null to a value (lazy load case)
-    if (loadedSrc && !prevLoadedSrc.current && onLoadRequest) {
+    // Play when lazySrc changes from null to a value (lazy load case)
+    if (lazySrc && !prevLazySrc.current && onLoadRequest) {
       audio.play().catch((error) => {
         console.error("Auto-play failed:", error);
       });
     }
     // Or when autoPlay is set with initial src
-    else if (autoPlay && initialSrc && !prevLoadedSrc.current) {
+    else if (autoPlay && initialSrc && !prevLazySrc.current) {
       audio.play().catch((error) => {
         console.error("Auto-play failed:", error);
       });
     }
 
-    prevLoadedSrc.current = loadedSrc;
-  }, [loadedSrc, autoPlay, initialSrc, onLoadRequest]);
+    prevLazySrc.current = lazySrc;
+  }, [lazySrc, autoPlay, initialSrc, onLoadRequest]);
 
   // Global drag handlers
   const handleMouseUp = useCallback(() => {
@@ -153,14 +171,14 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
   }, [isDragging, handleMouseUp]);
 
-  // Cleanup blob URLs on unmount
+  // Cleanup blob URLs on unmount (only lazySrc can be a blob URL)
   useEffect(() => {
     return () => {
-      if (loadedSrc?.startsWith("blob:")) {
-        URL.revokeObjectURL(loadedSrc);
+      if (lazySrc?.startsWith("blob:")) {
+        URL.revokeObjectURL(lazySrc);
       }
     };
-  }, [loadedSrc]);
+  }, [lazySrc]);
 
   const togglePlay = async () => {
     const audio = audioRef.current;
@@ -177,8 +195,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           const newSrc = await onLoadRequest();
           setIsLoading(false);
           if (newSrc) {
-            setLoadedSrc(newSrc);
-            // Playback will be triggered by the useEffect watching loadedSrc
+            setLazySrc(newSrc);
+            // Playback will be triggered by the useEffect watching lazySrc
           }
         } else if (src) {
           await audio.play();
