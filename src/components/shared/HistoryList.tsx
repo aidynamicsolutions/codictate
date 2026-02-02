@@ -235,11 +235,34 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(({
   const [showCopied, setShowCopied] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   
-  // Convert native path to asset URL synchronously
-  // This avoids the async waterfall effect during fast scroll
-  const audioUrl = useMemo(() => {
-      if (!entry.file_path) return null;
-      return convertFileSrc(entry.file_path);
+  // Platform-specific audio loading strategy
+  const audioProps = useMemo(() => {
+    if (!entry.file_path) return {};
+    
+    // Simple heuristic for Linux - reliable enough for browser environment
+    const isLinux = navigator.userAgent.includes("Linux");
+    
+    if (isLinux) {
+      return {
+        onLoadRequest: async () => {
+           try {
+              // Dynamic import to avoid issues on non-Tauri envs (though we are in Tauri)
+              const { readFile } = await import("@tauri-apps/plugin-fs");
+              const fileData = await readFile(entry.file_path);
+              const blob = new Blob([fileData], { type: "audio/wav" });
+              return URL.createObjectURL(blob);
+           } catch (e) {
+               logError(`Failed to load audio on Linux: ${e}`, "fe-history");
+               return null;
+           }
+        }
+      };
+    }
+    
+    // Mac/Windows: Use direct src via convertFileSrc for instant playback
+    return {
+      src: convertFileSrc(entry.file_path)
+    };
   }, [entry.file_path]);
 
   const handleCopyText = () => {
@@ -299,8 +322,8 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(({
         <p className="text-sm leading-relaxed text-foreground/90 select-text cursor-text break-words">
           {highlightText(entry.transcription_text, searchQuery)}
         </p>
-        {audioUrl && (
-          <AudioPlayer src={audioUrl} className="w-full max-w-md" />
+        {(audioProps.src || audioProps.onLoadRequest) && (
+          <AudioPlayer {...audioProps} className="w-full max-w-md" />
         )}
       </div>
 

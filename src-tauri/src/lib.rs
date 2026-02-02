@@ -118,8 +118,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     app_handle.manage(mlx_manager.clone());
 
-    // Initialize the shortcuts
-    shortcut::init_shortcuts(app_handle);
+    // Note: Shortcuts are NOT initialized here.
+    // The frontend is responsible for calling the `initialize_shortcuts` command
+    // after permissions are confirmed (on macOS) or after onboarding completes.
+    // This matches the pattern used for Enigo initialization.
 
     // Initialize Fn key monitor on macOS for transcription via Fn key
     #[cfg(target_os = "macos")]
@@ -292,6 +294,7 @@ pub fn run() {
         commands::log_from_frontend,
         commands::set_onboarding_paste_override,
         commands::initialize_enigo,
+        commands::initialize_shortcuts,
         commands::models::get_available_models,
         commands::models::get_model_info,
         commands::models::download_model,
