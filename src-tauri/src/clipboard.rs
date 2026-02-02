@@ -365,7 +365,7 @@ fn paste_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
 
 pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let settings = get_settings(&app_handle);
-<<<<<<< HEAD
+
     
     // Check if onboarding paste override is enabled
     // This works around WebView not receiving CGEvent-simulated Cmd+V keystrokes

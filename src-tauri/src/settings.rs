@@ -291,8 +291,6 @@ pub struct AppSettings {
     // Note: Onboarding/user profile fields have been moved to user_profile.rs / user_store.json
     #[serde(default)]
     pub experimental_enabled: bool,
-    #[serde(default)]
-    pub keyboard_implementation: KeyboardImplementation,
     #[serde(default = "default_paste_delay_ms")]
     pub paste_delay_ms: u64,
 }
@@ -644,7 +642,6 @@ pub fn get_default_settings() -> AppSettings {
         append_trailing_space: false,
         app_language: default_app_language(),
         experimental_enabled: false,
-        keyboard_implementation: KeyboardImplementation::default(),
         paste_delay_ms: default_paste_delay_ms(),    }
 }
 

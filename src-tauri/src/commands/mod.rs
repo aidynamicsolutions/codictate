@@ -212,7 +212,7 @@ pub struct ShortcutsInitialized;
 pub fn initialize_shortcuts(app: AppHandle) -> Result<(), String> {
     // Check if already initialized
     if app.try_state::<ShortcutsInitialized>().is_some() {
-        log::debug!("Shortcuts already initialized");
+        tracing::debug!("Shortcuts already initialized");
         return Ok(());
     }
 
@@ -222,6 +222,6 @@ pub fn initialize_shortcuts(app: AppHandle) -> Result<(), String> {
     // Mark as initialized
     app.manage(ShortcutsInitialized);
 
-    log::info!("Shortcuts initialized successfully");
+    tracing::info!("Shortcuts initialized successfully");
     Ok(())
 }

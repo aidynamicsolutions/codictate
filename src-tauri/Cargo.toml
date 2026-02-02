@@ -1,6 +1,6 @@
 [package]
 name = "codictate"
-version = "0.7.0"
+version = "0.7.1"
 description = "Codictate"
 authors = ["cjpais"]
 edition = "2021"
