@@ -149,7 +149,7 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(({
       }
       return (
         <div
-          className="bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 py-3 mb-2 border-b border-border/60 shadow-sm px-6"
+          className="bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 py-3 mb-2 border-b border-border/60 shadow-sm px-5"
         >
           <h3 className="text-xs font-bold text-primary/80 uppercase tracking-widest px-1">
             {date}

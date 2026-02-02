@@ -132,7 +132,7 @@ export default function Home({
             <h2 className="text-xl font-semibold tracking-tight sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-4 -mt-4 border-b border-border/40">
               {t("settings.history.title")}
             </h2>
-            <div className="bg-card/50 rounded-xl border border-border/50 backdrop-blur-sm min-h-[300px] flex flex-col">
+            <div className="bg-card/50 rounded-xl backdrop-blur-sm min-h-[300px] flex flex-col">
                  <HistoryList
                   loading={historyLoading}
                   historyEntries={historyEntries}
