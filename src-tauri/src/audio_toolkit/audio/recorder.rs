@@ -92,9 +92,10 @@ impl AudioRecorder {
         // Move the optional level callback into the worker thread
         let level_cb = self.level_cb.clone();
         
-        let (startup_tx, startup_rx) = mpsc::channel::<Result<(), Box<dyn std::error::Error + Send + Sync>>>();
+        let (startup_tx, startup_rx) = mpsc::channel::<Result<mpsc::Receiver<()>, Box<dyn std::error::Error + Send + Sync>>>();
 
         let worker = std::thread::spawn(move || {
+            let (data_started_tx, data_started_rx) = mpsc::channel::<()>();
             let sample_rate = config.sample_rate().0;
             let channels = config.channels() as usize;
 
@@ -138,17 +139,23 @@ impl AudioRecorder {
                 return;
             }
             
-            // Signal success
-            let _ = startup_tx.send(Ok(()));
+            // Signal success, providing the receiver for data-started signal
+            let _ = startup_tx.send(Ok(data_started_rx));
 
             // keep the stream alive while we process samples
-            run_consumer(sample_rate, vad, sample_rx, cmd_rx, level_cb);
+            run_consumer(sample_rate, vad, sample_rx, cmd_rx, level_cb, Some(data_started_tx));
             // stream is dropped here, after run_consumer returns
         });
 
         // Wait for the stream to start
         match startup_rx.recv() {
-            Ok(Ok(())) => {
+            Ok(Ok(data_started_rx)) => {
+                // Wait for the first audio packet to confirm data is flowing (max 3 seconds)
+                // This is crucial for Bluetooth devices which take time to actually send data.
+                if let Err(_) = data_started_rx.recv_timeout(Duration::from_secs(3)) {
+                     tracing::warn!("Timeout waiting for audio data to start flowing. Device might be silent or slow.");
+                }
+
                 self.device = Some(device);
                 self.cmd_tx = Some(cmd_tx);
                 self.worker_handle = Some(worker);
@@ -182,6 +189,8 @@ impl AudioRecorder {
             let _ = h.join();
         }
         self.device = None;
+        // Clear cached config so next open() fetches the correct config for the new device
+        self.cached_config = None;
         Ok(())
     }
 
@@ -276,6 +285,7 @@ fn run_consumer(
     sample_rx: mpsc::Receiver<Vec<f32>>,
     cmd_rx: mpsc::Receiver<Cmd>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
+    mut data_started_tx: Option<mpsc::Sender<()>>,
 ) {
     let mut frame_resampler = FrameResampler::new(
         in_sample_rate as usize,
@@ -332,6 +342,11 @@ fn run_consumer(
             Ok(s) => s,
             Err(_) => break, // stream closed
         };
+
+        // Signal that data has started flowing (one-shot)
+        if let Some(tx) = data_started_tx.take() {
+            let _ = tx.send(());
+        }
 
         // ---------- spectrum processing ---------------------------------- //
         if let Some(buckets) = visualizer.feed(&raw) {

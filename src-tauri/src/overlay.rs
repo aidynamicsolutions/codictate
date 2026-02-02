@@ -141,6 +141,7 @@ enum OverlayState {
     Recording,
     Transcribing,
     Processing,
+    Connecting,
 }
 
 static OVERLAY_STATE: Lazy<Mutex<OverlayState>> = Lazy::new(|| Mutex::new(OverlayState::Hidden));
@@ -187,6 +188,13 @@ pub fn mark_overlay_ready(app_handle: &AppHandle) {
                 if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
                     tracing::info!("mark_overlay_ready: State is Processing, re-emitting show-overlay");
                     let _ = overlay.emit("show-overlay", "processing");
+                }
+            },
+            OverlayState::Connecting => {
+                if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
+                    tracing::info!("mark_overlay_ready: State is Connecting, re-emitting show-overlay");
+                    let _ = overlay.emit("show-overlay", "connecting");
+                    let _ = overlay.set_ignore_cursor_events(false);
                 }
             },
             OverlayState::Hidden => {
@@ -488,16 +496,16 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
 }
 
 /// Safely hides the overlay only if it is in Recording or Hidden state.
-/// This prevents clobbering a transition to Transcribing or Processing.
+/// This prevents clobbering a transition to Transcribing, Processing, or Connecting.
 pub fn hide_overlay_if_recording(app_handle: &AppHandle) {
     use tracing::{debug, warn};
 
     debug!("hide_overlay_if_recording: entry");
 
-    // Check state - bail if we are Transcribing or Processing
+    // Check state - bail if we are Transcribing, Processing, or Connecting
     if let Ok(mut state) = OVERLAY_STATE.lock() {
         match *state {
-            OverlayState::Transcribing | OverlayState::Processing => {
+            OverlayState::Transcribing | OverlayState::Processing | OverlayState::Connecting => {
                 debug!("hide_overlay_if_recording: Ignoring hide because state is {:?}", *state);
                 return;
             }
@@ -520,6 +528,60 @@ pub fn hide_overlay_if_recording(app_handle: &AppHandle) {
         }
     } else {
         warn!("hide_overlay_if_recording: overlay window NOT FOUND!");
+    }
+}
+
+/// Shows the "connecting" overlay window (Connecting state)
+/// This should appear IMMEDIATELY on fn press for instant visual feedback.
+pub fn show_connecting_overlay(app_handle: &AppHandle) {
+    use tracing::{debug, info, warn};
+    
+    info!("show_connecting_overlay: entry - showing IMMEDIATELY");
+    
+    // Update state to Connecting
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        *state = OverlayState::Connecting;
+    }
+
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_position == OverlayPosition::None {
+        debug!("show_connecting_overlay: overlay disabled in settings, skipping");
+        return;
+    }
+
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // NOTE: We intentionally do NOT wait for OVERLAY_READY here.
+        // The connecting overlay should appear IMMEDIATELY on first fn press.
+        // Instant feedback is more important than perfect animation.
+        
+        // Use calculate_overlay_position to ensure correct placement
+        if let Some((x, y)) = calculate_overlay_position(app_handle) {
+            let _ = overlay_window
+                .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
+        }
+
+        let is_visible_before = overlay_window.is_visible().unwrap_or(false);
+        debug!("show_connecting_overlay: is_visible_before={}", is_visible_before);
+        
+        // Enable interaction immediately
+        let _ = overlay_window.set_ignore_cursor_events(false);
+
+        // Show window FIRST, then emit event
+        // This ensures the user sees something immediately, even if React needs a moment
+        if !is_visible_before {
+            let show_result = overlay_window.show();
+            debug!("show_connecting_overlay: window.show() result={:?}", show_result);
+        }
+        
+        // Emit event to switch to connecting state
+        // React will update the content as soon as it processes this
+        let emit_result = overlay_window.emit("show-overlay", "connecting");
+        debug!("show_connecting_overlay: emit result={:?}", emit_result);
+        
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
+    } else {
+        warn!("show_connecting_overlay: overlay window NOT FOUND!");
     }
 }
 

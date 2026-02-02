@@ -1,6 +1,7 @@
 mod actions;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
+mod audio_device_info;
 mod audio_feedback;
 pub mod audio_toolkit;
 mod clipboard;
@@ -117,6 +118,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     app_handle.manage(mlx_manager.clone());
+    
+    // Pre-warm Bluetooth microphone if selected
+    // This triggers the Bluetooth A2DP→HFP profile switch in the background,
+    // so when the user presses fn, the mic is already ready (reduces latency from ~1s to ~300ms)
+    recording_manager.prewarm_bluetooth_mic();
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command

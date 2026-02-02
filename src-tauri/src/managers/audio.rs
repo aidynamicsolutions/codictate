@@ -150,6 +150,8 @@ pub struct AudioRecordingManager {
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
     did_mute: Arc<Mutex<bool>>,
+    /// Tracks if we've ever successfully started a recording (for first-trigger detection)
+    has_recorded_before: Arc<Mutex<bool>>,
     
     /// Recording start time for tracking elapsed time
     recording_start_time: Arc<Mutex<Option<Instant>>>,
@@ -177,6 +179,7 @@ impl AudioRecordingManager {
             is_open: Arc::new(Mutex::new(false)),
             is_recording: Arc::new(Mutex::new(false)),
             did_mute: Arc::new(Mutex::new(false)),
+            has_recorded_before: Arc::new(Mutex::new(false)),
             recording_start_time: Arc::new(Mutex::new(None)),
             timer_stop_tx: Arc::new(Mutex::new(None)),
         };
@@ -216,6 +219,243 @@ impl AudioRecordingManager {
                 None
             }
         }
+    }
+
+    /// Get the name of the currently effective microphone device.
+    /// This considers clamshell mode overrides and falls back to the default device.
+    pub fn get_effective_device_name(&self) -> Option<String> {
+        let settings = get_settings(&self.app_handle);
+        
+        // Check if we're in clamshell mode and have a clamshell microphone configured
+        let use_clamshell_mic = if let Ok(is_clamshell) = clamshell::is_clamshell() {
+            is_clamshell && settings.clamshell_microphone.is_some()
+        } else {
+            false
+        };
+
+        // First try explicitly selected devices
+        if use_clamshell_mic {
+            if let Some(name) = settings.clamshell_microphone.clone() {
+                return Some(name);
+            }
+        }
+        
+        if let Some(name) = settings.selected_microphone.clone() {
+            return Some(name);
+        }
+
+        // Fall back to default input device
+        debug!("No microphone selected in settings, checking default device");
+        match list_input_devices() {
+            Ok(devices) => {
+                let default_device = devices.into_iter().find(|d| d.is_default);
+                if let Some(device) = default_device {
+                    debug!(device = %device.name, "Using default input device for Bluetooth check");
+                    return Some(device.name);
+                }
+            }
+            Err(e) => {
+                debug!("Failed to list devices for default: {}", e);
+            }
+        }
+        
+        None
+    }
+    
+    /// Get the device name from settings only (no device enumeration).
+    /// This is faster but won't return the default device if nothing is selected.
+    fn get_selected_device_name_fast(&self) -> Option<String> {
+        let settings = get_settings(&self.app_handle);
+        
+        // Check clamshell mode first
+        let use_clamshell_mic = if let Ok(is_clamshell) = clamshell::is_clamshell() {
+            is_clamshell && settings.clamshell_microphone.is_some()
+        } else {
+            false
+        };
+
+        if use_clamshell_mic {
+            return settings.clamshell_microphone.clone();
+        }
+        
+        settings.selected_microphone.clone()
+    }
+
+    /// Check if the currently selected microphone is a Bluetooth device.
+    /// Uses a fast path that avoids device enumeration when possible.
+    pub fn is_current_device_bluetooth(&self) -> bool {
+        // Fast path: check settings first (no CPAL calls)
+        if let Some(device_name) = self.get_selected_device_name_fast() {
+            let is_bt = crate::audio_device_info::is_device_bluetooth(&device_name);
+            info!(
+                device = device_name,
+                is_bluetooth = is_bt,
+                method = "settings",
+                "Bluetooth device check"
+            );
+            return is_bt;
+        }
+        
+        // Slow path: need to enumerate devices to find the default
+        // Only do this if no device is explicitly selected in settings
+        debug!("No device in settings, checking default device (slow path)");
+        match self.get_effective_device_name() {
+            Some(device_name) => {
+                let is_bt = crate::audio_device_info::is_device_bluetooth(&device_name);
+                info!(
+                    device = device_name,
+                    is_bluetooth = is_bt,
+                    method = "default_device",
+                    "Bluetooth device check"
+                );
+                is_bt
+            }
+            None => {
+                debug!("No device name available, assuming not Bluetooth");
+                false
+            }
+        }
+    }
+    
+    /// Check if this is the first recording trigger since app start.
+    /// Used to determine longer warmup times on first use.
+    pub fn is_first_trigger(&self) -> bool {
+        let has_recorded = *self.has_recorded_before.lock().unwrap();
+        let is_first = !has_recorded;
+        info!(
+            has_recorded_before = has_recorded,
+            is_first_trigger = is_first,
+            "First trigger detection check"
+        );
+        is_first
+    }
+    
+    /// Mark that a recording has been successfully started.
+    /// Called after the first successful recording to disable first-trigger behavior.
+    fn mark_recording_started(&self) {
+        let mut has_recorded = self.has_recorded_before.lock().unwrap();
+        if !*has_recorded {
+            info!("Marking first recording as completed - future recordings will skip first-trigger warmup");
+            *has_recorded = true;
+        }
+    }
+    
+    /// Pre-warm a Bluetooth microphone by briefly opening the audio stream.
+    /// This triggers the Bluetooth A2DP→HFP profile switch in the background,
+    /// so when the user presses fn, the mic is already in the correct mode.
+    /// This significantly reduces perceived latency for Bluetooth mics.
+    pub fn prewarm_bluetooth_mic(&self) {
+        // Only pre-warm Bluetooth devices
+        if !self.is_current_device_bluetooth() {
+            debug!("Skipping pre-warm: not a Bluetooth device");
+            return;
+        }
+        
+        // Don't pre-warm if already open (e.g., always-on mode)
+        if *self.is_open.lock().unwrap() {
+            debug!("Skipping pre-warm: microphone stream already open");
+            return;
+        }
+        
+        info!("Pre-warming Bluetooth microphone in background");
+        
+        // Clone what we need for the background thread
+        let is_open = Arc::clone(&self.is_open);
+        let is_recording = Arc::clone(&self.is_recording);
+        let recorder = Arc::clone(&self.recorder);
+        let app_handle = self.app_handle.clone();
+        let did_mute = Arc::clone(&self.did_mute);
+        
+        std::thread::spawn(move || {
+            // Open the microphone stream to trigger Bluetooth profile switch
+            let start_time = Instant::now();
+            
+            // Get VAD path for recorder initialization
+            let vad_path = match app_handle.path().resolve(
+                "resources/models/silero_vad_v4.onnx",
+                tauri::path::BaseDirectory::Resource,
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    debug!("Pre-warm failed to resolve VAD path: {}", e);
+                    return;
+                }
+            };
+            
+            // Initialize recorder if needed
+            {
+                let mut recorder_guard = recorder.lock().unwrap();
+                if recorder_guard.is_none() {
+                    match create_audio_recorder(vad_path.to_str().unwrap(), &app_handle) {
+                        Ok(rec) => *recorder_guard = Some(rec),
+                        Err(e) => {
+                            debug!("Pre-warm failed to create recorder: {}", e);
+                            return;
+                        }
+                    }
+                }
+            }
+            
+            // Open the stream (this triggers Bluetooth profile switch)
+            {
+                let settings = get_settings(&app_handle);
+                let mut recorder_guard = recorder.lock().unwrap();
+                if let Some(rec) = recorder_guard.as_mut() {
+                    // Get the device to use by name lookup
+                    let selected_device = {
+                        // Get effective device considering clamshell mode
+                        let use_clamshell = if let Ok(is_clamshell) = clamshell::is_clamshell() {
+                            is_clamshell && settings.clamshell_microphone.is_some()
+                        } else {
+                            false
+                        };
+                        
+                        let device_name = if use_clamshell {
+                            settings.clamshell_microphone.as_ref()
+                        } else {
+                            settings.selected_microphone.as_ref()
+                        };
+                        
+                        // Find device by name from available devices
+                        device_name.and_then(|name| {
+                            match list_input_devices() {
+                                Ok(devices) => devices.into_iter()
+                                    .find(|d| &d.name == name)
+                                    .map(|d| d.device),
+                                Err(_) => None
+                            }
+                        })
+                    };
+                    
+                    if let Err(e) = rec.open(selected_device) {
+                        debug!("Pre-warm failed to open stream: {}", e);
+                        return;
+                    }
+                }
+            }
+            
+            *is_open.lock().unwrap() = true;
+            info!("Pre-warm: Bluetooth profile switch triggered in {:?}", start_time.elapsed());
+            
+            // Keep the stream open briefly to ensure profile switch completes
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            
+            // Close the stream (unless user started recording in the meantime)
+            if !*is_recording.lock().unwrap() {
+                // Safely close the stream
+                if let Some(rec) = recorder.lock().unwrap().as_mut() {
+                    let _ = rec.close();
+                }
+                *is_open.lock().unwrap() = false;
+                
+                // Reset mute flag
+                *did_mute.lock().unwrap() = false;
+                
+                info!("Pre-warm complete: Bluetooth microphone ready");
+            } else {
+                debug!("Pre-warm: User started recording, keeping stream open");
+            }
+        });
     }
 
     /* ---------- microphone life-cycle -------------------------------------- */
@@ -369,6 +609,9 @@ impl AudioRecordingManager {
                     *self.recording_start_time.lock().unwrap() = Some(start_time);
                     self.start_recording_timer(binding_id.to_string());
                     
+                    // Mark that we've successfully recorded (for first-trigger detection)
+                    self.mark_recording_started();
+                    
                     debug!(session = session_id, "Recording started for binding {binding_id}");
                     return true;
                 }
@@ -488,6 +731,9 @@ impl AudioRecordingManager {
         if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
             rec.reset_cache();
         }
+        
+        // Reset first-trigger status so the new device gets a proper warmup
+        *self.has_recorded_before.lock().unwrap() = false;
 
         // If currently open, restart the microphone stream to use the new device
         if *self.is_open.lock().unwrap() {

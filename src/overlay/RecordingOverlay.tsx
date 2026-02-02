@@ -2,8 +2,6 @@ import { emit, listen } from "@tauri-apps/api/event";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  MicrophoneIcon,
-  TranscriptionIcon,
   CancelIcon,
 } from "../components/icons";
 import "./RecordingOverlay.css";
@@ -14,7 +12,7 @@ import { logInfo, logWarn, logDebug } from "@/utils/logging";
 import { AudioAGC } from "@/utils/audioAGC";
 
 
-type OverlayState = "recording" | "transcribing" | "processing";
+type OverlayState = "recording" | "transcribing" | "processing" | "connecting";
 
 // SVG dimensions and border radius (constants)
 const SVG_WIDTH = 234;
@@ -180,10 +178,14 @@ const RecordingOverlay: React.FC = () => {
 
   const getIcon = () => {
     if (state === "recording") {
-      return <MicrophoneIcon />;
-    } else {
-      return <TranscriptionIcon />;
-    }
+      // User reported never seeing the mic icon (or it's redundant). 
+      // Using a spacer to balance the Cancel button (24px) on the right.
+      return <div style={{ width: 24 }} />;
+    } 
+    
+    // For connecting, transcribing, and processing, we return null (no icon)
+    // to allow the text to be perfectly centered in the overlay.
+    return null;
   };
 
   return (
@@ -232,10 +234,21 @@ const RecordingOverlay: React.FC = () => {
             </div>
           )}
           {state === "transcribing" && (
-            <div className="transcribing-text">{t("overlay.transcribing")}</div>
+            <div className="connecting-container">
+              <div className="connecting-text">{t("overlay.transcribing")}</div>
+            </div>
           )}
           {state === "processing" && (
-            <div className="transcribing-text">{t("overlay.processing")}</div>
+            <div className="connecting-container">
+              <div className="connecting-text">{t("overlay.processing")}</div>
+            </div>
+          )}
+          {state === "connecting" && (
+            <div className="connecting-container">
+              <div className="connecting-text">
+                {t("overlay.starting", "Starting microphone...")}
+              </div>
+            </div>
           )}
         </div>
 

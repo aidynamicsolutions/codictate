@@ -2,6 +2,9 @@ fn main() {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     build_apple_intelligence_bridge();
 
+    #[cfg(target_os = "macos")]
+    build_audio_device_info_bridge();
+
     generate_tray_translations();
 
     tauri_build::build()
@@ -236,4 +239,95 @@ fn build_apple_intelligence_bridge() {
     }
 
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+}
+
+#[cfg(target_os = "macos")]
+fn build_audio_device_info_bridge() {
+    use std::env;
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    const SWIFT_FILE: &str = "swift/audio_device_info.swift";
+    const BRIDGE_HEADER: &str = "swift/audio_device_info_bridge.h";
+
+    println!("cargo:rerun-if-changed={SWIFT_FILE}");
+    println!("cargo:rerun-if-changed={BRIDGE_HEADER}");
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
+    let object_path = out_dir.join("audio_device_info.o");
+    let static_lib_path = out_dir.join("libaudio_device_info.a");
+
+    let sdk_path = String::from_utf8(
+        Command::new("xcrun")
+            .args(["--sdk", "macosx", "--show-sdk-path"])
+            .output()
+            .expect("Failed to locate macOS SDK")
+            .stdout,
+    )
+    .expect("SDK path is not valid UTF-8")
+    .trim()
+    .to_string();
+
+    // Detect target architecture from Cargo environment
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "aarch64".to_string());
+    
+    // Map Rust arch to Swift arch
+    let swift_arch = match target_arch.as_str() {
+        "x86_64" => "x86_64",
+        "aarch64" => "arm64",
+        _ => "arm64", // Default to arm64 if unknown (likely Apple Silicon)
+    };
+    
+    let swift_target = format!("{}-apple-macosx11.0", swift_arch);
+
+    // Compile Swift file
+    let status = Command::new("xcrun")
+        .args([
+            "swiftc",
+            "-target",
+            &swift_target,
+            "-sdk",
+            &sdk_path,
+            "-O",
+            "-import-objc-header",
+            BRIDGE_HEADER,
+            "-c",
+            SWIFT_FILE,
+            "-o",
+            object_path
+                .to_str()
+                .expect("Failed to convert object path to string"),
+        ])
+        .status()
+        .expect("Failed to invoke swiftc for audio_device_info bridge");
+
+    if !status.success() {
+        panic!("swiftc failed to compile {SWIFT_FILE}");
+    }
+
+    // Create static library
+    let status = Command::new("libtool")
+        .args([
+            "-static",
+            "-o",
+            static_lib_path
+                .to_str()
+                .expect("Failed to convert static lib path to string"),
+            object_path
+                .to_str()
+                .expect("Failed to convert object path to string"),
+        ])
+        .status()
+        .expect("Failed to create static library for audio_device_info bridge");
+
+    if !status.success() {
+        panic!("libtool failed for audio_device_info bridge");
+    }
+
+    println!("cargo:rustc-link-search=native={}", out_dir.display());
+    println!("cargo:rustc-link-lib=static=audio_device_info");
+    println!("cargo:rustc-link-lib=framework=CoreAudio");
+    println!("cargo:rustc-link-lib=framework=AudioToolbox");
+
+    println!("cargo:warning=Built audio_device_info bridge for Bluetooth detection");
 }

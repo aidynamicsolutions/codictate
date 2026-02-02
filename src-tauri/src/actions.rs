@@ -11,7 +11,7 @@ use crate::settings::LOCAL_MLX_PROVIDER_ID;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
-use crate::utils::{self, show_recording_overlay, show_transcribing_overlay};
+use crate::utils::{self, show_connecting_overlay, show_recording_overlay, show_transcribing_overlay};
 use crate::ManagedToggleState;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use once_cell::sync::Lazy;
@@ -335,14 +335,54 @@ impl ShortcutAction for TranscribeAction {
                 // On-demand mode: Start recording first, then play audio feedback, then apply mute
                 // This allows the microphone to be activated before playing the sound
                 debug!("On-demand mode: Starting recording first (blocking), then audio feedback");
+                
+                // Check if we're using a Bluetooth device and if this is the first trigger
+                // For Bluetooth: show "Starting microphone..." overlay during warmup
+                // For first trigger of ANY device: show "Starting microphone..." while initializing
+                // Note: Use catch_unwind to protect against any panics in device detection
+                let is_bluetooth = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    rm.is_current_device_bluetooth()
+                })).unwrap_or_else(|e| {
+                    error!("Panic in Bluetooth detection: {:?}", e);
+                    false
+                });
+                
+                let is_first_trigger = rm.is_first_trigger();
+                
+                // Only show "Starting microphone..." for Bluetooth devices.
+                // Internal mics start fast enough (~100-200ms) that we can just wait
+                // and show the recording overlay directly - no confusing state transitions.
+                // Bluetooth mics need 1-2s warmup, so the connecting overlay sets expectations.
+                if is_bluetooth {
+                    info!("Bluetooth mic detected, showing connecting overlay");
+                    utils::show_connecting_overlay(app);
+                }
+                
                 let recording_start_time = Instant::now();
                 
-                // Blocks here until Mic is ready (~100-300ms)
+                // Blocks here until Mic is ready (~100-200ms for internal, ~500ms+ for Bluetooth)
                 if rm.try_start_recording(binding_id, &session_id) {
                     recording_started = true;
                     debug!("Recording started in {:?}", recording_start_time.elapsed());
                     
-                    // Show overlay NOW - verified recording is active.
+                    // Add warmup delay for Bluetooth microphones.
+                    // Bluetooth mics often send silence while waking up, causing first words to be lost.
+                    // Pre-warming triggers the Bluetooth profile switch at app startup, so we only need
+                    // a short delay here for audio buffer stabilization:
+                    // - First trigger (no pre-warm): 1000ms (longer, in case pre-warm didn't happen)
+                    // - Subsequent triggers: 750ms (buffer stabilization)
+                    if is_bluetooth {
+                        let warmup_delay_ms: u64 = if is_first_trigger { 1000 } else { 750 };
+                        info!(
+                            delay_ms = warmup_delay_ms,
+                            is_first_trigger = is_first_trigger,
+                            "Bluetooth microphone: adding warmup delay (pre-warmed)"
+                        );
+                        std::thread::sleep(std::time::Duration::from_millis(warmup_delay_ms));
+                        debug!("Bluetooth warmup delay completed");
+                    }
+                    
+                    // Show overlay recording state NOW (with smooth fade-in animation)
                     info!("TranscribeAction::start: showing recording overlay (on-demand)");
                     show_recording_overlay(app);
                     

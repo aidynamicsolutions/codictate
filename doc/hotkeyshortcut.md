@@ -42,13 +42,32 @@ Concise documentation of Codictate's keyboard shortcut system for speech-to-text
 
  ### Audio Latency Optimization
  
- To eliminate audio cutoff (the "first word missing" problem), the system employs two strategies:
+ To eliminate audio cutoff (the "first word missing" problem), the system employs several strategies:
  
  1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time from ~300ms to ~100ms.
  2. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
     - **Cons**: Small initial delay (~100-200ms) before UI appears.
     - **Implementation**: `TranscribeAction::start` spawns a thread that calls `try_start_recording` (blocking), and only calls `show_recording_overlay` upon success.
+
+### Bluetooth Microphone Handling
+
+Bluetooth mics (e.g., AirPods) require special handling due to the A2DP→HFP profile switch delay (~1-2s).
+
+**Pre-warming**: On app startup, if a Bluetooth mic is selected, the system briefly opens the audio stream in the background to trigger the profile switch. This happens before the user presses fn.
+
+**Overlay Behavior**:
+- **Internal mics**: Skip "Starting microphone..." → go directly to recording overlay (fast ~100-200ms init)
+- **Bluetooth mics**: Show "Starting microphone..." connecting overlay → warmup delay → recording overlay
+
+**Warmup Delays** (Bluetooth only):
+- First trigger: 1000ms (in case pre-warm didn't complete)
+- Subsequent triggers: 750ms (buffer stabilization)
+
+**Key Files**:
+- [audio.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/managers/audio.rs): `prewarm_bluetooth_mic()`, `is_current_device_bluetooth()`
+- [lib.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/lib.rs): Calls prewarm on app startup
+- [actions.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/actions.rs): Warmup delay logic
  
 ### Seamless Mode Switching
 
