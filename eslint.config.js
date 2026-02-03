@@ -1,5 +1,7 @@
 import i18next from "eslint-plugin-i18next";
 import tsParser from "@typescript-eslint/parser";
+import reactHooks from "eslint-plugin-react-hooks";
+import tsPlugin from "@typescript-eslint/eslint-plugin";
 
 export default [
   {
@@ -18,6 +20,8 @@ export default [
     },
     plugins: {
       i18next,
+      "react-hooks": reactHooks,
+      "@typescript-eslint": tsPlugin,
     },
     rules: {
       // Catch text in JSX that should be translated
