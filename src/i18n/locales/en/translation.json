@@ -458,7 +458,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "{{appName}} Shortcuts",
+        "title": "Keyboard shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -497,7 +497,12 @@
         "descriptionUnsupported": "Parakeet model automatically detects the language. No manual selection is needed.",
         "searchPlaceholder": "Search languages...",
         "noResults": "No languages found",
-        "auto": "Auto"
+        "auto": "Auto",
+        "comingSoon": "Language selection coming soon"
+      },
+      "keyboardShortcuts": {
+        "holdPrefix": "Hold",
+        "holdSuffix": "and speak."
       },
       "pushToTalk": {
         "label": "Push To Talk",
@@ -846,7 +851,8 @@
     "no": "No",
     "space": "Space",
     "optionKey": "⌥",
-    "noOptionsFound": "No options found"
+    "noOptionsFound": "No options found",
+    "change": "Change"
   },
   "accessibility": {
     "permissionsRequired": "Accessibility Permissions Required",

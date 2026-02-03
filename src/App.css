@@ -210,6 +210,10 @@
   html {
     @apply font-sans;
   }
+  /* Restore pointer cursor for buttons (Tailwind/shadcn doesn't include this) */
+  button {
+    cursor: pointer;
+  }
 }
 
 @layer utilities {

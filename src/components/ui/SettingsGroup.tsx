@@ -31,7 +31,7 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
         </CardHeader>
       )}
       <CardContent className="p-0">
-        <div className="divide-y divide-border/40 px-6">
+        <div className="divide-y divide-border/60 dark:divide-white/15 px-6">
           {children}
         </div>
       </CardContent>
