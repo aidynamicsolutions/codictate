@@ -3,7 +3,7 @@
 //! On macOS, this uses CoreAudio's `kAudioDevicePropertyTransportType` for reliable detection.
 //! On other platforms, it falls back to name pattern matching.
 
-use tracing::{debug, warn};
+use tracing::debug;
 
 #[cfg(target_os = "macos")]
 mod ffi {
@@ -12,8 +12,7 @@ mod ffi {
 
     extern "C" {
         pub fn is_audio_device_bluetooth(device_name: *const c_char) -> c_int;
-        pub fn get_audio_device_transport_type(device_name: *const c_char) -> *mut c_char;
-        pub fn free_transport_type_string(ptr: *mut c_char);
+
     }
 
     /// Check if a device is Bluetooth using CoreAudio on macOS.
@@ -28,19 +27,7 @@ mod ffi {
         }
     }
 
-    /// Get the transport type string for debugging.
-    pub fn get_transport_type(device_name: &str) -> Option<String> {
-        let c_name = CString::new(device_name).ok()?;
-        let ptr = unsafe { get_audio_device_transport_type(c_name.as_ptr()) };
-        if ptr.is_null() {
-            return None;
-        }
-        let result = unsafe { std::ffi::CStr::from_ptr(ptr) }
-            .to_string_lossy()
-            .into_owned();
-        unsafe { free_transport_type_string(ptr) };
-        Some(result)
-    }
+
 }
 
 /// Common Bluetooth device name patterns for fallback detection.

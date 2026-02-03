@@ -11,7 +11,7 @@ use crate::settings::LOCAL_MLX_PROVIDER_ID;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
-use crate::utils::{self, show_connecting_overlay, show_recording_overlay, show_transcribing_overlay};
+use crate::utils::{self, show_recording_overlay, show_transcribing_overlay};
 use crate::ManagedToggleState;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use once_cell::sync::Lazy;
