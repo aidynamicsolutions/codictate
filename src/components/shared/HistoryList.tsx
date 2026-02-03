@@ -178,7 +178,7 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(({
         {/* External sticky header - only shown when using customScrollParent */}
         {scrollContainer && sortedDates.length > 0 && (
           <div
-            className="bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 py-3 border-b border-border/60 shadow-sm px-6"
+            className="bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/85 py-3 border-b border-border/60 shadow-sm px-6 mb-2"
             style={{ position: 'sticky', top: topValue, zIndex: 15 }}
           >
             <h3 className="text-xs font-bold text-primary/80 uppercase tracking-widest px-1">
@@ -323,7 +323,7 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(({
           {highlightText(entry.transcription_text, searchQuery)}
         </p>
         {(audioProps.src || audioProps.onLoadRequest) && (
-          <AudioPlayer {...audioProps} className="w-full max-w-md" />
+          <AudioPlayer {...audioProps} className="w-full" />
         )}
       </div>
 
