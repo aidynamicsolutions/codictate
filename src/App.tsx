@@ -5,6 +5,7 @@ import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import MicrophonePermissions from "./components/MicrophonePermissions";
 import Footer from "./components/footer";
 import Onboarding from "./components/onboarding";
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/shared/ui/sidebar";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { useSettings } from "./hooks/useSettings";
 import { commands } from "@/bindings";
@@ -107,7 +108,15 @@ function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col select-none cursor-default">
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "10rem",
+          "--sidebar-width-icon": "4rem",
+        } as React.CSSProperties
+      }
+      className="h-screen w-full overflow-hidden"
+    >
       <Toaster
         theme="system"
         toastOptions={{
@@ -120,14 +129,16 @@ function App() {
           },
         }}
       />
-      {/* Main content area that takes remaining space */}
-      <div className="flex-1 flex overflow-hidden">
-        <Sidebar
-          activeSection={currentSection}
-          onSectionChange={setCurrentSection}
-        />
-        {/* Scrollable content area */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+      <Sidebar
+        activeSection={currentSection}
+        onSectionChange={setCurrentSection}
+      />
+      <SidebarInset>
+        {/* Main content area */}
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          <div className="absolute left-4 top-4 z-50">
+             <SidebarTrigger />
+          </div>
           <div
             className={`flex-1 flex flex-col ${
               currentSection === "history" ? "overflow-hidden" : "overflow-y-auto"
@@ -140,10 +151,10 @@ function App() {
             </div>
           </div>
         </div>
-      </div>
-      {/* Fixed footer at bottom */}
-      <Footer />
-    </div>
+        {/* Footer inside content area */}
+        <Footer />
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 

@@ -5,6 +5,18 @@ import CodictateLogo from "./icons/CodictateLogo";
 import { useSettings } from "../hooks/useSettings";
 import HomeContent from "./home/Home";
 import {
+  Sidebar as SidebarPrimitive,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+  SidebarSeparator,
+} from "@/components/shared/ui/sidebar";
+import {
   GeneralSettings,
   AdvancedSettings,
   HistorySettings,
@@ -92,37 +104,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
     .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
 
   return (
-    <div className="flex flex-col w-40 h-full border-r border-mid-gray/20 items-center px-2">
-      <div className="flex flex-col items-center m-4 gap-2">
-        <CodictateLogo width={80} className="fill-text stroke-text" />
-        <span className="font-bold text-lg tracking-tight">Codictate</span>
-      </div>
-      <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
-        {availableSections.map((section) => {
-          const Icon = section.icon;
-          const isActive = activeSection === section.id;
+    <SidebarPrimitive collapsible="icon" className="border-r border-mid-gray/20">
+      <SidebarHeader className="flex flex-col items-center pt-4 pb-2 !h-[120px]">
+        <CodictateLogo 
+          className="fill-text stroke-text mb-2 group-data-[collapsible=icon]:mb-1 transition-all duration-300 w-20 group-data-[collapsible=icon]:w-10" 
+        />
+        <span className="font-bold text-xl tracking-tight group-data-[collapsible=icon]:text-[11px] group-data-[collapsible=icon]:mb-5">Codictate</span>
+      </SidebarHeader>
+      <SidebarSeparator className="mx-0" />
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {availableSections.map((section) => {
+                const Icon = section.icon;
+                const isActive = activeSection === section.id;
 
-          return (
-            <div
-              key={section.id}
-              className={`flex gap-2 items-center p-2 w-full rounded-lg cursor-pointer transition-colors ${
-                isActive
-                  ? "bg-logo-primary/80"
-                  : "hover:bg-mid-gray/20 hover:opacity-100 opacity-85"
-              }`}
-              onClick={() => onSectionChange(section.id)}
-            >
-              <Icon width={24} height={24} className="shrink-0" />
-              <p
-                className="text-sm font-medium truncate"
-                title={t(section.labelKey)}
-              >
-                {t(section.labelKey)}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+                return (
+                  <SidebarMenuItem key={section.id}>
+                    <SidebarMenuButton
+                      isActive={isActive}
+                      onClick={() => onSectionChange(section.id)}
+                      tooltip={t(section.labelKey)}
+                      size="lg"
+                      className="text-base data-[active=true]:bg-logo-primary/80 data-[active=true]:text-white !h-11 group-data-[collapsible=icon]:!h-11 group-data-[collapsible=icon]:!w-full group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:!px-0"
+                    >
+                      <Icon className="size-7 group-data-[collapsible=icon]:size-6" />
+                      <span className="font-medium group-data-[collapsible=icon]:hidden">{t(section.labelKey)}</span>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                );
+              })}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarRail />
+    </SidebarPrimitive>
   );
 };
