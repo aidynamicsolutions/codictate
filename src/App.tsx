@@ -87,7 +87,7 @@ function App() {
         const userProfile = profileResult.data;
         if (userProfile.onboarding_completed) {
           // Initialize shortcuts when onboarding is already complete
-          // (During onboarding, this is called from AccessibilityOnboarding.tsx)
+          // (During onboarding, this is called from PermissionsStep.tsx)
           commands.initializeShortcuts().catch((e) => {
             console.error("Failed to initialize shortcuts:", e);
           });
