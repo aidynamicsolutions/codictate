@@ -7,19 +7,35 @@ import { SettingsRow } from "../../ui/SettingsRow";
 import { OutputDeviceSelector } from "../OutputDeviceSelector";
 import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
-import { useModelStore } from "../../../stores/modelStore";
+
 import { VolumeSlider } from "../VolumeSlider";
 import { MuteWhileRecording } from "../MuteWhileRecording";
 import { KeyboardShortcutsModal } from "@/components/shared/KeyboardShortcutsModal";
+import { LanguageSelectorModal } from "@/components/shared/LanguageSelectorModal";
+import { getLanguageLabel } from "@/lib/constants/languageData";
+import { Globe } from "lucide-react";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting, audioFeedbackEnabled } = useSettings();
-  const { currentModel, getModelInfo } = useModelStore();
-  const currentModelInfo = getModelInfo(currentModel);
-  const showLanguageSelector = currentModelInfo?.engine_type === "Whisper";
 
+  
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+  const [isLanguageModalOpen, setIsLanguageModalOpen] = useState(false);
+  const selectedLanguage = getSetting("selected_language") || "auto";
+
+  // Helper to get language display text
+  const getLanguageDisplay = () => {
+    if (selectedLanguage === "auto") {
+      return (
+        <span className="flex items-center gap-2">
+          <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+          {t("settings.general.language.auto")}
+        </span>
+      );
+    }
+    return getLanguageLabel(selectedLanguage) || selectedLanguage;
+  };
 
   // Get OS type for determining default shortcut display
   const osType = useMemo(() => type(), []);
@@ -67,16 +83,13 @@ export const GeneralSettings: React.FC = () => {
         {/* Microphone row */}
         <MicrophoneSelector />
 
-        {/* Languages placeholder row */}
-        {showLanguageSelector && (
-          <SettingsRow
+        {/* Languages row */}
+        <SettingsRow
             title={t("settings.general.language.title")}
-            description={t("settings.general.language.comingSoon", "Language selection coming soon")}
+            description={getLanguageDisplay()}
             buttonLabel={t("common.change", "Change")}
-            onButtonClick={() => {}}
-            disabled={true}
-          />
-        )}
+            onButtonClick={() => setIsLanguageModalOpen(true)}
+        />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.sound.title")}>
@@ -90,6 +103,12 @@ export const GeneralSettings: React.FC = () => {
       <KeyboardShortcutsModal
         open={isShortcutsModalOpen}
         onOpenChange={setIsShortcutsModalOpen}
+      />
+      
+      {/* Language Selection Modal */}
+      <LanguageSelectorModal
+        open={isLanguageModalOpen}
+        onOpenChange={setIsLanguageModalOpen}
       />
     </div>
   );

@@ -298,6 +298,8 @@
         "searchPlaceholder": "Search for any languages",
         "autoDetect": "Auto-detect",
         "autoDetectMessage": "Auto-detect is on. {{appName}} will try to detect the language you are speaking.",
+        "autoDetectWarning": "Auto-detect may be less accurate than selecting a specific language.",
+        "clickToSetActive": "Click a language to set as active",
         "selected": "Selected",
         "languagesCount": "{{count}} languages",
         "saveAndClose": "Save and close",
@@ -506,11 +508,7 @@
       "language": {
         "title": "Language",
         "description": "Select the language for speech recognition. Auto will automatically determine the language, while selecting a specific language can improve accuracy for that language.",
-        "descriptionUnsupported": "Parakeet model automatically detects the language. No manual selection is needed.",
-        "searchPlaceholder": "Search languages...",
-        "noResults": "No languages found",
-        "auto": "Auto",
-        "comingSoon": "Language selection coming soon"
+        "auto": "Auto"
       },
       "keyboardShortcuts": {
         "holdPrefix": "Hold",
