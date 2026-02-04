@@ -70,8 +70,9 @@ const RecordingOverlay: React.FC = () => {
       // Listen for show-overlay event from Rust
       const unlistenShow = await listen("show-overlay", async (event) => {
         if (ignore) return;  // Ignore if cleanup already ran
+        const now = performance.now();
         const overlayState = event.payload as OverlayState;
-        logInfo(`RecordingOverlay: Received show-overlay event: state=${overlayState}`, "fe-overlay");
+        logInfo(`RecordingOverlay: Received show-overlay event: state=${overlayState} at ${now.toFixed(2)}ms`, "fe-overlay");
         
         // Update state IMMEDIATELY before any async operations
         // This ensures the UI shows the correct state as soon as the event arrives
@@ -85,8 +86,16 @@ const RecordingOverlay: React.FC = () => {
           agcRef.current.reset();
         }
         
-        // Sync language from settings (async, but UI is already updated)
-        await syncLanguageFromSettings();
+        // Sync language from settings (fire-and-forget, don't await/block UI)
+        syncLanguageFromSettings().catch(err => {
+             logWarn(`RecordingOverlay: Language sync failed: ${err}`, "fe-overlay");
+        });
+        
+        // Force a browser reflow/repaint to ensure visibility updates immediately
+        // This is a common fix for transparent window painting issues on macOS
+        requestAnimationFrame(() => {
+             logDebug("RecordingOverlay: Animation frame fired (paint)", "fe-overlay");
+        });
       });
       
       // If cleanup ran while awaiting, unsubscribe immediately

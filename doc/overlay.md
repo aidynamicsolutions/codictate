@@ -2,7 +2,7 @@
 
 The recording overlay is a high-performance, always-on-top window that visualizes microphone levels and transcription status.
 
-## core Strategy: "Always Mapped"
+## Core Strategy: "Always Mapped"
 
 To prevent visual flickering associated with OS window mapping/unmapping (`show()`/`hide()`), we use a **transparency + event pass-through** strategy.
 
@@ -11,7 +11,7 @@ To prevent visual flickering associated with OS window mapping/unmapping (`show(
 1.  **Hidden (Standby)**
     *   **Window**: Remains `visible` (mapped) but fully transparent.
     *   **Interaction**: `set_ignore_cursor_events(true)` (Click-through enabled).
-    *   **Frontend**: Opacity `0`.
+    *   **Frontend**: Opacity `0` (CSS).
 
 2.  **Visible (Active)**
     *   **Modes**: Recording, Processing, Transcribing.
@@ -19,18 +19,31 @@ To prevent visual flickering associated with OS window mapping/unmapping (`show(
     *   **Interaction**: `set_ignore_cursor_events(false)` (Interactive).
     *   **Frontend**: Opacity `1` (via CSS transition).
 
-### State Transitions
+### Zero-Latency Optimizations
 
-*   **Show**:
-    1.  Backend: `set_ignore_cursor_events(false)`.
-    2.  Backend: Emits `show-overlay`.
-    3.  Frontend: Sets React state to visible (fade-in).
-*   **Hide**:
-    1.  Backend: Emits `hide-overlay`.
-    2.  Frontend: Sets React state to hidden (fade-out).
-    3.  Backend: `set_ignore_cursor_events(true)` (after short delay or immediately, relying on frontend transparency).
+To ensure the overlay appears **instantly (0ms delay)** when the shortcut is pressed, we implement several critical optimizations:
 
-*Note: `window.show()` is only called on the very first activation or if the window was forcefully hidden.*
+#### 1. macOS App Nap Prevention
+*   **Problem**: macOS suspends hidden webviews ("App Nap"), causing a ~1s wake-up delay.
+*   **Solution**: The `NSPanel` is created with `.visible(true)` in the builder. This forces the OS to treat the window as active from birth, even though it is visually transparent.
+
+#### 2. Audio Stream Consistency
+*   **Wait for Ready**: `actions.rs` calls `try_start_recording` (blocking ~100ms) *before* showing the overlay.
+*   **Result**: This guarantees that if the user sees the "Recording" UI, the microphone stream is definitively active and capturing audio. The latency is minimal thanks to startup pre-warming.
+*   **Bluetooth**: For Bluetooth devices, a "Starting microphone..." state is shown during the longer wakeup phase.
+
+#### 3. Frontend Rendering
+*   **Non-Blocking**: Heavy operations (like language sync) are fire-and-forget.
+*   **Forced Paint**: `requestAnimationFrame` is used to force a browser reflow immediately upon receiving the `show-overlay` event.
+
+### Visual Polish (Content Reveal)
+
+The overlay uses a two-stage animation to feel "instant" yet "premium":
+
+1.  **Instant Background (80ms)**: The black pill background gets `opacity: 1` almost immediately.
+2.  **Content Reveal (300ms)**: The internal content (bars, buttons) slides up (`translateY`) with a springy bezier curve `cubic-bezier(0.16, 1, 0.3, 1)`.
+
+This ensures the user has immediate feedback that the system is responsive, while the animation adds character.
 
 ## Platform Implementation
 

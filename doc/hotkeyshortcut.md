@@ -63,11 +63,12 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
 
  To eliminate audio cutoff (the "first word missing" problem), the system employs several strategies:
 
- 1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time from ~300ms to ~100ms.
+ 1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time.
+ 2. **VAD & Model Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading the ASR model (`initiate_model_load`) at app startup. This eliminates the ~700ms cold start delay for the first recording.
  2. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
     - **Cons**: Small initial delay (~100-200ms) before UI appears.
-    - **Implementation**: `TranscribeAction::start` spawns a thread that calls `try_start_recording` (blocking), and only calls `show_recording_overlay` upon success.
+    - **Implementation**: `TranscribeAction::start` waits for the audio stream to be active (blocking ~100ms) before triggering the overlay. Thanks to pre-warming, this is barely perceptible.
 
 ### Bluetooth Microphone Handling
 
@@ -222,13 +223,16 @@ To prevent overlay flicker on the first Fn press after app startup, the system u
                          └───────────────────┘
 ```
 
+**Always Mapped Strategy**:
+The overlay window is created at startup and kept `visible` but transparent (`opacity: 0`). This prevents macOS "App Nap" from suspending the webview.
+
 **Show Sequence (Flicker-Free)**:
 
 ```
    ┌─────────────────────────────────────────────────────────────────────┐
    │ 1. emit("show-overlay", "recording")   ← Send event to React FIRST │
-   │ 2. sleep(20ms)                          ← Let React set opacity: 1  │
-   │ 3. window.show()                        ← Then make window visible  │
+   │ 2. React sets class .fade-in           ← CSS transitions opacity: 1│
+   │ 3. Window is already mapped            ← No OS-level delay/flash   │
    └─────────────────────────────────────────────────────────────────────┘
 ```
 

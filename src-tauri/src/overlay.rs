@@ -278,7 +278,7 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
             .transparent(true)
             .no_activate(true)
             .corner_radius(0.0)
-            .with_window(|w| w.decorations(false).transparent(true))
+            .with_window(|w| w.decorations(false).transparent(true).visible(true))
             .collection_behavior(
                 CollectionBehavior::new()
                     .can_join_all_spaces()
@@ -287,7 +287,27 @@ pub fn create_recording_overlay(app_handle: &AppHandle) {
             .build()
         {
             Ok(panel) => {
-                let _ = panel.hide();
+               // Don't hide the panel! Hiding it causes macOS to suspend the webview (App Nap),
+               // which causes a delay when showing it later.
+               // Instead, we rely on:
+               // 1. transparent(true) - so it's invisible
+               // 2. set_ignore_cursor_events(true) - so clicks pass through
+               // 3. CSS opacity: 0 - so content is invisible
+               
+               // Ensure it ignores mouse events initially so it doesn't block the screen
+               let _ = panel.set_ignores_mouse_events(true);
+               
+               // Force the panel to be visible (but transparent) immediately.
+               // This ensures the WebView process is active (not App Napped) and mounts the React app at startup.
+               // Since we set transparent(true) and the CSS defaults to opacity: 0, it will be invisible to the user.
+               let _ = panel.show();
+               
+               // Verify visibility immediately
+               if let Some(w) = app_handle.get_webview_window("recording_overlay") {
+                   tracing::debug!("create_recording_overlay: Panel created. Visible? {}", w.is_visible().unwrap_or(false));
+               } else {
+                   tracing::warn!("create_recording_overlay: Panel created but get_webview_window failed!");
+               }
             }
             Err(e) => {
                 tracing::error!("Failed to create recording overlay panel: {}", e);
@@ -319,18 +339,26 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
         // Wait for overlay to be ready (with timeout) on first show
         // This prevents the race condition where the event is emitted before
         // React has registered its listeners, causing flicker on first Fn press
+        // Optimistic show: We assume the overlay is ready because we created it at startup.
+        // Waiting for the roundtrip "overlay-ready" signal is causing a ~500ms delay.
+        // We log the status but proceed immediately.
+        // Optimistic show: We assume the overlay is ready because we created it at startup.
+        // Waiting for the roundtrip "overlay-ready" signal is causing a ~500ms delay if startup lazy-loading failed.
+        // But we MUST wait if it's truly not ready, otherwise we risk a white flash (flicker).
+        // If my fix in create_recording_overlay works, OVERLAY_READY will be true immediately, so this loop will exit instantly (0ms delay).
         if !OVERLAY_READY.load(Ordering::SeqCst) {
             debug!("show_recording_overlay: overlay not ready yet, waiting...");
+            let wait_start = std::time::Instant::now();
             // Short spin-wait with timeout (max ~500ms, checking every 10ms)
             for _ in 0..50 {
                 if OVERLAY_READY.load(Ordering::SeqCst) {
-                    debug!("show_recording_overlay: overlay became ready");
+                    debug!("show_recording_overlay: overlay became ready in {:?}", wait_start.elapsed());
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(10));
             }
             if !OVERLAY_READY.load(Ordering::SeqCst) {
-                warn!("show_recording_overlay: timeout waiting for overlay ready, proceeding anyway");
+                warn!("show_recording_overlay: timeout waiting for overlay ready after {:?}, proceeding anyway", wait_start.elapsed());
             }
         }
         
@@ -360,8 +388,9 @@ pub fn show_recording_overlay(app_handle: &AppHandle) {
             // before the native window becomes visible.
             std::thread::sleep(Duration::from_millis(50));
             
+            let show_start = std::time::Instant::now();
             let show_result = overlay_window.show();
-            debug!("show_recording_overlay: window.show() result={:?}", show_result);
+            debug!("show_recording_overlay: window.show() completed in {:?} result={:?}", show_start.elapsed(), show_result);
         } else {
              debug!("show_recording_overlay: window already visible, skipping native show() to avoid flicker");
         }

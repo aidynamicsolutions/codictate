@@ -459,6 +459,37 @@ impl AudioRecordingManager {
         });
     }
 
+    pub fn warmup_recorder(&self) {
+        // Just create the recorder if it doesn't exist. 
+        // This loads the VAD model (Silero ONNX) which is the expensive part.
+        // We do NOT call open() so the microphone light stays off.
+        let mut recorder_opt = self.recorder.lock().unwrap();
+        if recorder_opt.is_none() {
+             use tracing::debug;
+             debug!("Warming up audio recorder (loading VAD model)...");
+             let vad_path = match self.app_handle.path().resolve(
+                "resources/models/silero_vad_v4.onnx",
+                tauri::path::BaseDirectory::Resource,
+            ) {
+                Ok(path) => path,
+                Err(e) => {
+                    tracing::warn!("Warmup failed to resolve VAD path: {}", e);
+                    return;
+                }
+            };
+            
+            match create_audio_recorder(vad_path.to_str().unwrap(), &self.app_handle) {
+                Ok(rec) => {
+                    *recorder_opt = Some(rec);
+                    debug!("Audio recorder warmed up successfully");
+                }
+                Err(e) => {
+                    tracing::warn!("Warmup failed to create recorder: {}", e);
+                }
+            }
+        }
+    }
+
     /* ---------- microphone life-cycle -------------------------------------- */
 
     /// Applies mute if mute_while_recording is enabled and stream is open

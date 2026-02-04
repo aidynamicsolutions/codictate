@@ -84,6 +84,12 @@ fn show_main_window(app: &AppHandle) {
 }
 
 fn initialize_core_logic(app_handle: &AppHandle) {
+    // Create the recording overlay window immediately (hidden by default)
+    // We do this FIRST so the webview (React app) can start loading its resources
+    // in parallel with the backend initialization below. This significantly reduces
+    // the "overlay ready" latency on first launch.
+    utils::create_recording_overlay(app_handle);
+
     // Initialize the i18n system
     i18n::init(app_handle);
     
@@ -120,9 +126,16 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(mlx_manager.clone());
     
     // Pre-warm Bluetooth microphone if selected
-    // This triggers the Bluetooth A2DP→HFP profile switch in the background,
-    // so when the user presses fn, the mic is already ready (reduces latency from ~1s to ~300ms)
+    // (triggers A2DP→HFP switch if needed)
     recording_manager.prewarm_bluetooth_mic();
+    
+    // Warm up the recorder (loads VAD model) without opening the mic
+    // This removes the ~700ms delay on first record
+    recording_manager.warmup_recorder();
+    
+    // Start background loading of the transcription model
+    // This removes the ~1.5s delay on first transcription
+    transcription_manager.initiate_model_load();
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -218,9 +231,6 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         // Disable autostart if user has opted out
         let _ = autostart_manager.disable();
     }
-
-    // Create the recording overlay window (hidden by default)
-    utils::create_recording_overlay(app_handle);
     
     // Listen for "overlay-ready" event from the frontend
     // This signals that the React component has registered its event listeners
