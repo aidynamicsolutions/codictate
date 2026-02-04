@@ -293,6 +293,8 @@ pub struct AppSettings {
     pub experimental_enabled: bool,
     #[serde(default = "default_paste_delay_ms")]
     pub paste_delay_ms: u64,
+    #[serde(default = "default_paste_restore_delay_ms")]
+    pub paste_restore_delay_ms: u64,
 }
 
 fn default_model() -> String {
@@ -348,6 +350,10 @@ fn default_word_correction_threshold() -> f64 {
 
 fn default_paste_delay_ms() -> u64 {
     60
+}
+
+fn default_paste_restore_delay_ms() -> u64 {
+    200
 }
 
 fn default_history_limit() -> usize {
@@ -642,7 +648,9 @@ pub fn get_default_settings() -> AppSettings {
         append_trailing_space: false,
         app_language: default_app_language(),
         experimental_enabled: false,
-        paste_delay_ms: default_paste_delay_ms(),    }
+        paste_delay_ms: default_paste_delay_ms(),
+        paste_restore_delay_ms: default_paste_restore_delay_ms(),
+    }
 }
 
 impl AppSettings {

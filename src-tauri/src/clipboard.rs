@@ -18,6 +18,7 @@ fn paste_via_clipboard(
     app_handle: &AppHandle,
     paste_method: &PasteMethod,
     paste_delay_ms: u64,
+    paste_restore_delay_ms: u64,
 ) -> Result<(), String> {
     let clipboard = app_handle.clipboard();
     let clipboard_content = clipboard.read_text().unwrap_or_default();
@@ -46,7 +47,7 @@ fn paste_via_clipboard(
         }
     }
 
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    std::thread::sleep(std::time::Duration::from_millis(paste_restore_delay_ms));
 
     // Restore original clipboard content
     clipboard
@@ -383,6 +384,7 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     };
 
     let paste_delay_ms = settings.paste_delay_ms;
+    let paste_restore_delay_ms = settings.paste_restore_delay_ms;
 
     // Append trailing space if setting is enabled
     let text = if settings.append_trailing_space {
@@ -430,6 +432,7 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
                 &app_handle,
                 &paste_method,
                 paste_delay_ms,
+                paste_restore_delay_ms,
             )?
         }
     }
