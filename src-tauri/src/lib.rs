@@ -134,7 +134,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     {
         let app_clone = app_handle.clone();
         // Start Fn key monitor with transcription enabled
-        // This runs in a separate thread, so we spawn it
+        // The monitor itself now checks settings dynamically to decide if it should act
         std::thread::spawn(move || {
             let _ = fn_key_monitor::start_fn_key_monitor(app_clone, true);
         });
@@ -254,7 +254,7 @@ pub fn run() {
         shortcut::change_binding,
         shortcut::reset_binding,
         shortcut::reset_bindings,
-        shortcut::change_ptt_setting,
+
         shortcut::change_audio_feedback_setting,
         shortcut::change_audio_feedback_volume_setting,
         shortcut::change_sound_theme_setting,
@@ -369,7 +369,7 @@ pub fn run() {
         shortcut::change_binding,
         shortcut::reset_binding,
         shortcut::reset_bindings,
-        shortcut::change_ptt_setting,
+
         shortcut::change_audio_feedback_setting,
         shortcut::change_audio_feedback_volume_setting,
         shortcut::change_sound_theme_setting,

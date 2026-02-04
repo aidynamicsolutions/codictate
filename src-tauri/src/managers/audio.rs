@@ -104,6 +104,7 @@ const WHISPER_SAMPLE_RATE: usize = 16000;
 #[derive(Clone, Debug)]
 pub enum RecordingState {
     Idle,
+    Preparing { binding_id: String },
     Recording { binding_id: String, session_id: String },
 }
 
@@ -580,6 +581,20 @@ impl AudioRecordingManager {
 
     /* ---------- recording --------------------------------------------------- */
 
+    pub fn prepare_recording(&self, binding_id: &str) -> bool {
+        let mut state = self.state.lock().unwrap();
+        if let RecordingState::Idle = *state {
+            *state = RecordingState::Preparing {
+                binding_id: binding_id.to_string(),
+            };
+            debug!("Prepared recording for binding {}", binding_id);
+            true
+        } else {
+            debug!("Cannot prepare recording: state is not Idle (current: {:?})", *state);
+            false
+        }
+    }
+
     pub fn try_start_recording(&self, binding_id: &str, session_id: &str) -> bool {
         // Note: Microphone permission is checked in TranscribeAction::start() before
         // the overlay is shown. This allows for better UX - we can show a modal dialog
@@ -587,40 +602,64 @@ impl AudioRecordingManager {
         
         let mut state = self.state.lock().unwrap();
 
-        if let RecordingState::Idle = *state {
-            // Ensure microphone is open in on-demand mode
-            if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
-                if let Err(e) = self.start_microphone_stream() {
-                    error!("Failed to open microphone stream: {e}");
-                    return false;
-                }
+        // Validate that we are in the expected Preparing state for this binding
+        match *state {
+            RecordingState::Preparing { binding_id: ref active_binding, .. } if active_binding == binding_id => {
+                // Good to go - state is Preparing for the same binding we're trying to start
+            },
+            RecordingState::Preparing { binding_id: ref active_binding, .. } => {
+                // Preparing for a DIFFERENT binding - abort this stale request
+                debug!("try_start_recording aborted: preparing for different binding '{}', not '{}'", 
+                       active_binding, binding_id);
+                return false;
+            },
+            // If state is Idle, user called stop before start completed (quick release).
+            // Abort the recording - don't start a new orphaned recording session.
+            RecordingState::Idle => {
+                debug!("try_start_recording aborted: state is Idle (stop was called during prepare)");
+                return false;
+            },
+            // If state implies we are already recording, abort
+            ref other => {
+                error!("try_start_recording aborted: state changed to {:?}", other);
+                return false;
             }
-
-            if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                if rec.start().is_ok() {
-                    *self.is_recording.lock().unwrap() = true;
-                    *state = RecordingState::Recording {
-                        binding_id: binding_id.to_string(),
-                        session_id: session_id.to_string(),
-                    };
-                    
-                    // Start recording timer
-                    let start_time = Instant::now();
-                    *self.recording_start_time.lock().unwrap() = Some(start_time);
-                    self.start_recording_timer(binding_id.to_string());
-                    
-                    // Mark that we've successfully recorded (for first-trigger detection)
-                    self.mark_recording_started();
-                    
-                    debug!(session = session_id, "Recording started for binding {binding_id}");
-                    return true;
-                }
-            }
-            error!("Recorder not available");
-            false
-        } else {
-            false
         }
+
+        // Ensure microphone is open in on-demand mode
+        if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+            if let Err(e) = self.start_microphone_stream() {
+                error!("Failed to open microphone stream: {e}");
+                // If we failed, reset state to Idle so next attempt can work
+                *state = RecordingState::Idle;
+                return false;
+            }
+        }
+
+        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+            if rec.start().is_ok() {
+                *self.is_recording.lock().unwrap() = true;
+                *state = RecordingState::Recording {
+                    binding_id: binding_id.to_string(),
+                    session_id: session_id.to_string(),
+                };
+                
+                // Start recording timer
+                let start_time = Instant::now();
+                *self.recording_start_time.lock().unwrap() = Some(start_time);
+                self.start_recording_timer(binding_id.to_string());
+                
+                // Mark that we've successfully recorded (for first-trigger detection)
+                self.mark_recording_started();
+                
+                debug!(session = session_id, "Recording started for binding {binding_id}");
+                return true;
+            }
+        }
+        // If we got here, something failed. Reset state.
+        error!("Recorder not available or start failed");
+        *state = RecordingState::Idle;
+        false
     }
     
     /// Start a timer thread that emits recording time updates every second
@@ -747,6 +786,15 @@ impl AudioRecordingManager {
         let mut state = self.state.lock().unwrap();
 
         match *state {
+            RecordingState::Preparing {
+                binding_id: ref active,
+                ..
+            } if active == binding_id => {
+                // Race condition handled: User stopped before start completed!
+                debug!("stop_recording called while Preparing. Cancelling start.");
+                *state = RecordingState::Idle;
+                return None;
+            }
             RecordingState::Recording {
                 binding_id: ref active,
                 session_id: _,
@@ -799,45 +847,64 @@ impl AudioRecordingManager {
                     Some(samples)
                 }
             }
-            _ => None,
+            _ => {
+                // Idle or other binding active
+                None
+            }
         }
     }
+
     pub fn is_recording(&self) -> bool {
-        matches!(
-            *self.state.lock().unwrap(),
-            RecordingState::Recording { .. }
-        )
+        *self.is_recording.lock().unwrap()
     }
     
+    pub fn get_active_binding_id(&self) -> Option<String> {
+        match &*self.state.lock().unwrap() {
+            RecordingState::Recording { binding_id, .. } => Some(binding_id.clone()),
+            RecordingState::Preparing { binding_id, .. } => Some(binding_id.clone()),
+            RecordingState::Idle => None,
+        }
+    }
+
     /// Get the current session ID if recording is active
     pub fn get_current_session_id(&self) -> Option<String> {
         match &*self.state.lock().unwrap() {
             RecordingState::Recording { session_id, .. } => Some(session_id.clone()),
-            RecordingState::Idle => None,
+            RecordingState::Idle | RecordingState::Preparing { .. } => None,
         }
     }
+
+
+
 
     /// Cancel any ongoing recording without returning audio samples
     pub fn cancel_recording(&self) {
         let mut state = self.state.lock().unwrap();
 
-        if let RecordingState::Recording { .. } = *state {
-            *state = RecordingState::Idle;
-            drop(state);
-            
-            // Stop the recording timer
-            self.stop_recording_timer();
-
-            if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                let _ = rec.stop(); // Discard the result
+        match *state {
+            RecordingState::Preparing { .. } => {
+                *state = RecordingState::Idle;
+                debug!("Cancelled recording (while preparing)");
             }
+            RecordingState::Recording { .. } => {
+                *state = RecordingState::Idle;
+                drop(state);
+                
+                // Stop the recording timer
+                self.stop_recording_timer();
 
-            *self.is_recording.lock().unwrap() = false;
+                if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                    let _ = rec.stop(); // Discard the result
+                }
 
-            // In on-demand mode turn the mic off again
-            if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
-                self.stop_microphone_stream();
+                *self.is_recording.lock().unwrap() = false;
+
+                // In on-demand mode turn the mic off again
+                if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+                    self.stop_microphone_stream();
+                }
             }
+            RecordingState::Idle => {}
         }
     }
 }

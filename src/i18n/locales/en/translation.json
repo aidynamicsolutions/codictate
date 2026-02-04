@@ -278,14 +278,6 @@
       "modal": {
         "title": "Change hotkeys",
         "subtitle": "Customize how you interact with {{appName}}",
-        "pushToTalk": {
-          "title": "Push to talk",
-          "description": "Hold to say something short"
-        },
-        "handsFree": {
-          "title": "Hands-free mode",
-          "description": "Press to start and stop dictation"
-        },
         "addAnother": "Add another",
         "resetToDefault": "Reset to default"
       }
@@ -464,6 +456,7 @@
         "none": "No shortcuts configured",
         "notFound": "Shortcut not found",
         "pressKeys": "Press keys...",
+        "success": "Shortcut saved",
         "bindings": {
           "transcribe": {
             "name": "Push to talk",
@@ -489,6 +482,25 @@
           "multipleNonModifierKeys": "Shortcuts can only have one main key. Use a modifier (Ctrl, Shift, Alt, Cmd) with a single key.",
           "modifierRequired": "Shortcuts must include a modifier key (Ctrl, Shift, Alt, Cmd) or be a function key",
           "noKeysRecorded": "No keys recorded"
+        },
+        "reserved": {
+          "app_control": "Reserved for Application Control (Quit, Hide, Minimize, Preferences)",
+          "spotlight": "Reserved for Spotlight Search",
+          "spotlight_finder": "Reserved for Spotlight Finder Search",
+          "app_switching": "Reserved for App Switching",
+          "system_ui": "Reserved for System UI (Dock, Force Quit, Log Out)",
+          "input_source_prev": "Reserved for Input Source Switching (Previous Source)",
+          "input_source_next": "Reserved for Input Source Switching (Next Source)",
+          "mission_control": "Reserved for Mission Control & Desktop Navigation",
+          "system_focus": "Reserved for System Focus Navigation (Check 'Keyboard Navigation' in Settings)",
+          "accessibility": "Reserved for Accessibility Features",
+          "screenshots": "Reserved for Screenshots",
+          "common_editing": "Reserved for Common Editing (Copy, Paste, Cut, Undo, Select All)",
+          "common_file": "Reserved for Common File Operations (Save, New, Open, Print)",
+          "power": "Reserved for Power & Security",
+          "windows_system": "Reserved for Windows System",
+          "linux_system": "Reserved for Linux System",
+          "fn_system": "Reserved Fn System Shortcut"
         }
       },
       "language": {
@@ -503,10 +515,6 @@
       "keyboardShortcuts": {
         "holdPrefix": "Hold",
         "holdSuffix": "and speak."
-      },
-      "pushToTalk": {
-        "label": "Push To Talk",
-        "description": "Hold to record, release to stop"
       }
     },
     "sound": {

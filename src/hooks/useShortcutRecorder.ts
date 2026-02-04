@@ -201,6 +201,8 @@ export function useShortcutRecorder(
   const isRecordingRef = useRef(false);
   // Track recorded keys synchronously for async callbacks (avoids nested setState calls)
   const recordedKeysRef = useRef<string[]>([]);
+  // Track error timer
+  const errorTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Detect OS on mount
   useEffect(() => {
@@ -212,6 +214,15 @@ export function useShortcutRecorder(
     } else if (detectedType === "linux") {
       setOsType("linux");
     }
+  }, []);
+
+  // Cleanup timeout on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+      }
+    };
   }, []);
 
   // Sort keys: modifiers first, then main keys
@@ -287,6 +298,10 @@ export function useShortcutRecorder(
     setKeyPressed([]);
     setRecordedKeys([]);
     recordedKeysRef.current = [];
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
     setError(null);
     setWarning(null);
     fnKeyPressed.current = false;
@@ -301,6 +316,10 @@ export function useShortcutRecorder(
     setKeyPressed([]);
     setRecordedKeys([]);
     recordedKeysRef.current = [];
+    if (errorTimeoutRef.current) {
+      clearTimeout(errorTimeoutRef.current);
+      errorTimeoutRef.current = null;
+    }
     setError(null);
     setWarning(null);
     fnKeyPressed.current = false;
@@ -346,12 +365,25 @@ export function useShortcutRecorder(
       const validationError = validateShortcut(currentRecordedKeys);
 
       if (validationError) {
-        setError(validationError);
-        setTimeout(() => {
-          setRecordedKeys([]);
-          setError(null);
-        }, 5000);
+        // Debounce validation errors by 800ms
+        // This prevents immediate errors while user is still typing (e.g. Option pressed -> Released -> Space pressed)
+        if (errorTimeoutRef.current) clearTimeout(errorTimeoutRef.current);
+        
+        errorTimeoutRef.current = setTimeout(() => {
+          setError(validationError);
+          // Auto-clear after 5s
+          setTimeout(() => {
+            setRecordedKeys([]);
+            setError(null);
+          }, 5000);
+        }, 800);
         return;
+      }
+      
+      // If validation passed, clear any pending error
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+        errorTimeoutRef.current = null;
       }
 
       // Sort keys and create shortcut string
@@ -379,14 +411,46 @@ export function useShortcutRecorder(
         logError(`Failed to save shortcut: ${err}`, "fe-shortcuts");
         // Parse error message for better user feedback
         const errorStr = String(err);
-        if (errorStr.includes("already in use") || errorStr.includes("already registered")) {
-          setError("This shortcut is already in use");
-        } else if (errorStr.includes("reserved by the system")) {
-          setError("This shortcut is reserved by the system");
+        
+        // Check for specific backend reserved error (matches Rust "RESERVED:key")
+        if (errorStr.includes("RESERVED:")) {
+          // Extract the translation key (e.g., shortcuts.reserved.spotlight)
+          // Backend returns "Error: RESERVED:key" or similar
+          const match = errorStr.match(/RESERVED:([a-zA-Z0-9_.]+)/);
+          if (match && match[1]) {
+             const key = match[1];
+             // Try to translate if t() is available, otherwise show a generic error
+             // We fallback to the key itself if translation fails, but better to have English fallback
+             // Since we can't easily get the English fallback here without duplication, 
+             // we rely on t() logic to handle it or just show the key if missing (which is better than nothing)
+             // Ideally the backend would return both key and default message, but for now we trust the key exists.
+             if (t) {
+               // The translation keys are nested under settings.general.shortcut.reserved
+               // But the keys from backend might already be fully qualified or relative
+               // In reserved.rs we used "shortcuts.reserved.spotlight"
+               // In translation.json we nested it under settings.general
+               // So we need to map "shortcuts.reserved.X" to "settings.general.shortcut.reserved.X"
+               
+               // Let's strip the prefix "shortcuts.reserved." and use the remainder
+               const shortKey = key.replace("shortcuts.reserved.", "");
+               setError(t(`settings.general.shortcut.reserved.${shortKey}`, "Reserved system shortcut"));
+             } else {
+               setError("Reserved system shortcut");
+             }
+          } else {
+             setError("Reserved system shortcut");
+          }
+        } else if (errorStr.includes("Reserved by System")) {
+          // Backward compatibility for old hardcoded strings (if any linger)
+          setError(errorStr.replace(/^Error:\s*/, ""));
+        } else if (errorStr.toLowerCase().includes("already in use") || errorStr.toLowerCase().includes("already registered")) {
+          setError(t ? t("settings.general.shortcut.errors.inUse", "This shortcut is already in use") : "This shortcut is already in use");
+        } else if (errorStr.toLowerCase().includes("reserved")) {
+            setError(t ? t("settings.general.shortcut.reserved.system_ui", "This shortcut is reserved by the system") : "This shortcut is reserved by the system");
         } else if (errorStr.includes("Failed to parse") || errorStr.includes("invalid")) {
-          setError("Invalid shortcut combination");
+          setError(t ? t("settings.general.shortcut.errors.invalid", "Invalid shortcut combination") : "Invalid shortcut combination");
         } else {
-          setError("Failed to save shortcut");
+          setError(t ? t("settings.general.shortcut.errors.saveFailed", "Failed to save shortcut") : "Failed to save shortcut");
         }
         // Reset saveInProgress on error so user can try again
         saveInProgress.current = false;
@@ -473,6 +537,14 @@ export function useShortcutRecorder(
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ignore auto-repeat
       if (e.repeat) return;
+      
+      // Clear any pending error timeout when user starts typing again
+      if (errorTimeoutRef.current) {
+        clearTimeout(errorTimeoutRef.current);
+        errorTimeoutRef.current = null;
+      }
+      // Also clear any visible error (unconditionally to avoid stale closure issues)
+      setError(null);
 
       // ESC cancels recording
       if (e.key === "Escape") {

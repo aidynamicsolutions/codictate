@@ -20,9 +20,12 @@ pub fn init_shortcuts(app: &AppHandle) {
     let default_bindings = settings::get_default_settings().bindings;
     let user_settings = settings::load_or_create_app_settings(app);
 
+    debug!("[init_shortcuts] Starting shortcut initialization");
+
     // Register all default shortcuts, applying user customizations
     for (id, default_binding) in default_bindings {
         if id == "cancel" {
+            debug!("[init_shortcuts] Skipping cancel shortcut (registered dynamically)");
             continue; // Skip cancel shortcut, it will be registered dynamically
         }
         let binding = user_settings
@@ -31,19 +34,32 @@ pub fn init_shortcuts(app: &AppHandle) {
             .cloned()
             .unwrap_or(default_binding);
 
+        debug!(
+            "[init_shortcuts] Processing binding '{}': current='{}', default='{}'",
+            id, binding.current_binding, binding.default_binding
+        );
+
         // Skip registration for fn-based shortcuts (handled by fn_key_monitor.rs)
         let binding_lower = binding.current_binding.to_lowercase();
         if binding_lower == "fn"
             || binding_lower.starts_with("fn+")
             || binding_lower.contains("+fn")
         {
+            debug!(
+                "[init_shortcuts] Skipping fn-based shortcut '{}' for {} (handled by fn_key_monitor)",
+                binding.current_binding, id
+            );
             continue;
         }
 
-        if let Err(e) = register_shortcut(app, binding) {
-            error!("Failed to register shortcut {} during init: {}", id, e);
+        if let Err(e) = register_shortcut(app, binding.clone()) {
+            error!("[init_shortcuts] Failed to register shortcut '{}' for {}: {}", binding.current_binding, id, e);
+        } else {
+            debug!("[init_shortcuts] Successfully registered shortcut '{}' for {}", binding.current_binding, id);
         }
     }
+
+    debug!("[init_shortcuts] Shortcut initialization complete");
 }
 
 #[derive(Serialize, Type)]
@@ -52,6 +68,10 @@ pub struct BindingResponse {
     binding: Option<ShortcutBinding>,
     error: Option<String>,
 }
+
+mod reserved;
+
+// ... existing code ...
 
 #[tauri::command]
 #[specta::specta]
@@ -90,36 +110,24 @@ pub fn change_binding(
         }
     }
 
+    // Check against reserved system shortcuts (macOS only for now)
+    // Check against reserved system shortcuts
+    if let Err(reason) = reserved::check_reserved_shortcut(&binding) {
+            warn!("change_binding reserved shortcut error: {} - {}", binding, reason);
+            return Ok(BindingResponse {
+                success: false,
+                binding: None,
+                error: Some(reason),
+            });
+    }
+
     // If this is an fn-based shortcut (fn alone or fn+key), just update settings
     // fn key is handled by native fn_key_monitor.rs, not Tauri global shortcuts
     let binding_lower = binding.to_lowercase();
     if binding_lower == "fn" || binding_lower.starts_with("fn+") || binding_lower.contains("+fn") {
         // Block reserved system shortcuts - these are intercepted by macOS
         // and cannot be used as app shortcuts
-        const RESERVED_FN_SHORTCUTS: &[&str] = &[
-            "fn+a",  // Show/hide Dock
-            "fn+c",  // Control Center
-            "fn+d",  // Dictation
-            "fn+e",  // Emoji picker
-            "fn+f",  // Full screen
-            "fn+h",  // Show desktop
-            "fn+m",  // Focus menu bar
-            "fn+n",  // Notification Center
-            "fn+q",  // Quick Note
-        ];
-        
-        if RESERVED_FN_SHORTCUTS.contains(&binding_lower.as_str()) {
-            let error_msg = format!(
-                "Shortcut '{}' is reserved by the system and cannot be used",
-                binding
-            );
-            warn!("change_binding reserved shortcut error: {}", error_msg);
-            return Ok(BindingResponse {
-                success: false,
-                binding: None,
-                error: Some(error_msg),
-            });
-        }
+        // Reserved shortcuts for fn are now handled by the global check above
 
         // Check for duplicates: see if any OTHER binding already uses this shortcut
         for (other_id, other_binding) in &settings.bindings {
@@ -158,129 +166,7 @@ pub fn change_binding(
     }
 
     // Block reserved system shortcuts for macOS (non-fn shortcuts)
-    #[cfg(target_os = "macos")]
-    {
-        const RESERVED_MACOS_SHORTCUTS: &[&str] = &[
-            // App switching and window management
-            "command+tab",              // App switcher
-            "command+space",            // Spotlight
-            "command+q",                // Quit app
-            "command+w",                // Close window
-            "command+h",                // Hide app
-            "command+m",                // Minimize
-            "command+option+escape",    // Force Quit
-            "control+command+q",        // Lock screen
-            // Common editing shortcuts (critical)
-            "command+c",                // Copy
-            "command+v",                // Paste
-            "command+x",                // Cut
-            "command+z",                // Undo
-            "shift+command+z",          // Redo
-            "command+a",                // Select all
-            // Common file operations
-            "command+s",                // Save
-            "command+n",                // New
-            "command+o",                // Open
-            "command+p",                // Print
-            // Screenshots
-            "shift+command+3",          // Screenshot full
-            "shift+command+4",          // Screenshot area
-            "shift+command+5",          // Screenshot menu
-        ];
-        
-        if RESERVED_MACOS_SHORTCUTS.contains(&binding_lower.as_str()) {
-            let error_msg = format!(
-                "Shortcut '{}' is reserved by the system and cannot be used",
-                binding
-            );
-            warn!("change_binding reserved shortcut error (macOS): {}", error_msg);
-            return Ok(BindingResponse {
-                success: false,
-                binding: None,
-                error: Some(error_msg),
-            });
-        }
-    }
 
-    // Block reserved system shortcuts for Windows and Linux
-    // These shortcuts are intercepted by the OS and cannot be reliably used
-    #[cfg(target_os = "windows")]
-    {
-        const RESERVED_WINDOWS_SHORTCUTS: &[&str] = &[
-            // System shortcuts
-            "super+l",          // Lock screen
-            "super+d",          // Show desktop
-            "super+e",          // File Explorer
-            "super+r",          // Run dialog
-            "super+tab",        // Task View
-            "alt+tab",          // App switcher
-            "alt+f4",           // Close app
-            "ctrl+alt+delete",  // Security screen
-            // Common editing shortcuts (critical)
-            "ctrl+c",           // Copy
-            "ctrl+v",           // Paste
-            "ctrl+x",           // Cut
-            "ctrl+z",           // Undo
-            "ctrl+y",           // Redo
-            "ctrl+a",           // Select all
-            // Common file operations
-            "ctrl+s",           // Save
-            "ctrl+n",           // New
-            "ctrl+o",           // Open
-            "ctrl+p",           // Print
-            "ctrl+w",           // Close window
-        ];
-        
-        if RESERVED_WINDOWS_SHORTCUTS.contains(&binding_lower.as_str()) {
-            let error_msg = format!(
-                "Shortcut '{}' is reserved by the system and cannot be used",
-                binding
-            );
-            warn!("change_binding reserved shortcut error (Windows): {}", error_msg);
-            return Ok(BindingResponse {
-                success: false,
-                binding: None,
-                error: Some(error_msg),
-            });
-        }
-    }
-    
-    #[cfg(target_os = "linux")]
-    {
-        const RESERVED_LINUX_SHORTCUTS: &[&str] = &[
-            // System shortcuts
-            "alt+tab",    // App switcher
-            "alt+f4",     // Close app
-            "super+l",    // Lock screen (common in GNOME/KDE)
-            "super+d",    // Show desktop
-            // Common editing shortcuts (critical)
-            "ctrl+c",     // Copy
-            "ctrl+v",     // Paste
-            "ctrl+x",     // Cut
-            "ctrl+z",     // Undo
-            "ctrl+y",     // Redo
-            "ctrl+a",     // Select all
-            // Common file operations
-            "ctrl+s",     // Save
-            "ctrl+n",     // New
-            "ctrl+o",     // Open
-            "ctrl+p",     // Print
-            "ctrl+w",     // Close window
-        ];
-        
-        if RESERVED_LINUX_SHORTCUTS.contains(&binding_lower.as_str()) {
-            let error_msg = format!(
-                "Shortcut '{}' is reserved by the system and cannot be used",
-                binding
-            );
-            warn!("change_binding reserved shortcut error (Linux): {}", error_msg);
-            return Ok(BindingResponse {
-                success: false,
-                binding: None,
-                error: Some(error_msg),
-            });
-        }
-    }
 
     // Validate the new shortcut before we touch the current registration
     if let Err(e) = validate_shortcut_string(&binding) {
@@ -290,7 +176,7 @@ pub fn change_binding(
 
     // Create an updated binding
     let mut updated_binding = binding_to_modify;
-    updated_binding.current_binding = binding;
+    updated_binding.current_binding = binding.clone();
 
     // Register the new binding
     if let Err(e) = register_shortcut(&app, updated_binding.clone()) {
@@ -304,7 +190,7 @@ pub fn change_binding(
     }
 
     // Update the binding in the settings
-    settings.bindings.insert(id, updated_binding.clone());
+    settings.bindings.insert(id.clone(), updated_binding.clone());
 
     // Save the settings
     settings::write_settings(&app, settings);
@@ -382,26 +268,42 @@ pub fn reset_bindings(app: AppHandle, ids: Vec<String>) -> Result<Vec<BindingRes
     }
 
     // Save all changes at once
-    settings::write_settings(&app, current_settings);
+    settings::write_settings(&app, current_settings.clone());
+
+    // Second pass: register the reset shortcuts (skip fn-based, they use fn_key_monitor.rs)
+    for response in &responses {
+        if let Some(binding) = &response.binding {
+            let binding_lower = binding.current_binding.to_lowercase();
+            if binding_lower == "fn"
+                || binding_lower.starts_with("fn+")
+                || binding_lower.contains("+fn")
+            {
+                debug!(
+                    "[reset_bindings] Skipping fn-based shortcut '{}' for {}",
+                    binding.current_binding, binding.id
+                );
+                continue;
+            }
+
+            if let Err(e) = register_shortcut(&app, binding.clone()) {
+                // Log but don't fail - the binding is already saved
+                error!(
+                    "[reset_bindings] Failed to register shortcut '{}' for {}: {}",
+                    binding.current_binding, binding.id, e
+                );
+            } else {
+                debug!(
+                    "[reset_bindings] Registered shortcut '{}' for {}",
+                    binding.current_binding, binding.id
+                );
+            }
+        }
+    }
 
     // Log what we did
     debug!("[reset_bindings] Reset {} bindings atomically", ids.len());
 
     Ok(responses)
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn change_ptt_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-
-    // TODO if the setting is currently false, we probably want to
-    // cancel any ongoing recordings or actions
-    settings.push_to_talk = enabled;
-
-    settings::write_settings(&app, settings);
-
-    Ok(())
 }
 
 #[tauri::command]
@@ -915,6 +817,19 @@ fn validate_shortcut_string(raw: &str) -> Result<(), String> {
 #[specta::specta]
 pub fn suspend_binding(app: AppHandle, id: String) -> Result<(), String> {
     if let Some(b) = settings::get_bindings(&app).get(&id).cloned() {
+        // Skip fn-based shortcuts - they are handled by fn_key_monitor.rs, not global shortcuts
+        let binding_lower = b.current_binding.to_lowercase();
+        if binding_lower == "fn"
+            || binding_lower.starts_with("fn+")
+            || binding_lower.contains("+fn")
+        {
+            debug!(
+                "suspend_binding: skipping fn-based shortcut '{}'",
+                b.current_binding
+            );
+            return Ok(());
+        }
+
         if let Err(e) = unregister_shortcut(&app, b) {
             error!("suspend_binding error for id '{}': {}", id, e);
             return Err(e);
@@ -928,6 +843,30 @@ pub fn suspend_binding(app: AppHandle, id: String) -> Result<(), String> {
 #[specta::specta]
 pub fn resume_binding(app: AppHandle, id: String) -> Result<(), String> {
     if let Some(b) = settings::get_bindings(&app).get(&id).cloned() {
+        // Skip fn-based shortcuts - they are handled by fn_key_monitor.rs, not global shortcuts
+        let binding_lower = b.current_binding.to_lowercase();
+        if binding_lower == "fn"
+            || binding_lower.starts_with("fn+")
+            || binding_lower.contains("+fn")
+        {
+            debug!(
+                "resume_binding: skipping fn-based shortcut '{}'",
+                b.current_binding
+            );
+            return Ok(());
+        }
+
+        // Check if already registered (idempotency)
+        if let Ok(shortcut) = b.current_binding.parse::<Shortcut>() {
+            if app.global_shortcut().is_registered(shortcut) {
+                debug!(
+                    "resume_binding: shortcut '{}' already registered, skipping",
+                    b.current_binding
+                );
+                return Ok(());
+            }
+        }
+
         if let Err(e) = register_shortcut(&app, b) {
             error!("resume_binding error for id '{}': {}", id, e);
             return Err(e);
@@ -1014,9 +953,10 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
         .on_shortcut(shortcut, move |ah, scut, event| {
             if scut == &shortcut {
                 let shortcut_string = scut.into_string();
-                let settings = get_settings(ah);
+
 
                 if let Some(action) = ACTION_MAP.get(&binding_id_for_closure) {
+                    debug!("Global Shortcut Event: id='{}' state={:?} shortcut='{}'", binding_id_for_closure, event.state, shortcut_string);
                     if binding_id_for_closure == "cancel" {
                         let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
                         if audio_manager.is_recording() && event.state == ShortcutState::Pressed {
@@ -1029,24 +969,28 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
                         return;
-                    } else if settings.push_to_talk {
+                    } else if binding_id_for_closure == "transcribe" {
+                        // Main transcribe shortcut is ALWAYS Push-to-Talk (Press=Start, Release=Stop)
                         if event.state == ShortcutState::Pressed {
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         } else if event.state == ShortcutState::Released {
                             action.stop(ah, &binding_id_for_closure, &shortcut_string);
                         }
-                    } else {
-                        // Toggle mode: toggle on press only
+                    } else if binding_id_for_closure == "transcribe_handsfree" {
+                        // Hands-free shortcut is ALWAYS Toggle (Press to start/stop)
+                        // Ignore Release events
                         if event.state == ShortcutState::Pressed {
-                            // Determine action and update state while holding the lock,
-                            // but RELEASE the lock before calling the action to avoid deadlocks.
-                            // (Actions may need to acquire the lock themselves, e.g., cancel_current_operation)
+                            // Determine action and update state while holding the lock
                             let should_start: bool;
                             {
                                 let toggle_state_manager = ah.state::<ManagedToggleState>();
-                                let mut states = toggle_state_manager
-                                    .lock()
-                                    .expect("Failed to lock toggle state manager");
+                                let mut states = match toggle_state_manager.lock() {
+                                    Ok(guard) => guard,
+                                    Err(poisoned) => {
+                                        error!("Toggle state mutex poisoned for '{}', recovering", binding_id_for_closure);
+                                        poisoned.into_inner()
+                                    }
+                                };
 
                                 let is_currently_active = states
                                     .active_toggles
@@ -1057,7 +1001,35 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                 *is_currently_active = should_start;
                             } // Lock released here
 
-                            // Now call the action without holding the lock
+                            if should_start {
+                                action.start(ah, &binding_id_for_closure, &shortcut_string);
+                            } else {
+                                action.stop(ah, &binding_id_for_closure, &shortcut_string);
+                            }
+                        }
+                    } else {
+                        // Default fallback for other shortcuts (assume Toggle behavior)
+                        if event.state == ShortcutState::Pressed {
+                            let should_start: bool;
+                            {
+                                let toggle_state_manager = ah.state::<ManagedToggleState>();
+                                let mut states = match toggle_state_manager.lock() {
+                                    Ok(guard) => guard,
+                                    Err(poisoned) => {
+                                        error!("Toggle state mutex poisoned for '{}', recovering", binding_id_for_closure);
+                                        poisoned.into_inner()
+                                    }
+                                };
+
+                                let is_currently_active = states
+                                    .active_toggles
+                                    .entry(binding_id_for_closure.clone())
+                                    .or_insert(false);
+
+                                should_start = !*is_currently_active;
+                                *is_currently_active = should_start;
+                            }
+
                             if should_start {
                                 action.start(ah, &binding_id_for_closure, &shortcut_string);
                             } else {

@@ -26,6 +26,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, error, info, warn};
+use crate::settings;
 
 
 
@@ -230,9 +231,25 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                         debug!("Blocking Globe key (keycode 179) to prevent character picker");
                         return CallbackResult::Drop;
                     }
+
                     // Space key is keycode 49 - when pressed with Fn, trigger hands-free mode
                     // ONLY if transcription is enabled - otherwise let Space pass through for shortcut recording
                     const SPACE_KEY: i64 = 49;
+                    
+                    // Check settings to see if we should block Space (is it assigned to Fn+Space?)
+                    // This decouples Fn PTT from Fn+Space Hands-Free
+                    let should_trigger_handsfree = if let Some(app) = get_app_handle() {
+                        let settings = settings::get_settings(&app);
+                        if let Some(binding) = settings.bindings.get("transcribe_handsfree") {
+                            let b = binding.current_binding.to_lowercase();
+                            b == "fn+space" || b == "space+fn"
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
+
                     let transcription_enabled = FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst);
                     
                     if keycode == SPACE_KEY && fn_pressed {
@@ -249,7 +266,7 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                             return CallbackResult::Drop; 
                         }
 
-                        if transcription_enabled {
+                        if transcription_enabled && should_trigger_handsfree {
                             // Mark that fn+space was triggered - this prevents delayed PTT from starting
                             FN_SPACE_TRIGGERED.store(true, Ordering::SeqCst);
                             
@@ -290,6 +307,12 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                 
                 // For FlagsChanged events, handle Fn key state
                 if matches!(event_type, CGEventType::FlagsChanged) {
+                    // Check for standard PTT release (fix for "modifier released first" bug)
+                    // We check this BEFORE Fn handling to ensure we catch it even if Fn is also involved
+                    if let Some(app) = get_app_handle() {
+                        check_ptt_release(&app, event);
+                    }
+
                     handle_flags_changed_event(event);
                     
                     // Block Fn-related FlagsChanged events to prevent macOS from seeing them
@@ -435,7 +458,18 @@ fn handle_fn_pressed(app: &AppHandle) {
     // 1. Detect space key
     // 2. Cancel this PTT recording (discarding the short audio)
     // 3. Start hands-free mode
-    if FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst) {
+    
+    // Check if we should start PTT (is it assigned to Fn?)
+    // This allows Fn+Space to work even if PTT is assigned to something else (like Ctrl+Space)
+    let settings = settings::get_settings(app);
+    let should_trigger_ptt = if let Some(binding) = settings.bindings.get("transcribe") {
+        let b = binding.current_binding.to_lowercase();
+        b == "fn" // Exact match only - "fn+space" shouldn't trigger PTT
+    } else {
+        false
+    };
+
+    if FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst) && should_trigger_ptt {
         debug!("Starting push-to-talk recording immediately (press_id: {})", press_id);
         
         // Check microphone permission BEFORE starting recording
@@ -632,4 +666,78 @@ pub fn stop_fn_key_monitor() -> Result<(), String> {
 
     info!("Fn key monitor stopped");
     Ok(())
+}
+
+/// Check if the standard PTT shortcut keys were released
+/// This handles the case where users release keys in an order that standard plugins miss
+/// (e.g. releasing Modifier before Key)
+///
+/// NOTE: This is ONLY used for fn-based shortcuts. Standard shortcuts like option+space
+/// use the global shortcut's Released event which works correctly. We skip standard
+/// shortcuts here because macOS sends spurious FlagsChanged events during normal key holding.
+fn check_ptt_release(app: &AppHandle, event: &CGEvent) {
+    // If Fn PTT is active, ignore (it has its own release logic in fn_key_callback)
+    if PTT_STARTED.load(Ordering::SeqCst) {
+        return;
+    }
+
+    // Check if "transcribe" is the active recording
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    match audio_manager.get_active_binding_id() {
+         Some(id) if id == "transcribe" => {
+             // Continue to check release
+         },
+         _ => return // Not recording or different binding
+    }
+
+    // Check settings for validity
+    let settings = settings::get_settings(app);
+    let binding = match settings.bindings.get("transcribe") {
+        Some(b) => b,
+        None => return
+    };
+
+    // ONLY handle fn-based shortcuts here. Standard shortcuts (option+space, ctrl+space, etc.)
+    // use the global shortcut's Released event which works correctly.
+    // We skip standard shortcuts because macOS sends spurious FlagsChanged events
+    // with missing modifiers even while keys are held, causing false release detection.
+    let binding_lower = binding.current_binding.to_lowercase();
+    if !binding_lower.starts_with("fn") && !binding_lower.contains("+fn") {
+        // Standard shortcut - skip, let global shortcut handler deal with release
+        return;
+    }
+
+    let required_flags = parse_shortcut_modifiers(&binding.current_binding);
+    
+    // If no modifiers required (e.g. just "fn"), skip this check
+    if required_flags.is_empty() {
+        return;
+    }
+
+    let current_flags = event.get_flags();
+    
+    // If we lost any required modifier, stop recording
+    if !current_flags.contains(required_flags) {
+        debug!("Fn-based PTT release detected via FlagsChanged (modifiers missing). Current: {:?}, Required: {:?}", current_flags, required_flags);
+        
+        if let Some(action) = ACTION_MAP.get("transcribe") {
+            action.stop(app, "transcribe", "monitor_release");
+        }
+    }
+}
+
+/// Helper to parse modifiers from a shortcut string
+fn parse_shortcut_modifiers(shortcut: &str) -> CGEventFlags {
+    let mut flags = CGEventFlags::empty();
+    let lower = shortcut.to_lowercase();
+    for part in lower.split('+') {
+        match part.trim() {
+             "cmd" | "command" | "super" => flags.insert(CGEventFlags::CGEventFlagCommand),
+             "shift" => flags.insert(CGEventFlags::CGEventFlagShift),
+             "alt" | "option" => flags.insert(CGEventFlags::CGEventFlagAlternate),
+             "ctrl" | "control" => flags.insert(CGEventFlags::CGEventFlagControl),
+             _ => {}
+        }
+    }
+    flags
 }

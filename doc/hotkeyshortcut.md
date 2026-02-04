@@ -4,16 +4,35 @@ Concise documentation of Codictate's keyboard shortcut system for speech-to-text
 
 ## Default Shortcuts (macOS)
 
-| Action | Shortcut | Mode | Description |
-|--------|----------|------|-------------|
-| Push-to-talk | `fn` | Hold | Hold to record, release to transcribe |
-| Hands-free | `fn+space` | Toggle | Press to start, press again to stop |
+| Action | Default Shortcut | Behavior | Description |
+|--------|------------------|----------|-------------|
+| **Transcribe** | `Option+Space` (or `fn`) | **Push-to-Talk** | Hold to record, release to transcribe. Always instant. |
+| **Hands-free** | `fn+space` | **Toggle** | Press to start, press again to stop. |
 | Cancel | `esc` | Instant | Cancel current recording (auto-registered) |
+
+> **Note**: The behavior is tied to the **Action**, not the specific key. Any key mapped to "Transcribe" will function as Push-to-Talk. Any key mapped to "Hands-free" will function as a Toggle.
 
 ## How It Works
 
-### Mode Detection (Immediate Start)
- 
+### Distinct Action Behaviors
+
+The system enforces distinct behaviors for the two main actions to prevent confusion:
+
+1.  **Transcribe Action**: Always **Push-to-Talk**.
+    - Records while the key combination is held down.
+    - Stops recording immediately upon release.
+    - Best for quick commands or short dictations.
+
+2.  **Hands-Free Action**: Always **Toggle**.
+    - Starts recording on first press.
+    - Stops recording on second press.
+    - Ignores key release events.
+    - Best for long-form dictation.
+
+### Mode Detection (Fn Key Special Case)
+
+On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`.
+
  ```
   User presses Fn
         │
@@ -27,9 +46,9 @@ Concise documentation of Codictate's keyboard shortcut system for speech-to-text
         │
         └──── Released without Space ──────────▶ TRANSCRIBE (Normal PTT end)
  ```
- 
+
  ### Push-to-Talk Flow (Wait for Ready)
- 
+
  ```
    Fn Down          Mic Init           Recording           Fn Up
       │                │                  │                  │
@@ -41,9 +60,9 @@ Concise documentation of Codictate's keyboard shortcut system for speech-to-text
  ```
 
  ### Audio Latency Optimization
- 
+
  To eliminate audio cutoff (the "first word missing" problem), the system employs several strategies:
- 
+
  1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time from ~300ms to ~100ms.
  2. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
@@ -68,7 +87,7 @@ Bluetooth mics (e.g., AirPods) require special handling due to the A2DP→HFP pr
 - [audio.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/managers/audio.rs): `prewarm_bluetooth_mic()`, `is_current_device_bluetooth()`
 - [lib.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/lib.rs): Calls prewarm on app startup
 - [actions.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/actions.rs): Warmup delay logic
- 
+
 ### Seamless Mode Switching
 
 To prevent UI flashing when transitioning from PTT to Hands-Free (Fn held -> Space pressed):
@@ -97,18 +116,18 @@ To prevent crash/lockup when holding `Fn + Space`:
  ```
 
 ### Key Bounce Handling (Debounce)
- 
+
 To prevent accidental recording stops due to key "bounces" (brief release-then-press events, common with mechanical keys or after system sleep), a **150ms debounce** is applied to the Fn key release using a **Generation Counter** approach.
- 
+
 **Logic**:
 1. Every `Press` or `Release` event increments a global `RELEASE_GENERATION` counter.
 2. On `Release`, a thread waits 150ms.
 3. After waiting, check: `if current_generation != my_generation { abort }`
 4. This ensures *any* new activity (press or release) immediately invalidates pending stop actions.
- 
+
 **Bounce Preservation**:
 If a KeyDown event occurs while a Release debounce is pending (i.e. a bounce), we also check:
- 
+
 ```rust
 // In handle_fn_pressed:
 if PTT_STARTED {
@@ -118,7 +137,7 @@ if PTT_STARTED {
     return;
 }
 ```
- 
+
 This prevents the app from entering a "zombie" state where the backend resets flags but the recording continues (or vice versa).
 
 ### Race Condition Protection
@@ -132,6 +151,52 @@ To prevent "phantom" overlay hiding when rapid actions occur (e.g. starting a ne
     - If state is `Recording` → **ABORT HIDE**. This means a new recording session has started.
 
 This ensures that the "cleanup" phase of Session 1 does not inadvertently hide the UI for the active Session 2.
+
+### Recording State Machine Protection
+
+The `AudioRecordingManager` uses a state machine (`Idle` → `Preparing` → `Recording` → `Idle`) to track recording status. Several race conditions are protected:
+
+**1. Quick Release (Stop Before Ready)**
+
+When user releases key before microphone finishes warming up:
+- `stop_recording()` sets state to `Idle` during `Preparing` phase
+- `try_start_recording()` checks for `Idle` state and **aborts** (returns false)
+- This prevents orphaned recordings that act as "hands-free" when they shouldn't
+
+**2. Stale Async Task Rejection (Binding ID Mismatch)**
+
+When PTT is cancelled and hands-free starts before PTT's async task completes:
+- PTT starts: `prepare_recording("transcribe")` → async task spawned
+- User triggers hands-free: PTT cancelled, `prepare_recording("transcribe_handsfree")` 
+- OLD PTT async task calls `try_start_recording("transcribe", ...)`
+- State is now `Preparing{binding: "transcribe_handsfree"}` 
+- `try_start_recording` checks binding ID: `"transcribe_handsfree" != "transcribe"` → **abort**
+
+```rust
+// Key logic in try_start_recording (audio.rs)
+match *state {
+    RecordingState::Preparing { binding_id: ref active, .. } if active == binding_id => {
+        // Good - correct binding
+    },
+    RecordingState::Preparing { binding_id: ref active, .. } => {
+        // ABORT - stale request for different binding
+        return false;
+    },
+    RecordingState::Idle => {
+        // ABORT - stop was called during prepare
+        return false;
+    },
+    // ...
+}
+```
+
+**3. FlagsChanged Event Handling (Fn-only)**
+
+`check_ptt_release()` in `fn_key_monitor.rs` handles modifier key release detection:
+- **Fn-based shortcuts**: Use FlagsChanged events (fn key isn't a global shortcut)
+- **Standard shortcuts** (option+space): Skip this check, use global shortcut's Released event
+
+macOS sends spurious FlagsChanged events with missing modifiers even during normal key holding, causing false release detection. Standard shortcuts are now excluded from this check.
 
 ### Overlay Readiness Signal (Flicker Prevention)
 
@@ -178,9 +243,18 @@ To prevent overlay flicker on the first Fn press after app startup, the system u
 | File | Purpose |
 |------|---------|
 | [fn_key_monitor.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/fn_key_monitor.rs) | CGEventTap-based Fn key detection |
-| [shortcut.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/shortcut.rs) | Global shortcut registration |
+| [shortcut.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/shortcut.rs) | Global shortcut registration (Action-based logic enforcement) |
 | [actions.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/actions.rs) | `TranscribeAction` start/stop logic |
 | [overlay.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/overlay.rs) | Overlay show/hide, readiness tracking |
+
+### Shortcut Initialization at Startup
+
+Shortcuts must be initialized after accessibility permissions are granted:
+
+- **During onboarding**: `initializeShortcuts()` is called in `AccessibilityOnboarding.tsx`
+- **On normal app restart**: `initializeShortcuts()` is called in `App.tsx` when `onboarding_completed` is true
+
+Without this, shortcuts won't work after app restart because `init_shortcuts()` in the backend never gets called.
 
 ### Key State Variables
 
@@ -238,6 +312,19 @@ The `useShortcutRecorder` hook follows these patterns:
 3. **Guard duplicate calls** - Use a `saveInProgress` ref to prevent concurrent save operations.
 4. **Keep refs in sync with state** - When you need both reactive updates AND synchronous access, update both.
 
+## User Feedback & UX
+ 
+To improve usability, the shortcut recorder implements specific feedback mechanisms:
+ 
+1.  **Delayed Error Feedback (Debounce)**:
+    - Validation errors (e.g., "Modifier required") are debounced by **800ms**.
+    - This prevents jarring error messages while the user is mid-typing (e.g., pressing "Option" then "Space").
+    - If a valid shortcut is formed within the delay window, the error never appears.
+ 
+2.  **Success Indication**:
+    - Upon successful save, a **toast notification** ("Shortcut saved") appears.
+    - A **green checkmark icon** replaces the pencil icon for 2 seconds to provide immediate visual confirmation.
+ 
 ## Shortcut Recording
 
 When recording a new shortcut, transcription triggers are disabled to prevent interference:

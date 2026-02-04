@@ -26,6 +26,11 @@ const mockInvoke = async (cmd, args) => {
           silence_timeout_ms: 1000,
           vad_sensitivity: "high",
           audio_feedback: true,
+          bindings: {
+              transcribe: { current_binding: null, default_binding: "option+space" },
+              transcribe_handsfree: { current_binding: null, default_binding: "option+shift+space" },
+              paste_last_transcript: { current_binding: null, default_binding: "command+shift+v" }
+          }
       };
     }
 
@@ -88,6 +93,14 @@ const mockInvoke = async (cmd, args) => {
     }
     
     if (cmd === "download_model") return null;
+
+    if (cmd === "change_binding") {
+        console.log("[Mock] change_binding called with:", args);
+        return { success: true };
+    }
+    if (cmd === "suspendBinding") return null;
+    if (cmd === "resumeBinding") return null;
+    if (cmd === "startFnKeyMonitor") return null;
 
     if (cmd.includes("plugin:macos-permissions")) return "granted";
     if (cmd === "plugin:os|locale") return "en-US";

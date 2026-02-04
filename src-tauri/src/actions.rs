@@ -266,6 +266,15 @@ impl ShortcutAction for TranscribeAction {
         let app_clone = app.clone();
         let binding_id_clone = binding_id.to_string();
 
+        // Synchronously prepare recording state to handle race conditions
+        // This sets the state to "Preparing" so if stop() is called immediately,
+        // it can cancel the start operation.
+        let rm = app.state::<Arc<AudioRecordingManager>>();
+        if !rm.prepare_recording(binding_id) {
+             debug!("Failed to prepare recording for binding {} (state not Idle)", binding_id);
+             return;
+        }
+
         // Spawn a thread to avoid blocking the event tap/caller
         std::thread::spawn(move || {
             let app = &app_clone;

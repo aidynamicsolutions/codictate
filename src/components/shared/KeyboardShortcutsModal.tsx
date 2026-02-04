@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Pencil } from "lucide-react";
+import { Pencil, Check } from "lucide-react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -94,10 +95,15 @@ export const ShortcutCard: React.FC<ShortcutCardProps> = ({
 
   const keys = parseBinding(currentBinding);
 
+  const [showSuccess, setShowSuccess] = React.useState(false);
+
   // Use the shared shortcut recorder hook
   const { isRecording, displayKeys, startRecording, error, warning, clearError } = useShortcutRecorder({
     onSave: async (shortcut) => {
       await updateBinding(shortcutId, shortcut);
+      setShowSuccess(true);
+      toast.success(t("settings.general.shortcut.success", "Shortcut saved"));
+      setTimeout(() => setShowSuccess(false), 2000);
     },
     onCancel: () => {
       // Resume the suspended binding on cancel
@@ -112,10 +118,9 @@ export const ShortcutCard: React.FC<ShortcutCardProps> = ({
       );
     },
     onRecordingEnd: () => {
-      // Resume the binding after recording completes successfully
-      commands.resumeBinding(shortcutId).catch((err) =>
-        logError(`Failed to resume binding: ${err}`, "fe-shortcuts")
-      );
+      // Note: We do NOT call resumeBinding() here because change_binding()
+      // already registers the new shortcut. Calling resumeBinding() would
+      // cause "already in use" errors.
     },
     requireModifier: true,
     containerRef,
@@ -166,7 +171,11 @@ export const ShortcutCard: React.FC<ShortcutCardProps> = ({
                   <KeyBadge key={index} keyName={key} />
                 ))}
               </div>
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              {showSuccess ? (
+                <Check className="h-3.5 w-3.5 text-green-500" />
+              ) : (
+                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
             </>
           )}
         </button>
