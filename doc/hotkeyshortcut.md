@@ -65,7 +65,7 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
 
  1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time.
  2. **VAD & Model Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading the ASR model (`initiate_model_load`) at app startup. This eliminates the ~700ms cold start delay for the first recording.
- 2. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
+ 3. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
     - **Cons**: Small initial delay (~100-200ms) before UI appears.
     - **Implementation**: `TranscribeAction::start` waits for the audio stream to be active (blocking ~100ms) before triggering the overlay. Thanks to pre-warming, this is barely perceptible.
@@ -369,3 +369,27 @@ fn set_app_handle(handle: Option<AppHandle>) { ... }
 ```
 
 The run loop is also stored to enable proper cleanup when stopping the monitor.
+
+## Stability & Recovery
+
+### Robust Monitor Restart (Anti-Focus Stealing)
+
+The `fn_key_monitor` implements a **self-healing restart loop** to prevent the "Focus Stealing" issue where the main window would pop up if the event tap timed out.
+
+1.  **Silent Recovery**: If the system disables the event tap (e.g., `kCGEventTapDisabledByTimeout` or `TapDisabledByUserInput` during secure password entry), the monitor catches this event.
+2.  **No Focus Theft**: Instead of treating this as a permission loss (which warns the user and shows the window), it **logs a warning** and prepares to restart.
+3.  **Safety Backoff**:
+    -   **Timeout**: Pauses for **1 second** before restarting if the tap times out.
+    -   **Creation Failure**: Pauses for **2 seconds** if creating the tap fails (e.g., transient permission glitch).
+    -   This prevents "hot-looping" (high CPU) if the system is persistently busy.
+4.  **Startup Robustness**: The monitor explicitly handles race conditions during startup to ensure it doesn't silent exit if the thread spawns before the active flag is set.
+5.  **Result**: The Fn key might be briefly unresponsive during high load or secure input, but the application remains in the background and respects the user's focus.
+
+### Mixed Shortcut Robustness
+
+This architecture ensures that **standard shortcuts** (e.g., `Option+Space`) are completely isolated from Fn key issues.
+
+-   **Standard Shortcuts**: Managed by the OS global shortcut system. They **never** fail even if the Fn monitor is restarting.
+-   **Fn Shortcuts**: Managed by the `fn_key_monitor`. If they timeout, they auto-recover after 1 second.
+-   **Mixed Usage**: A user with `Option+Space` (PTT) and `Fn+Space` (Hands-Free) has the most robust setup. If the Fn monitor hits a snag, PTT remains fully functional while Hands-Free briefly recovers.
+

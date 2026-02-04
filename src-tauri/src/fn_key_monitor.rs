@@ -143,219 +143,210 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
     // Start periodic permission checking
     start_permission_check_thread(app.clone());
 
-    debug!("Spawning event tap thread...");
+    info!("Spawning event tap thread...");
+    
+    // Mark as active BEFORE spawning so the loop doesn't exit immediately
+    FN_MONITORING_ACTIVE.store(true, Ordering::SeqCst);
+
     // Spawn the event tap on a separate thread to avoid blocking
     std::thread::spawn(move || {
-        debug!("Event tap thread started, creating CGEventTap...");
-        // Create the event tap to listen for FlagsChanged and KeyDown events
-        // 
-        // We need both event types because the Fn/Globe key generates:
-        // 1. FlagsChanged events with CGEventFlagSecondaryFn flag
-        // 2. KeyDown events with keycode 179 (Globe key) that trigger character picker
-        //
-        // IMPORTANT: We filter in the callback to ONLY block:
-        // - FlagsChanged events with Fn flag set
-        // - KeyDown events for Globe key (keycode 179) or Space with Fn held (fn+space)
-        // All other keyboard input (arrow keys, typing, etc.) passes through normally.
-        //
-        // Use HID level to intercept events before they reach other parts of the system
-        // Use Default (not ListenOnly) so we can consume events and prevent character picker
-        let tap_result = CGEventTap::new(
-            CGEventTapLocation::HID, // HID level intercepts events earlier than Session
-            CGEventTapPlacement::HeadInsertEventTap,
-            CGEventTapOptions::Default, // Allow consuming events
-            vec![
-                CGEventType::FlagsChanged,
-                CGEventType::KeyDown,  // Needed to block Globe key and detect fn+space
-                // NOTE: TapDisabledByTimeout and TapDisabledByUserInput are NOT included here.
-                // They are auto-delivered to the callback when the tap is disabled by the system.
-                // Including them causes integer overflow because their enum values (0xFFFFFFFE, 0xFFFFFFFF)
-                // are too large for the bitmask calculation in core-graphics.
-            ],
-            |_proxy, event_type, event| {
-                // Handle tap disabled events FIRST - this is critical for preventing keyboard lockup
-                // When macOS revokes accessibility permissions, it sends TapDisabledByTimeout
-                if matches!(event_type, CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput) {
-                    warn!("Event tap was disabled by system (event type: {:?}). Stopping Fn key monitor.", event_type);
-                    
-                    // CRITICAL: Do minimal work in callback to avoid blocking the event tap!
-                    // Set flags immediately, then spawn thread for heavy work.
-                    
-                    // Stop the permission check thread FIRST to prevent duplicate notifications
-                    PERMISSION_CHECK_ACTIVE.store(false, Ordering::SeqCst);
-                    
-                    // Reset all state flags before stopping
-                    FN_MONITORING_ACTIVE.store(false, Ordering::SeqCst);
-                    FN_KEY_WAS_PRESSED.store(false, Ordering::SeqCst);
-                    FN_TRANSCRIPTION_ENABLED.store(false, Ordering::SeqCst);
-                    FN_SPACE_TRIGGERED.store(false, Ordering::SeqCst);
-                    PTT_STARTED.store(false, Ordering::SeqCst);
-                    
-                    // Stop the run loop immediately - this is the key to releasing the event tap
-                    stop_stored_run_loop();
-                    
-                    // Get app handle for the notification thread (if available)
-                    let app_opt = get_app_handle();
-                    
-                    // Clear app handle immediately
-                    set_app_handle(None);
-                    
-                    // Spawn a thread to handle UI (don't block the callback)
-                    std::thread::spawn(move || {
-                        if let Some(app) = app_opt {
-                            // Show the main window so the modal is visible
-                            crate::show_main_window(&app);
-                            // Emit event to frontend (modal handles UX)
-                            let _ = app.emit("accessibility-permission-lost", ());
-                        }
-                    });
-                    
-                    // Return immediately - don't block the event tap
-                    return CallbackResult::Keep;
-                }
-                
-                let flags = event.get_flags();
-                let fn_pressed = flags.contains(CGEventFlags::CGEventFlagSecondaryFn);
-                
-                // Check if this is a KeyDown event
-                if matches!(event_type, CGEventType::KeyDown) {
-                    // Get the keycode
-                    let keycode = event.get_integer_value_field(
-                        core_graphics::event::EventField::KEYBOARD_EVENT_KEYCODE
-                    );
-                    
-                    // Globe key is keycode 179 - this triggers the character picker
-                    // ONLY block this specific key, let ALL other keys pass through
-                    const GLOBE_KEY: i64 = 179;
-                    if keycode == GLOBE_KEY {
-                        debug!("Blocking Globe key (keycode 179) to prevent character picker");
-                        return CallbackResult::Drop;
-                    }
+        info!("Fn monitor: Event tap thread started");
 
-                    // Space key is keycode 49 - when pressed with Fn, trigger hands-free mode
-                    // ONLY if transcription is enabled - otherwise let Space pass through for shortcut recording
-                    const SPACE_KEY: i64 = 49;
+        // Loop to allow restarting the event tap if it times out
+        loop {
+            // Check if we should still be running
+            // We do this check at the very start to ensure we don't restart if stopped
+            if !FN_MONITORING_ACTIVE.load(Ordering::SeqCst) {
+                info!("Fn monitor: Loop detecting stop request (active=false), exiting");
+                break;
+            }
+
+            info!("Fn monitor: Creating CGEventTap...");
+            
+            // Flag to signal restart request from callback
+            let restart_signal = Arc::new(AtomicBool::new(false));
+            let restart_signal_clone = restart_signal.clone();
+
+            // Create the event tap to listen for FlagChanged and KeyDown events
+            // 
+            // We need both event types because the Fn/Globe key generates:
+            // 1. FlagsChanged events with CGEventFlagSecondaryFn flag
+            // 2. KeyDown events with keycode 179 (Globe key) that trigger character picker
+            //
+            // IMPORTANT: We filter in the callback to ONLY block:
+            // - FlagsChanged events with Fn flag set
+            // - KeyDown events for Globe key (keycode 179) or Space with Fn held (fn+space)
+            // All other keyboard input (arrow keys, typing, etc.) passes through normally.
+            //
+            // Use HID level to intercept events before they reach other parts of the system
+            // Use Default (not ListenOnly) so we can consume events and prevent character picker
+            let tap_result = CGEventTap::new(
+                CGEventTapLocation::HID, // HID level intercepts events earlier than Session
+                CGEventTapPlacement::HeadInsertEventTap,
+                CGEventTapOptions::Default, // Allow consuming events
+                vec![
+                    CGEventType::FlagsChanged,
+                    CGEventType::KeyDown,  // Needed to block Globe key and detect fn+space
+                    // NOTE: TapDisabledByTimeout and TapDisabledByUserInput are NOT included here.
+                    // They are auto-delivered to the callback when the tap is disabled by the system.
+                    // Including them causes integer overflow because their enum values (0xFFFFFFFE, 0xFFFFFFFF)
+                    // are too large for the bitmask calculation in core-graphics.
+                ],
+                move |_proxy, event_type, event| {
+                    // Handle tap disabled events FIRST
+                    if matches!(event_type, CGEventType::TapDisabledByTimeout | CGEventType::TapDisabledByUserInput) {
+                        warn!("Fn monitor: Event tap disabled by system ({:?}). Requesting restart.", event_type);
+                        
+                        // Signal restart
+                        restart_signal_clone.store(true, Ordering::SeqCst);
+                        
+                        // Stop the run loop immediately - this releases the current tap
+                        // We must ensure this actually stops the loop!
+                        stop_stored_run_loop();
+                        
+                        return CallbackResult::Keep;
+                    }
                     
-                    // Check settings to see if we should block Space (is it assigned to Fn+Space?)
-                    // This decouples Fn PTT from Fn+Space Hands-Free
-                    let should_trigger_handsfree = if let Some(app) = get_app_handle() {
-                        let settings = settings::get_settings(&app);
-                        if let Some(binding) = settings.bindings.get("transcribe_handsfree") {
-                            let b = binding.current_binding.to_lowercase();
-                            b == "fn+space" || b == "space+fn"
+                    let flags = event.get_flags();
+                    let fn_pressed = flags.contains(CGEventFlags::CGEventFlagSecondaryFn);
+                    
+                    if matches!(event_type, CGEventType::KeyDown) {
+                        let keycode = event.get_integer_value_field(
+                            core_graphics::event::EventField::KEYBOARD_EVENT_KEYCODE
+                        );
+                        
+                        const GLOBE_KEY: i64 = 179;
+                        if keycode == GLOBE_KEY {
+                            return CallbackResult::Drop;
+                        }
+
+                        const SPACE_KEY: i64 = 49;
+                        let should_trigger_handsfree = if let Some(app) = get_app_handle() {
+                            let settings = settings::get_settings(&app);
+                            if let Some(binding) = settings.bindings.get("transcribe_handsfree") {
+                                let b = binding.current_binding.to_lowercase();
+                                b == "fn+space" || b == "space+fn"
+                            } else {
+                                false
+                            }
                         } else {
                             false
-                        }
-                    } else {
-                        false
-                    };
+                        };
 
-                    let transcription_enabled = FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst);
-                    
-                    if keycode == SPACE_KEY && fn_pressed {
-                        // Check for autorepeat events first
-                        // If the user holds down Space, the OS will send repeated KeyDown events.
-                        // We must ignore these to prevent rapid toggling of Hands-Free mode.
-                        let is_autorepeat = event.get_integer_value_field(
-                            core_graphics::event::EventField::KEYBOARD_EVENT_AUTOREPEAT
-                        ) != 0;
+                        let transcription_enabled = FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst);
                         
-                        if is_autorepeat {
-                            debug!("Ignoring autorepeat Space key event");
-                            // Still drop it to prevent typing "     "
-                            return CallbackResult::Drop; 
-                        }
-
-                        if transcription_enabled && should_trigger_handsfree {
-                            // Mark that fn+space was triggered - this prevents delayed PTT from starting
-                            FN_SPACE_TRIGGERED.store(true, Ordering::SeqCst);
+                        if keycode == SPACE_KEY && fn_pressed {
+                            let is_autorepeat = event.get_integer_value_field(
+                                core_graphics::event::EventField::KEYBOARD_EVENT_AUTOREPEAT
+                            ) != 0;
                             
-                            // Get app handle safely
-                            if let Some(app) = get_app_handle() {
-                                let app = &app;
-                                // Check if PTT recording has already started (user pressed Space after delay)
-                                if PTT_STARTED.swap(false, Ordering::SeqCst) {
-                                    debug!("PTT was already started, canceling it before hands-free");
-                                    // Cancel the PTT recording
-                                    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-                                    audio_manager.cancel_recording();
-                                    shortcut::unregister_cancel_shortcut(app);
-                                    
-                                    // NOTE: We do NOT hide the overlay or change the tray icon here.
-                                    // We want the overlay to remain visible ("Seamless Mode Switching")
-                                    // while we transition from PTT to Hands-Free.
-                                    // The audio_manager.cancel_recording() stops the PTT session/timer,
-                                    // and handle_handsfree_toggle() below will start a new session/timer.
-                                    // Visually, the user just sees "Recording" continue.
-                                }
-                                
-                                // Now toggle hands-free mode
-                                handle_handsfree_toggle(app);
+                            if is_autorepeat {
+                                return CallbackResult::Drop; 
                             }
-                            
-                            // Block the Space key to prevent it from typing a space
+
+                            if transcription_enabled && should_trigger_handsfree {
+                                FN_SPACE_TRIGGERED.store(true, Ordering::SeqCst);
+                                if let Some(app) = get_app_handle() {
+                                    let app = &app;
+                                    if PTT_STARTED.swap(false, Ordering::SeqCst) {
+                                        debug!("PTT was already started, canceling it before hands-free");
+                                        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+                                        audio_manager.cancel_recording();
+                                        shortcut::unregister_cancel_shortcut(app);
+                                    }
+                                    handle_handsfree_toggle(app);
+                                }
+                                return CallbackResult::Drop;
+                            } else {
+                                return CallbackResult::Keep;
+                            }
+                        }
+                        return CallbackResult::Keep;
+                    }
+                    
+                    if matches!(event_type, CGEventType::FlagsChanged) {
+                        if let Some(app) = get_app_handle() {
+                            check_ptt_release(&app, event);
+                        }
+
+                        handle_flags_changed_event(event);
+                        
+                        if fn_pressed || FN_KEY_WAS_PRESSED.load(Ordering::SeqCst) {
                             return CallbackResult::Drop;
-                        } else {
-                            // Transcription disabled (e.g., shortcut recording) - pass through Space
-                            return CallbackResult::Keep;
                         }
                     }
                     
-                    // Pass through ALL other key events (arrow keys, typing, etc.)
-                    return CallbackResult::Keep;
-                }
-                
-                // For FlagsChanged events, handle Fn key state
-                if matches!(event_type, CGEventType::FlagsChanged) {
-                    // Check for standard PTT release (fix for "modifier released first" bug)
-                    // We check this BEFORE Fn handling to ensure we catch it even if Fn is also involved
-                    if let Some(app) = get_app_handle() {
-                        check_ptt_release(&app, event);
-                    }
+                    CallbackResult::Keep
+                },
+            );
 
-                    handle_flags_changed_event(event);
+            match tap_result {
+                Ok(tap) => {
+                    info!("Fn monitor: Tap created successfully. Entering RunLoop.");
+                    // Mark as active (redundant but safe)
+                    FN_MONITORING_ACTIVE.store(true, Ordering::SeqCst);
+
+                    let source = tap.mach_port().create_runloop_source(0)
+                        .expect("Failed to create CFRunLoop source from mach port");
+                    let run_loop = CFRunLoop::get_current();
+                    run_loop.add_source(&source, unsafe { kCFRunLoopCommonModes });
+
+                    set_run_loop(Some(run_loop));
+
+                    tap.enable();
+                    CFRunLoop::run_current();
                     
-                    // Block Fn-related FlagsChanged events to prevent macOS from seeing them
-                    if fn_pressed || FN_KEY_WAS_PRESSED.load(Ordering::SeqCst) {
-                        debug!("Blocking Fn FlagsChanged event: fn_pressed={}", fn_pressed);
-                        return CallbackResult::Drop;
+                    // Run loop exited
+                    info!("Fn monitor: RunLoop exited.");
+
+                    // Check restart signal
+                    if restart_signal.load(Ordering::SeqCst) {
+                        warn!("Fn monitor: Restart requested. Sleeping 1s before retry...");
+                        
+                        // Clear invalid state on restart
+                        FN_KEY_WAS_PRESSED.store(false, Ordering::SeqCst);
+                        FN_SPACE_TRIGGERED.store(false, Ordering::SeqCst);
+                        
+                        std::thread::sleep(Duration::from_millis(1000));
+                        info!("Fn monitor: Waking up for restart.");
+                        continue; // Loop back to top
                     }
+
+                    // No restart requested -> Stopped normally or by stop_fn_key_monitor()
+                    // Check if global flag was cleared externally
+                    if !FN_MONITORING_ACTIVE.load(Ordering::SeqCst) {
+                        info!("Fn monitor: Stopped normally (active flag cleared).");
+                    } else {
+                        // This shouldn't happen usually unless run loop stopped for unknown reason
+                        warn!("Fn monitor: RunLoop stopped but restart not requested and active=true. Treating as error/exit.");
+                        FN_MONITORING_ACTIVE.store(false, Ordering::SeqCst);
+                    }
+                    break;
                 }
-                
-                // Pass through all other events
-                CallbackResult::Keep
-            },
-        );
-
-        match tap_result {
-            Ok(tap) => {
-                FN_MONITORING_ACTIVE.store(true, Ordering::SeqCst);
-                info!("Fn key monitor started successfully at HID level (transcription: {})", 
-                      FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst));
-
-                // Get the run loop source and add it to the current run loop
-                let source = tap.mach_port().create_runloop_source(0).unwrap();
-                let run_loop = CFRunLoop::get_current();
-                run_loop.add_source(&source, unsafe { kCFRunLoopCommonModes });
-
-                // Store the run loop so stop_fn_key_monitor can stop it
-                set_run_loop(Some(run_loop));
-
-                // Enable the tap
-                tap.enable();
-
-                // Run the run loop to process events
-                // This will block until the run loop is stopped via stop_stored_run_loop()
-                CFRunLoop::run_current();
-                
-                // Clean up after run loop exits
-                FN_MONITORING_ACTIVE.store(false, Ordering::SeqCst);
-                debug!("Event tap thread exiting normally");
+                Err(e) => {
+                    error!("Fn monitor: Failed to create CGEventTap: {:?}", e);
+                    // If creation fails, usually permission problem. 
+                    // But maybe transient? 
+                    // Let's NOT retry infinitely in a tight loop if it's a hard error.
+                    // But we can verify permission.
+                    
+                    // Force check permission
+                    if !crate::permissions::check_accessibility_permission() {
+                         error!("Fn monitor: Creation failed because permission is missing.");
+                         // The permission thread will handle notification.
+                         FN_MONITORING_ACTIVE.store(false, Ordering::SeqCst);
+                         break;
+                    }
+                    
+                    // If permission is present but creation failed? 
+                    error!("Fn monitor: Permission present but Tap creation failed. Retrying in 2s...");
+                    std::thread::sleep(Duration::from_millis(2000));
+                    continue;
+                }
             }
-            Err(_) => {
-                error!("Failed to create CGEventTap. Ensure Accessibility permissions are granted.");
-            }
-        }
+        } // end loop
+
+        info!("Fn monitor: Event tap thread DEAD.");
     });
 
     Ok(())
