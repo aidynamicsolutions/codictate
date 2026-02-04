@@ -65,7 +65,7 @@ export const GeneralSettings: React.FC = () => {
         />
 
         {/* Microphone row */}
-        <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
+        <MicrophoneSelector />
 
         {/* Languages placeholder row */}
         {showLanguageSelector && (
@@ -82,11 +82,7 @@ export const GeneralSettings: React.FC = () => {
       <SettingsGroup title={t("settings.sound.title")}>
         <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
         <AudioFeedback descriptionMode="tooltip" grouped={true} />
-        <OutputDeviceSelector
-          descriptionMode="tooltip"
-          grouped={true}
-          disabled={!audioFeedbackEnabled}
-        />
+        <OutputDeviceSelector disabled={!audioFeedbackEnabled} />
         <VolumeSlider disabled={!audioFeedbackEnabled} />
       </SettingsGroup>
 

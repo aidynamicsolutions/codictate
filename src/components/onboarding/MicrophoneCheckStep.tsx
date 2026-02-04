@@ -1,94 +1,18 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/shared/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shared/ui/dialog";
 import OnboardingLayout from "./OnboardingLayout";
 import { useSettings } from "@/hooks/useSettings";
 import { commands } from "@/bindings";
 import { AudioAGC } from "@/utils/audioAGC";
+import { MicrophoneModal, AudioLevelBars } from "@/components/shared/MicrophoneModal";
 
 interface MicrophoneCheckStepProps {
   onContinue: () => void;
   onBack: () => void;
 }
-
-// AudioAGC moved to "@/utils/audioAGC"
-
-// Audio level bars component with AGC normalization built-in
-const AudioLevelBars: React.FC<{ levels: number[] }> = ({ levels }) => {
-  return (
-    <div className="flex items-end justify-center gap-1.5 h-10">
-      {levels.map((v, i) => (
-        <div
-          key={i}
-          className="w-2 rounded-sm bg-primary transition-all duration-75"
-          style={{
-            // Height scales from 6px (silent) to 40px (loud)
-            height: `${Math.max(6, Math.min(40, 6 + v * 34))}px`,
-            opacity: Math.max(0.4, Math.min(1, 0.4 + v * 0.6)),
-          }}
-        />
-      ))}
-    </div>
-  );
-};
-
-// Microphone option component for the dialog
-const MicrophoneOption: React.FC<{
-  name: string;
-  isSelected: boolean;
-  isSystemDefault?: boolean;
-  levels?: number[];
-  onClick: () => void;
-}> = ({ name, isSelected, isSystemDefault, levels, onClick }) => {
-  const { t } = useTranslation();
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`w-full p-4 text-left rounded-lg border transition-all ${
-        isSelected
-          ? "border-primary bg-primary/5"
-          : "border-border hover:border-primary/50 hover:bg-accent/50"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col gap-1">
-          <span className="font-medium text-foreground">
-            {name}
-            {isSystemDefault && (
-              <span className="ml-2 text-xs text-muted-foreground">
-                ({t("onboarding.microphoneCheck.dialog.default")})
-              </span>
-            )}
-          </span>
-        </div>
-        {isSelected && levels && (
-          <div className="flex items-end gap-0.5 h-6">
-            {levels.slice(0, 8).map((v, i) => (
-              <div
-                key={i}
-                className="w-1 rounded-sm bg-primary transition-all duration-75"
-                style={{
-                  height: `${Math.max(4, Math.min(24, 4 + v * 20))}px`,
-                  opacity: Math.max(0.4, Math.min(1, 0.4 + v * 0.6)),
-                }}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </button>
-  );
-};
 
 export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
   onContinue,
@@ -96,10 +20,7 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
 }) => {
   const { t } = useTranslation();
   const {
-    audioDevices,
     refreshAudioDevices,
-    getSetting,
-    updateSetting,
     isLoading,
   } = useSettings();
 
@@ -108,70 +29,10 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   const agcRef = useRef(new AudioAGC());
 
-
-
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Get current microphone setting - "Default" or a specific device name
-  const selectedMicrophone = getSetting("selected_microphone") || "Default";
-
-  // Filter out the "Default" entry - only show actual microphone devices
-  const actualMicrophones = useMemo(
-    () => audioDevices.filter((d) => d.name !== "Default"),
-    [audioDevices]
-  );
-
-  // Find the system default microphone (has is_default=true among actual devices)
-  const systemDefaultMic = useMemo(
-    () => actualMicrophones.find((d) => d.is_default),
-    [actualMicrophones]
-  );
-
-  // Determine which microphone should appear selected:
-  // - If selectedMicrophone is "Default", highlight the system default mic
-  // - Otherwise, highlight the specifically selected mic
-  const effectiveSelectedMic = useMemo(() => {
-    if (selectedMicrophone === "Default" && systemDefaultMic) {
-      return systemDefaultMic.name;
-    }
-    return selectedMicrophone;
-  }, [selectedMicrophone, systemDefaultMic]);
-
-  // Sort microphones: selected mic at top, then system default, then alphabetically
-  const sortedMicrophones = useMemo(() => {
-    return [...actualMicrophones].sort((a, b) => {
-      // Currently selected mic comes first
-      const aIsSelected = a.name === effectiveSelectedMic;
-      const bIsSelected = b.name === effectiveSelectedMic;
-      if (aIsSelected && !bIsSelected) return -1;
-      if (!aIsSelected && bIsSelected) return 1;
-
-      // Then system default
-      if (a.is_default && !b.is_default) return -1;
-      if (!a.is_default && b.is_default) return 1;
-
-      // Then sort alphabetically
-      return a.name.localeCompare(b.name);
-    });
-  }, [actualMicrophones, effectiveSelectedMic]);
-
-  // Poll for device list updates while dialog is open (to catch newly connected devices like AirPods)
-  useEffect(() => {
-    if (!isDialogOpen) return;
-
-    // Refresh immediately when dialog opens
-    refreshAudioDevices();
-
-    // Poll every 2 seconds while dialog is open
-    const intervalId = setInterval(() => {
-      refreshAudioDevices();
-    }, 2000);
-
-    return () => clearInterval(intervalId);
-  }, [isDialogOpen, refreshAudioDevices]);
-
-  // Start mic preview on mount
+  // Start mic preview on mount & Listen for mic level updates
   useEffect(() => {
     const startMicPreview = async () => {
       try {
@@ -192,7 +53,6 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
     startMicPreview();
     refreshAudioDevices();
 
-    // Listen for mic level updates
     const setupLevelListener = async () => {
       const unlisten = await listen<number[]>("mic-level", (event) => {
         const rawLevels = event.payload;
@@ -221,23 +81,6 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
     };
   }, [refreshAudioDevices]);
 
-  // Handle microphone change
-  const handleMicrophoneSelect = useCallback(
-    async (deviceName: string) => {
-      await updateSetting("selected_microphone", deviceName);
-      // Reset AGC for new device
-      agcRef.current.reset();
-      // Restart mic preview with new device
-      await commands.stopMicPreview();
-      await commands.startMicPreview();
-      setIsDialogOpen(false);
-    },
-    [updateSetting]
-  );
-
-
-
-  // Cleanup is handled by useEffect when component unmounts
   const handleContinue = () => onContinue();
   const handleBack = () => onBack();
 
@@ -303,36 +146,11 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
             </div>
           </div>
 
-          {/* Microphone Selection Dialog */}
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle>
-                  {t("onboarding.microphoneCheck.dialog.title")}
-                </DialogTitle>
-              </DialogHeader>
-
-              <div className="flex flex-col gap-2 mt-4">
-                {/* Microphone list - selected mic at top */}
-                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
-                  {sortedMicrophones.map((device) => {
-                    const isSelected = effectiveSelectedMic === device.name;
-
-                    return (
-                      <MicrophoneOption
-                        key={device.index}
-                        name={device.name}
-                        isSelected={isSelected}
-                        isSystemDefault={device.is_default}
-                        levels={isSelected ? displayLevels : undefined}
-                        onClick={() => handleMicrophoneSelect(device.name)}
-                      />
-                    );
-                  })}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+          <MicrophoneModal 
+            open={isDialogOpen} 
+            onOpenChange={setIsDialogOpen}
+            manageAudio={false} 
+          />
         </div>
       }
     />

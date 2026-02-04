@@ -123,6 +123,22 @@ const mockInvoke = async (cmd, args) => {
     if (cmd === "is_model_loading") return false;
     if (cmd === "has_any_models_available") return true;
     
+    if (cmd === "get_audio_devices" || cmd === "get_available_microphones") {
+        return [
+            { name: "Default", is_default: false, device: {} }, 
+            { name: "MacBook Pro Mic", is_default: true, device: {} }, 
+            { name: "External USB Mic", is_default: false, device: {} }
+        ];
+    }
+
+    if (cmd === "update_setting" || cmd === "reset_setting" || cmd === "set_selected_microphone") {
+        console.log(`[Mock] ${cmd} called`);
+        return null;
+    }
+
+    if (cmd === "start_mic_preview") return { status: "ok" };
+    if (cmd === "stop_mic_preview") return null;
+
     if (cmd.startsWith("get_")) return null;
 
     return null;

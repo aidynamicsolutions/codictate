@@ -520,20 +520,14 @@
     "sound": {
       "title": "Sound",
       "microphone": {
-        "title": "Microphone",
-        "description": "Select your preferred microphone device",
-        "placeholder": "Select microphone...",
-        "loading": "Loading..."
+        "title": "Microphone"
       },
       "audioFeedback": {
         "label": "Audio Feedback",
         "description": "Play sound when recording starts and stops"
       },
       "outputDevice": {
-        "title": "Output Device",
-        "description": "Select your preferred audio output device for feedback sounds",
-        "placeholder": "Select output device...",
-        "loading": "Loading..."
+        "title": "Output Device"
       },
       "volume": {
         "title": "Volume",

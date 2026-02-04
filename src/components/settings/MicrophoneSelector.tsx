@@ -1,93 +1,65 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { DeviceSelector } from "./DeviceSelector";
 import { useSettings } from "../../hooks/useSettings";
-import { logInfo } from "@/utils/logging";
+import { MicrophoneModal } from "@/components/shared/MicrophoneModal";
+import { SettingsRow } from "../ui/SettingsRow";
 
-interface MicrophoneSelectorProps {
-  descriptionMode?: "inline" | "tooltip";
-  grouped?: boolean; // Kept for compatibility
-}
-
-export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = React.memo(
-  ({ descriptionMode = "tooltip" }) => {
+export const MicrophoneSelector: React.FC = React.memo(
+  () => {
     const { t } = useTranslation();
     const {
       getSetting,
-      updateSetting,
-      resetSetting,
-      isUpdating,
-      isLoading,
       audioDevices,
       refreshAudioDevices,
+      isLoading,
     } = useSettings();
 
-    // Ensure audio devices are loaded
-    React.useEffect(() => {
-      if (audioDevices.length === 0) {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // Refresh devices on mount to ensure we have the system default name
+    useEffect(() => {
         refreshAudioDevices();
-      }
-    }, [audioDevices.length, refreshAudioDevices]);
+    }, [refreshAudioDevices]);
 
     // Find the real system default device
-    const systemDefaultMic = audioDevices.find((d) => d.is_default && d.name !== "Default" && d.name !== "default");
+    const systemDefaultMic = audioDevices.find(
+      (d) => d.is_default && d.name !== "Default" && d.name !== "default"
+    );
     
-    // If setting is "Default", we conceptually select the system default device
-    const effectiveSelectedMic = 
-      (getSetting("selected_microphone") === "default" || getSetting("selected_microphone") === "Default")
-        ? systemDefaultMic?.name || "Default" 
-        : getSetting("selected_microphone") || "Default";
+    // Determine effective selection
+    const selectedSetting = getSetting("selected_microphone");
+    const isUsingSystemDefault = 
+      selectedSetting === "default" || 
+      selectedSetting === "Default" || 
+      !selectedSetting;
 
-    const handleMicrophoneSelect = async (deviceName: string) => {
-      logInfo(`Microphone selected: ${deviceName}`, "fe");
-      await updateSetting("selected_microphone", deviceName);
-    };
+    const effectiveSelectedMicName = isUsingSystemDefault 
+        ? (systemDefaultMic?.name || "Default") 
+        : (selectedSetting || "Default");
 
-    const handleReset = async () => {
-      logInfo("Microphone setting reset", "fe");
-      await resetSetting("selected_microphone");
-    };
-
-    const handleRefresh = async () => {
-        logInfo("Refreshing audio devices", "fe");
-        await refreshAudioDevices();
-    };
-
-    // Filter out "Default" from the list
-    const showDefaultOption = !systemDefaultMic;
-
-    const microphoneOptions = audioDevices
-      .filter((device) => {
-        if (device.name === "Default" || device.name === "default") {
-          return showDefaultOption;
-        }
-        return true;
-      })
-      .map((device) => {
-        const isDefault = device.is_default;
-        return {
-          value: device.name,
-          label: isDefault ? `${device.name} (${t("common.default")})` : device.name,
-        };
-      });
+    // "Default" label key
+    const defaultLabel = t("common.default") || "Default";
+    
+    const displayLabel = isUsingSystemDefault
+        ? `${effectiveSelectedMicName} (${defaultLabel})`
+        : effectiveSelectedMicName;
 
     return (
-      <DeviceSelector
-        label={t("settings.sound.microphone.title")}
-        description={t("settings.sound.microphone.description")}
-        value={effectiveSelectedMic}
-        options={microphoneOptions}
-        onSelect={handleMicrophoneSelect}
-        onRefresh={handleRefresh}
-        onReset={handleReset}
-        isLoading={isLoading}
-        isUpdating={isUpdating("selected_microphone")}
-        placeholder={t("settings.sound.microphone.placeholder")}
-        loadingLabel={t("settings.sound.microphone.loading")}
-        refreshLabel={t("common.refresh")}
-        resetLabel={t("common.reset")}
-        descriptionMode={descriptionMode}
-      />
+      <>
+        <SettingsRow
+          title={t("settings.sound.microphone.title")}
+          description={displayLabel}
+          buttonLabel={t("common.change", "Change")}
+          onButtonClick={() => setIsModalOpen(true)}
+          disabled={isLoading}
+        />
+
+        <MicrophoneModal 
+            open={isModalOpen} 
+            onOpenChange={setIsModalOpen} 
+            manageAudio={true}
+        />
+      </>
     );
   },
 );
