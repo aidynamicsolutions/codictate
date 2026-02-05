@@ -15,7 +15,9 @@ import {
   SidebarMenuItem,
   SidebarRail,
   SidebarSeparator,
+  SidebarFooter,
 } from "@/components/shared/ui/sidebar";
+import ModelSelector from "./model-selector";
 import {
   GeneralSettings,
   HistorySettings,
@@ -132,6 +134,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter>
+        <div className="p-1">
+          <ModelSelector />
+        </div>
+      </SidebarFooter>
       <SidebarRail />
     </SidebarPrimitive>
   );
