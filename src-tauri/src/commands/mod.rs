@@ -5,6 +5,7 @@ pub mod mlx;
 pub mod models;
 pub mod transcription;
 pub mod window;
+pub mod menu;
 
 
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};

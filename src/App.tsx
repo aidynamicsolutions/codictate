@@ -3,7 +3,6 @@ import { Toaster } from "sonner";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import MicrophonePermissions from "./components/MicrophonePermissions";
-import Footer from "./components/footer";
 import Onboarding from "./components/onboarding";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/shared/ui/sidebar";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
@@ -11,6 +10,8 @@ import { useSettings } from "./hooks/useSettings";
 import { commands } from "@/bindings";
 import { initLogging } from "@/utils/logging";
 import { useModelStore } from "./stores/modelStore";
+import { useUpdateStore } from "./stores/updateStore";
+import { listen } from "@tauri-apps/api/event";
 
 const renderSettingsContent = (
   section: SidebarSection,
@@ -78,6 +79,29 @@ function App() {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [settings?.debug_mode, updateSetting]);
+
+  // Listen for update check requests (e.g. from menu)
+  useEffect(() => {
+    const unlistenPromise = listen("check-for-updates", () => {
+        // 1. Manually trigger check using global store
+        const store = useUpdateStore.getState();
+        
+        if (store.isPendingRestart) {
+            store.restartApp();
+            return;
+        }
+
+        store.checkForUpdates(true);
+        store.setShouldScrollToUpdates(true);
+        
+        // 2. Navigate to settings (where the check status is displayed)
+        setCurrentSection("settings");
+        // 3. Ensure window is focused/visible (handled by backend usually, but ensures frontend is ready)
+    });
+    return () => {
+        unlistenPromise.then(unlisten => unlisten());
+    };
+  }, []);
 
   const checkOnboardingStatus = async () => {
     try {
@@ -156,8 +180,6 @@ function App() {
             </div>
           </div>
         </div>
-        {/* Footer inside content area */}
-        <Footer />
       </SidebarInset>
     </SidebarProvider>
   );

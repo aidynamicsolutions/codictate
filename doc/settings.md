@@ -35,6 +35,14 @@ Toggle sound effects for user interactions.
 -   **Output Device**: Select where feedback sounds are played (only enabled if Audio Feedback is on).
 -   **Volume**: Adjust the playback volume for feedback sounds.
 
+## Application
+
+### Updates
+Manage how the application receives updates.
+
+-   **Update application**: Check for updates, view download progress (speed, ETA), and install new versions.
+-   **Automatically check for updates**: Enable/disable automatic update checks on startup.
+
 ## Developer Notes
 
 ### Changing Default Values

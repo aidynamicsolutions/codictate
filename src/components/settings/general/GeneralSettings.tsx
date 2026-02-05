@@ -14,6 +14,8 @@ import { KeyboardShortcutsModal } from "@/components/shared/KeyboardShortcutsMod
 import { LanguageSelectorModal } from "@/components/shared/LanguageSelectorModal";
 import { getLanguageLabel } from "@/lib/constants/languageData";
 import { Globe } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { useUpdateStore } from "../../../stores/updateStore";
 import { ShowOverlay } from "../ShowOverlay";
 import { TranslateToEnglish } from "../TranslateToEnglish";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
@@ -24,6 +26,8 @@ import { PasteMethodSetting } from "../PasteMethod";
 import { ClipboardHandlingSetting } from "../ClipboardHandling";
 import { PostProcessingToggle } from "../PostProcessingToggle";
 import { ResetAllSettings } from "../ResetAllSettings";
+import { UpdateChecksToggle } from "../UpdateChecksToggle";
+import { CheckForUpdates } from "../CheckForUpdates";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -73,6 +77,17 @@ export const GeneralSettings: React.FC = () => {
       .join("+");
   };
 
+  const appSettingsRef = useRef<HTMLDivElement>(null);
+  const shouldScroll = useUpdateStore((state) => state.shouldScrollToUpdates);
+  const setShouldScroll = useUpdateStore((state) => state.setShouldScrollToUpdates);
+
+  useEffect(() => {
+    if (shouldScroll && appSettingsRef.current) {
+        appSettingsRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+        setShouldScroll(false);
+    }
+  }, [shouldScroll, setShouldScroll]);
+
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.general.title")}>
@@ -109,6 +124,13 @@ export const GeneralSettings: React.FC = () => {
         <VolumeSlider disabled={!audioFeedbackEnabled} />
       </SettingsGroup>
       
+      <div ref={appSettingsRef}>
+          <SettingsGroup title={t("settings.application.title", "Application")}>
+            <CheckForUpdates />
+            <UpdateChecksToggle descriptionMode="tooltip" grouped={true} />
+          </SettingsGroup>
+      </div>
+
       <SettingsGroup title={t("settings.advanced.title")}>
         <StartHidden descriptionMode="tooltip" grouped={true} />
         <AutostartToggle descriptionMode="tooltip" grouped={true} />

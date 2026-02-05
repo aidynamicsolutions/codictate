@@ -14,6 +14,7 @@ mod input;
 mod llm_client;
 mod managers;
 mod notification;
+mod menu;
 mod overlay;
 mod permissions;
 mod settings;
@@ -534,6 +535,11 @@ pub fn run() {
             let app_handle = app.handle().clone();
 
             initialize_core_logic(&app_handle);
+            
+            #[cfg(target_os = "macos")]
+            if let Err(e) = menu::init(&app_handle) {
+                tracing::error!("Failed to initialize app menu: {}", e);
+            }
 
 
 
