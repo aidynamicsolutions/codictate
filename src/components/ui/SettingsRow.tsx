@@ -10,6 +10,7 @@ interface SettingsRowProps {
   buttonLabel: string;
   /** Handler for the action button click */
   onButtonClick: () => void;
+  buttonVariant?: "default" | "destructive" | "outline" | "secondary" | "ghost" | "link";
   /** Whether the button is disabled */
   disabled?: boolean;
 }
@@ -23,18 +24,21 @@ export const SettingsRow: React.FC<SettingsRowProps> = ({
   description,
   buttonLabel,
   onButtonClick,
+  buttonVariant = "outline",
   disabled = false,
-}) => {
+}: SettingsRowProps) => {
   return (
-    <div className="flex items-center justify-between py-5 border-b border-border/60 dark:border-white/15 last:border-b-0">
-      <div className="flex flex-col gap-1">
-        <span className="text-base font-medium text-foreground">{title}</span>
-        {description && (
-          <span className="text-sm text-muted-foreground">{description}</span>
-        )}
+    <div className="flex items-center justify-between py-5">
+      <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-1">
+          <span className="text-base font-medium text-foreground">{title}</span>
+          {description && (
+            <span className="text-sm text-muted-foreground">{description}</span>
+          )}
+        </div>
       </div>
       <Button
-        variant="secondary"
+        variant={buttonVariant}
         size="lg"
         onClick={onButtonClick}
         disabled={disabled}

@@ -1,6 +1,5 @@
 // Settings section components
 export { GeneralSettings } from "./general/GeneralSettings";
-export { AdvancedSettings } from "./advanced/AdvancedSettings";
 export { DebugSettings } from "./debug/DebugSettings";
 export { HistorySettings } from "./history/HistorySettings";
 export { AboutSettings } from "./about/AboutSettings";
@@ -27,3 +26,4 @@ export { HistoryLimit } from "./HistoryLimit";
 export { RecordingRetentionPeriodSelector } from "./RecordingRetentionPeriod";
 export { AutostartToggle } from "./AutostartToggle";
 export { UpdateChecksToggle } from "./UpdateChecksToggle";
+export { ResetAllSettings } from "./ResetAllSettings";

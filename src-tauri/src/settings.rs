@@ -283,7 +283,7 @@ pub struct AppSettings {
     pub post_process_selected_prompt_id: Option<String>,
     #[serde(default)]
     pub mute_while_recording: bool,
-    #[serde(default)]
+    #[serde(default = "default_append_trailing_space")]
     pub append_trailing_space: bool,
     #[serde(default = "default_app_language")]
     pub app_language: String,
@@ -374,6 +374,10 @@ fn default_sound_theme() -> SoundTheme {
 
 fn default_post_process_enabled() -> bool {
     false
+}
+
+fn default_append_trailing_space() -> bool {
+    true
 }
 
 fn default_app_language() -> String {
@@ -625,7 +629,7 @@ pub fn get_default_settings() -> AppSettings {
         clamshell_microphone: None,
         selected_output_device: None,
         translate_to_english: false,
-        selected_language: "auto".to_string(),
+        selected_language: default_selected_language(),
         saved_languages: default_saved_languages(),
         overlay_position: default_overlay_position(),
         debug_mode: false,
@@ -645,7 +649,7 @@ pub fn get_default_settings() -> AppSettings {
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
         mute_while_recording: false,
-        append_trailing_space: false,
+        append_trailing_space: true,
         app_language: default_app_language(),
         experimental_enabled: false,
         paste_delay_ms: default_paste_delay_ms(),

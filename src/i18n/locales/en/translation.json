@@ -10,7 +10,6 @@
   "sidebar": {
     "home": "Home",
     "settings": "Settings",
-    "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
     "debug": "Debug",

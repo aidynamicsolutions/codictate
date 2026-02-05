@@ -18,7 +18,6 @@ import {
 } from "@/components/shared/ui/sidebar";
 import {
   GeneralSettings,
-  AdvancedSettings,
   HistorySettings,
   DebugSettings,
   AboutSettings,
@@ -53,12 +52,6 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.settings",
     icon: Cog,
     component: GeneralSettings,
-    enabled: () => true,
-  },
-  advanced: {
-    labelKey: "sidebar.advanced",
-    icon: Sliders,
-    component: AdvancedSettings,
     enabled: () => true,
   },
   postprocessing: {

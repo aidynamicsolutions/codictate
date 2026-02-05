@@ -14,6 +14,16 @@ import { KeyboardShortcutsModal } from "@/components/shared/KeyboardShortcutsMod
 import { LanguageSelectorModal } from "@/components/shared/LanguageSelectorModal";
 import { getLanguageLabel } from "@/lib/constants/languageData";
 import { Globe } from "lucide-react";
+import { ShowOverlay } from "../ShowOverlay";
+import { TranslateToEnglish } from "../TranslateToEnglish";
+import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
+import { CustomWords } from "../CustomWords";
+import { StartHidden } from "../StartHidden";
+import { AutostartToggle } from "../AutostartToggle";
+import { PasteMethodSetting } from "../PasteMethod";
+import { ClipboardHandlingSetting } from "../ClipboardHandling";
+import { PostProcessingToggle } from "../PostProcessingToggle";
+import { ResetAllSettings } from "../ResetAllSettings";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -97,6 +107,19 @@ export const GeneralSettings: React.FC = () => {
         <AudioFeedback descriptionMode="tooltip" grouped={true} />
         <OutputDeviceSelector disabled={!audioFeedbackEnabled} />
         <VolumeSlider disabled={!audioFeedbackEnabled} />
+      </SettingsGroup>
+      
+      <SettingsGroup title={t("settings.advanced.title")}>
+        <StartHidden descriptionMode="tooltip" grouped={true} />
+        <AutostartToggle descriptionMode="tooltip" grouped={true} />
+        <ShowOverlay descriptionMode="tooltip" grouped={true} />
+        <PasteMethodSetting descriptionMode="tooltip" grouped={true} />
+        <ClipboardHandlingSetting descriptionMode="tooltip" grouped={true} />
+        <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
+        <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
+        <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
+        <CustomWords descriptionMode="tooltip" grouped />
+        <ResetAllSettings />
       </SettingsGroup>
 
       {/* Keyboard Shortcuts Modal */}
