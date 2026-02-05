@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@/components/shared/ui/tooltip";
 import { InfoIcon } from "lucide-react";
+import { SettingsRow } from "./SettingsRow";
 
 interface ToggleSwitchProps {
   checked: boolean;
@@ -35,36 +36,37 @@ export const ToggleSwitch: React.FC<ToggleSwitchProps> = ({
 }) => {
   const switchId = id || label.toLowerCase().replace(/\s+/g, "-");
 
+  const titleNode = (
+    <div className="flex items-center gap-2">
+      <span>{label}</span>
+      {descriptionMode === "tooltip" && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <InfoIcon className="h-3.5 w-3.5 text-muted-foreground/70 cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="max-w-xs">{description}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      )}
+    </div>
+  );
+
   return (
-    <div className={`flex items-center justify-between py-4 ${className}`}>
-      <div className="flex items-center gap-2">
-        <Label htmlFor={switchId} className="text-sm font-medium">
-          {label}
-        </Label>
-        {descriptionMode === "tooltip" && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="max-w-xs">{description}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-      </div>
+    <SettingsRow
+      title={titleNode}
+      description={descriptionMode === "inline" ? description : undefined}
+      className={className}
+      disabled={disabled}
+    >
       <Switch
         id={switchId}
         checked={checked}
         onCheckedChange={onChange}
         disabled={disabled || isUpdating}
       />
-      {descriptionMode === "inline" && (
-        <p className="text-sm text-muted-foreground mt-1 col-span-2">
-          {description}
-        </p>
-      )}
-    </div>
+    </SettingsRow>
   );
 };

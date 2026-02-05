@@ -1,7 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Slider } from "@/components/shared/ui/slider";
-import { Label } from "@/components/shared/ui/label";
+import { SettingsRow } from "../ui/SettingsRow";
 import {
   Tooltip,
   TooltipContent,
@@ -23,32 +23,35 @@ export const VolumeSlider: React.FC<{ disabled?: boolean }> = ({
       // Shadcn Slider returns array
       const value = values[0];
       updateSetting("audio_feedback_volume", value);
-      // Log maybe on commit? but on change is fine for now, or use onValueCommit if available in shadcn wrapper?
-      // Shadcn default slider uses onValueChange.
   };
 
   const handleValueCommit = (values: number[]) => {
       logInfo(`Volume changed to: ${values[0]}`, "fe");
   }
 
+  const titleNode = (
+    <div className="flex items-center gap-2">
+      <span>{t("settings.sound.volume.title")}</span>
+      <TooltipProvider>
+          <Tooltip>
+              <TooltipTrigger asChild>
+              <InfoIcon className="h-3.5 w-3.5 text-muted-foreground/70 cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+              <p className="max-w-xs">{t("settings.sound.volume.description")}</p>
+              </TooltipContent>
+          </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+
   return (
-    <div className={`flex items-center justify-between py-4 ${disabled ? "opacity-50" : ""}`}>
-        <div className="flex items-center gap-2">
-            <Label className="text-sm font-medium">
-                {t("settings.sound.volume.title")}
-            </Label>
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                    <InfoIcon className="h-4 w-4 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                    <p className="max-w-xs">{t("settings.sound.volume.description")}</p>
-                    </TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
-        </div>
-        <div className="flex items-center gap-4 w-[280px]">
+    <SettingsRow
+        title={titleNode}
+        disabled={disabled}
+        className={disabled ? "opacity-50" : ""}
+    >
+        <div className="flex items-center gap-4 w-[200px] md:w-[240px]">
             <Slider
                 value={[audioFeedbackVolume]}
                 onValueChange={handleValueChange}
@@ -59,10 +62,10 @@ export const VolumeSlider: React.FC<{ disabled?: boolean }> = ({
                 disabled={disabled}
                 className="flex-1"
             />
-            <span className="text-sm font-medium w-12 text-right">
+            <span className="text-sm font-medium w-12 text-right tabular-nums">
                 {Math.round(audioFeedbackVolume * 100)}%
             </span>
         </div>
-    </div>
+    </SettingsRow>
   );
 };

@@ -2,9 +2,6 @@ import React from "react";
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
 } from "@/components/shared/ui/card";
 
 interface SettingsGroupProps {
@@ -19,22 +16,28 @@ export const SettingsGroup: React.FC<SettingsGroupProps> = ({
   children,
 }) => {
   return (
-    <Card className="w-full animate-in fade-in slide-in-from-bottom-2 duration-500 bg-card/60 backdrop-blur-sm border-border/60 hover:border-border/80 transition-colors">
+    <div className="w-full space-y-3">
       {(title || description) && (
-        <CardHeader className="pb-3">
+        <div className="px-1">
           {title && (
-            <CardTitle className="text-sm font-semibold uppercase tracking-wide text-primary font-heading">
+            <h3 className="text-sm font-medium text-muted-foreground tracking-wide pl-1">
               {title}
-            </CardTitle>
+            </h3>
           )}
-          {description && <CardDescription>{description}</CardDescription>}
-        </CardHeader>
-      )}
-      <CardContent className="p-0">
-        <div className="divide-y divide-border/60 dark:divide-white/15 px-6">
-          {children}
+          {description && (
+            <p className="text-sm text-muted-foreground pl-1 mt-1">
+              {description}
+            </p>
+          )}
         </div>
-      </CardContent>
-    </Card>
+      )}
+      <Card className="w-full bg-card border shadow-sm rounded-xl overflow-hidden">
+        <CardContent className="p-0">
+          <div className="divide-y divide-border/40 px-6">
+            {children}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
