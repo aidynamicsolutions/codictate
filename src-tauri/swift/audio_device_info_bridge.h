@@ -10,6 +10,14 @@
 /// Returns: 1 = Bluetooth, 0 = not Bluetooth, -1 = device not found or error
 int32_t is_audio_device_bluetooth(const char *device_name);
 
+/// Check if an audio device is Built-in.
+/// Returns: 1 = Builtin, 0 = not Builtin, -1 = device not found or error
+int32_t is_audio_device_builtin(const char *device_name);
+
+/// Check if an audio device is Virtual (phantom).
+/// Returns: 1 = Virtual, 0 = not Virtual, -1 = device not found or error
+int32_t is_audio_device_virtual(const char *device_name);
+
 /// Get the transport type of an audio device as a string (for debugging).
 /// Returns NULL if device not found. Caller must free with free_transport_type_string.
 char *get_audio_device_transport_type(const char *device_name);

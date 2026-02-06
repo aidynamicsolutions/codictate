@@ -203,22 +203,72 @@ impl AudioRecordingManager {
             false
         };
 
-        let device_name = if use_clamshell_mic {
-            settings.clamshell_microphone.as_ref().unwrap()
-        } else {
-            settings.selected_microphone.as_ref()?
-        };
-
-        // Find the device by name
-        match list_input_devices() {
-            Ok(devices) => devices
+        if use_clamshell_mic {
+             let device_name = settings.clamshell_microphone.as_ref().unwrap();
+             return list_input_devices().ok()?
                 .into_iter()
                 .find(|d| d.name == *device_name)
-                .map(|d| d.device),
-            Err(e) => {
-                debug!("Failed to list devices, using default: {}", e);
-                None
+                .map(|d| d.device);
+        }
+
+        // Logic for handling standard selection vs Default
+        let target_device_name = if let Some(name) = &settings.selected_microphone {
+            // User explicitly selected a microphone -> Use it strictly
+            Some(name.clone())
+        } else {
+            // "Default" is selected (None in settings)
+            // Safety Check: If the system default is Bluetooth, try to fallback to an Internal Mic
+            // to prevent low-quality audio.
+            
+            // 1. Get all devices first
+            match list_input_devices() {
+                Ok(devices) => {
+                    // Find the system default device
+                    if let Some(default_dev) = devices.iter().find(|d| d.is_default) {
+                         let is_bt = crate::audio_device_info::is_device_bluetooth(&default_dev.name);
+                         
+                         if is_bt {
+                                info!("System default microphone '{}' is Bluetooth. Searching for Built-in fallback...", default_dev.name);
+                                
+                                // Search for a verified built-in microphone
+                                let builtin_mic = devices.iter().find(|d| {
+                                    crate::audio_device_info::is_device_builtin(&d.name)
+                                });
+                                
+                                if let Some(builtin) = builtin_mic {
+                                    info!("Found Built-in fallback microphone: '{}'. Using it instead of Bluetooth default.", builtin.name);
+                                    return Some(builtin.device.clone()); // Assuming cpal::Device is clonable or we need to handle it
+                                } else {
+                                    info!("No Built-in microphone found. Falling back to Bluetooth default.");
+                                }
+                         }
+                    }
+                    
+                    // Standard default behavior if not Bluetooth or no fallback found
+                    return devices.into_iter().find(|d| d.is_default).map(|d| d.device);
+                }
+                Err(e) => {
+                    debug!("Failed to list devices for default resolution: {}", e);
+                    return None;
+                }
             }
+        };
+
+
+        // Standard lookup by name (for explicit selection)
+        if let Some(name) = target_device_name {
+            match list_input_devices() {
+                Ok(devices) => devices
+                    .into_iter()
+                    .find(|d| d.name == name)
+                    .map(|d| d.device),
+                Err(e) => {
+                    debug!("Failed to list devices: {}", e);
+                    None
+                }
+            }
+        } else {
+             None
         }
     }
 

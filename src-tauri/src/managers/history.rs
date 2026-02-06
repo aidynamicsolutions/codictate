@@ -902,7 +902,8 @@ mod tests {
     #[test]
     fn get_latest_entry_returns_none_when_empty() {
         let conn = setup_conn();
-        let entry = HistoryManager::get_latest_entry_with_conn(&conn).expect("fetch latest entry");
+        let dummy_path = std::path::PathBuf::from("/tmp");
+        let entry = HistoryManager::get_latest_entry_with_conn(&conn, &dummy_path).expect("fetch latest entry");
         assert!(entry.is_none());
     }
 
@@ -912,7 +913,8 @@ mod tests {
         insert_entry(&conn, 100, "first", None);
         insert_entry(&conn, 200, "second", Some("processed"));
 
-        let entry = HistoryManager::get_latest_entry_with_conn(&conn)
+        let dummy_path = std::path::PathBuf::from("/tmp");
+        let entry = HistoryManager::get_latest_entry_with_conn(&conn, &dummy_path)
             .expect("fetch latest entry")
             .expect("entry exists");
 

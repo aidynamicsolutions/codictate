@@ -37,6 +37,7 @@ pub struct AudioDevice {
     pub index: String,
     pub name: String,
     pub is_default: bool,
+    pub is_bluetooth: bool,
 }
 
 #[tauri::command]
@@ -68,7 +69,7 @@ pub fn get_microphone_mode(app: AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_available_microphones() -> Result<Vec<AudioDevice>, String> {
+pub fn get_available_microphones(app: AppHandle) -> Result<Vec<AudioDevice>, String> {
     let devices =
         list_input_devices().map_err(|e| format!("Failed to list audio devices: {}", e))?;
 
@@ -76,12 +77,27 @@ pub fn get_available_microphones() -> Result<Vec<AudioDevice>, String> {
         index: "default".to_string(),
         name: "Default".to_string(),
         is_default: true,
+        is_bluetooth: false,
     }];
 
-    result.extend(devices.into_iter().map(|d| AudioDevice {
-        index: d.index,
-        name: d.name,
-        is_default: d.is_default,
+    let settings = get_settings(&app);
+    let selected = settings.selected_microphone.as_deref().unwrap_or("default");
+
+    result.extend(devices.into_iter().filter_map(|d| {
+        let is_bt = crate::audio_device_info::is_device_bluetooth(&d.name);
+        
+        let is_virtual = crate::audio_device_info::is_device_virtual(&d.name);
+        
+        if is_virtual && d.name != selected {
+            return None;
+        }
+
+        Some(AudioDevice {
+            index: d.index,
+            name: d.name,
+            is_default: d.is_default,
+            is_bluetooth: is_bt,
+        })
     }));
 
     Ok(result)
@@ -125,12 +141,17 @@ pub fn get_available_output_devices() -> Result<Vec<AudioDevice>, String> {
         index: "default".to_string(),
         name: "Default".to_string(),
         is_default: true,
+        is_bluetooth: false,
     }];
 
-    result.extend(devices.into_iter().map(|d| AudioDevice {
-        index: d.index,
-        name: d.name,
-        is_default: d.is_default,
+    result.extend(devices.into_iter().map(|d| {
+        let is_bt = crate::audio_device_info::is_device_bluetooth(&d.name);
+        AudioDevice {
+            index: d.index,
+            name: d.name,
+            is_default: d.is_default,
+            is_bluetooth: is_bt,
+        }
     }));
 
     Ok(result)

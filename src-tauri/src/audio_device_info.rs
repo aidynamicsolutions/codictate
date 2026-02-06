@@ -12,7 +12,8 @@ mod ffi {
 
     extern "C" {
         pub fn is_audio_device_bluetooth(device_name: *const c_char) -> c_int;
-
+        pub fn is_audio_device_builtin(device_name: *const c_char) -> c_int;
+        pub fn is_audio_device_virtual(device_name: *const c_char) -> c_int;
     }
 
     /// Check if a device is Bluetooth using CoreAudio on macOS.
@@ -20,6 +21,30 @@ mod ffi {
     pub fn check_bluetooth(device_name: &str) -> Option<bool> {
         let c_name = CString::new(device_name).ok()?;
         let result = unsafe { is_audio_device_bluetooth(c_name.as_ptr()) };
+        match result {
+            1 => Some(true),
+            0 => Some(false),
+            _ => None,
+        }
+    }
+
+    /// Check if a device is Built-in using CoreAudio on macOS.
+    /// Returns Some(true) if Built-in, Some(false) if not, None if device not found.
+    pub fn check_builtin(device_name: &str) -> Option<bool> {
+        let c_name = CString::new(device_name).ok()?;
+        let result = unsafe { is_audio_device_builtin(c_name.as_ptr()) };
+        match result {
+            1 => Some(true),
+            0 => Some(false),
+            _ => None,
+        }
+    }
+
+    /// Check if a device is Virtual using CoreAudio on macOS.
+    /// Returns Some(true) if Virtual, Some(false) if not, None if device not found.
+    pub fn check_virtual(device_name: &str) -> Option<bool> {
+        let c_name = CString::new(device_name).ok()?;
+        let result = unsafe { is_audio_device_virtual(c_name.as_ptr()) };
         match result {
             1 => Some(true),
             0 => Some(false),
@@ -109,6 +134,64 @@ pub fn is_device_bluetooth(device_name: &str) -> bool {
         "Bluetooth detection result (fallback)"
     );
     is_bt
+}
+
+/// Check if an audio device is a Built-in device.
+///
+/// On macOS, this uses CoreAudio's transport type property for reliable detection.
+/// On other platforms, this always returns false (or could use name matching if needed).
+pub fn is_device_builtin(device_name: &str) -> bool {
+    debug!(
+        device = device_name,
+        "Checking if audio device is Built-in"
+    );
+
+    #[cfg(target_os = "macos")]
+    {
+        // Use CoreAudio for reliable detection
+        match ffi::check_builtin(device_name) {
+            Some(is_builtin) => {
+                debug!(
+                    device = device_name,
+                    is_builtin = is_builtin,
+                    method = "core_audio",
+                    "CoreAudio Built-in check result"
+                );
+                return is_builtin;
+            }
+            None => {
+                debug!(
+                    device = device_name,
+                    "Device not found in CoreAudio"
+                );
+                return false;
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Fallback for other OSs - simplistic check or always false
+        // For now, assume false or maybe check for "Built-in" in name?
+        // But the user specifically asked for macOS safety.
+        false
+    }
+}
+
+/// Check if an audio device is a Virtual/Phantom device.
+///
+/// On macOS, this uses CoreAudio's transport type property.
+pub fn is_device_virtual(device_name: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        match ffi::check_virtual(device_name) {
+            Some(is_virt) => return is_virt,
+            None => return false,
+        }
+    }
+    
+    #[cfg(not(target_os = "macos"))]
+    false
 }
 
 #[cfg(test)]

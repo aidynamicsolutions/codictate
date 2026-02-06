@@ -533,7 +533,9 @@
     "sound": {
       "title": "Sound",
       "microphone": {
-        "title": "Microphone"
+        "title": "Microphone",
+        "bluetoothWarning": "Bluetooth microphones reduce audio quality significantly while listening to music. We recommend using the internal microphone.",
+        "autoSwitchPrevented": "We kept using the internal microphone to preserve audio quality."
       },
       "audioFeedback": {
         "label": "Audio Feedback",
