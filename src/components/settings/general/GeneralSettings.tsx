@@ -28,6 +28,7 @@ import { PostProcessingToggle } from "../PostProcessingToggle";
 import { ResetAllSettings } from "../ResetAllSettings";
 import { UpdateChecksToggle } from "../UpdateChecksToggle";
 import { CheckForUpdates } from "../CheckForUpdates";
+import { AppLanguageSelector } from "../AppLanguageSelector";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -128,6 +129,7 @@ export const GeneralSettings: React.FC = () => {
           <SettingsGroup title={t("settings.application.title", "Application")}>
             <CheckForUpdates />
             <UpdateChecksToggle descriptionMode="tooltip" grouped={true} />
+            <AppLanguageSelector descriptionMode="tooltip" grouped={true} />
           </SettingsGroup>
       </div>
 

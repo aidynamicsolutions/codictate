@@ -12,6 +12,7 @@ import { initLogging } from "@/utils/logging";
 import { useModelStore } from "./stores/modelStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { listen } from "@tauri-apps/api/event";
+import { AboutModal } from "./components/AboutModal";
 
 const renderSettingsContent = (
   section: SidebarSection,
@@ -25,8 +26,11 @@ const renderSettingsContent = (
   return <ActiveComponent onNavigate={(s: string) => onNavigate(s as SidebarSection)} />;
 };
 
+
+
 function App() {
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+  const [showAbout, setShowAbout] = useState(false);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("home");
   const { settings, updateSetting } = useSettings();
@@ -97,6 +101,13 @@ function App() {
         // 2. Navigate to settings (where the check status is displayed)
         setCurrentSection("settings");
         // 3. Ensure window is focused/visible (handled by backend usually, but ensures frontend is ready)
+    });
+  }, []);
+
+  // Listen for about menu item
+  useEffect(() => {
+    const unlistenPromise = listen("open-about", () => {
+        setShowAbout(true);
     });
     return () => {
         unlistenPromise.then(unlisten => unlisten());
@@ -181,6 +192,7 @@ function App() {
           </div>
         </div>
       </SidebarInset>
+      <AboutModal open={showAbout} onOpenChange={setShowAbout} />
     </SidebarProvider>
   );
 }

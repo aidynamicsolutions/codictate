@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Tooltip } from "./Tooltip";
+import { cn } from "@/lib/utils";
 
 interface SettingContainerProps {
   title: string;
@@ -10,6 +11,7 @@ interface SettingContainerProps {
   layout?: "horizontal" | "stacked";
   disabled?: boolean;
   tooltipPosition?: "top" | "bottom";
+  className?: string;
 }
 
 export const SettingContainer: React.FC<SettingContainerProps> = ({
@@ -21,6 +23,7 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   layout = "horizontal",
   disabled = false,
   tooltipPosition = "top",
+  className,
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
@@ -47,9 +50,9 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
     setShowTooltip(!showTooltip);
   };
 
-  const containerClasses = grouped
+  const containerClasses =  cn(grouped
     ? "px-4 p-2"
-    : "px-4 p-2 rounded-lg border border-mid-gray/20";
+    : "px-4 p-2 rounded-lg border border-mid-gray/20", className);
 
   if (layout === "stacked") {
     if (descriptionMode === "tooltip") {
@@ -120,9 +123,9 @@ export const SettingContainer: React.FC<SettingContainerProps> = ({
   }
 
   // Horizontal layout (default)
-  const horizontalContainerClasses = grouped
+  const horizontalContainerClasses = cn(grouped
     ? "flex items-center justify-between px-4 p-2"
-    : "flex items-center justify-between px-4 p-2 rounded-lg border border-mid-gray/20";
+    : "flex items-center justify-between px-4 p-2 rounded-lg border border-mid-gray/20", className);
 
   if (descriptionMode === "tooltip") {
     return (

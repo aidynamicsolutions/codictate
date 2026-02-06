@@ -31,9 +31,10 @@ export const AppLanguageSelector: React.FC<AppLanguageSelectorProps> =
     return (
       <SettingContainer
         title={t("appLanguage.title")}
-        description={t("appLanguage.description")}
+        description={t("appLanguage.description", { appName: t("appName") })}
         descriptionMode={descriptionMode}
         grouped={grouped}
+        className={grouped ? "px-0" : undefined}
       >
         <Dropdown
           options={languageOptions}

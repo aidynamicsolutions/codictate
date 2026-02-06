@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Info, Sparkles, Home, Sliders } from "lucide-react";
+import { Cog, FlaskConical, History, Sparkles, Home, Sliders } from "lucide-react";
 import CodictateLogo from "./icons/CodictateLogo";
 import { useSettings } from "../hooks/useSettings";
 import HomeContent from "./home/Home";
@@ -22,7 +22,6 @@ import {
   GeneralSettings,
   HistorySettings,
   DebugSettings,
-  AboutSettings,
   PostProcessingSettings,
 } from "./settings";
 
@@ -74,12 +73,6 @@ export const SECTIONS_CONFIG = {
     component: DebugSettings,
     enabled: (settings) => settings?.debug_mode ?? false,
   },
-  about: {
-    labelKey: "sidebar.about",
-    icon: Info,
-    component: AboutSettings,
-    enabled: () => true,
-  },
 } as const satisfies Record<string, SectionConfig>;
 
 interface SidebarProps {
@@ -104,7 +97,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <CodictateLogo 
           className="fill-text stroke-text mb-2 group-data-[collapsible=icon]:mb-1 transition-all duration-300 w-20 group-data-[collapsible=icon]:w-10" 
         />
-        <span className="font-bold text-xl tracking-tight group-data-[collapsible=icon]:text-[11px] group-data-[collapsible=icon]:mb-5">Codictate</span>
+        <span className="font-bold text-xl tracking-tight group-data-[collapsible=icon]:text-[11px] group-data-[collapsible=icon]:mb-5">{t("appName")}</span>
       </SidebarHeader>
       <SidebarSeparator className="mx-0" />
       <SidebarContent>

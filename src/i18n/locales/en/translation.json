@@ -784,7 +784,8 @@
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of {{appName}}"
+        "description": "Current version of {{appName}}",
+        "number": "v{{version}}"
       },
       "appDataDirectory": {
         "title": "App Data Directory",

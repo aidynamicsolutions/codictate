@@ -7,7 +7,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
     let app_name = app.package_info().name.clone();
 
     // App Menu
-    let about_item = PredefinedMenuItem::about(app, None::<&str>, Some(AboutMetadata::default()))?;
+    let about_item = MenuItem::with_id(app, "about", "About Codictate", true, None::<&str>)?;
     let check_updates_item = MenuItem::with_id(app, "check_updates", "Check for Updates...", true, None::<&str>)?;
     let services_item = PredefinedMenuItem::services(app, Some("Services"))?;
     let hide_item = PredefinedMenuItem::hide(app, None::<&str>)?;
@@ -84,6 +84,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             let _ = app.emit("check-for-updates", ());
             // Show main window to see the feedback
             let _ = crate::commands::window::show_main_window(app.clone());
+        } else if event.id() == "about" {
+             let _ = app.emit("open-about", ());
+             let _ = crate::commands::window::show_main_window(app.clone());
         }
     });
 
