@@ -9,7 +9,7 @@ pub const USER_STORE_PATH: &str = "user_store.json";
 
 /// User profile data - separate from app settings.
 /// This stores onboarding and user identity information.
-#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+#[derive(Serialize, Deserialize, Debug, Clone, Type, Default)]
 pub struct UserProfile {
     /// User's display name (collected during onboarding)
     #[serde(default)]
@@ -52,22 +52,7 @@ pub struct UserProfile {
     pub typing_use_cases_other: Option<String>,
 }
 
-impl Default for UserProfile {
-    fn default() -> Self {
-        Self {
-            user_name: None,
-            onboarding_step: 0,
-            onboarding_completed: false,
-            referral_sources: Vec::new(),
-            referral_details: HashMap::new(),
-            work_role: None,
-            work_role_other: None,
-            professional_level: None,
-            typing_use_cases: Vec::new(),
-            typing_use_cases_other: None,
-        }
-    }
-}
+
 
 /// Get the user profile from the store, or create a default one if it doesn't exist.
 pub fn get_user_profile(app: &AppHandle) -> UserProfile {

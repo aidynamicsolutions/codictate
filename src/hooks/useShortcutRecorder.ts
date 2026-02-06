@@ -136,7 +136,7 @@ interface UseShortcutRecorderOptions {
   /** Container element ref for click-outside detection */
   containerRef?: RefObject<HTMLElement | null>;
   /** Optional translation function for error messages (accepts key and returns translated string) */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  /** Optional translation function for error messages (accepts key and returns translated string) */
   t?: (key: string, defaultValue?: any) => string;
 }
 

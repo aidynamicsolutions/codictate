@@ -332,7 +332,7 @@ export const ModelDownloadStep: React.FC<ModelDownloadStepProps> = ({
                       </span>
                       {downloadStats && downloadStats.speed > 0 && (
                         <span className="text-xs text-muted-foreground tabular-nums">
-                          {downloadStats.speed.toFixed(1)} MB/s
+                          {`${downloadStats.speed.toFixed(1)} MB/s`}
                         </span>
                       )}
                     </div>

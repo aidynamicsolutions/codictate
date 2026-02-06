@@ -143,21 +143,21 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
   // Update status functions
   const getUpdateStatusText = () => {
     if (!updateChecksEnabled) {
-      return t("footer.updateCheckingDisabled");
+      return t("settings.updater.disabled");
     }
     if (isInstalling) {
       return downloadProgress > 0 && downloadProgress < 100
-        ? t("footer.downloading", {
+        ? t("settings.updater.downloading", {
             progress: downloadProgress.toString().padStart(3),
           })
         : downloadProgress === 100
-          ? t("footer.installing")
-          : t("footer.preparing");
+          ? t("settings.updater.installing")
+          : t("settings.updater.preparing");
     }
-    if (isChecking) return t("footer.checkingUpdates");
-    if (showUpToDate) return t("footer.upToDate");
-    if (updateAvailable) return t("footer.updateAvailableShort");
-    return t("footer.checkForUpdates");
+    if (isChecking) return t("settings.updater.checking");
+    if (showUpToDate) return t("settings.updater.upToDate");
+    if (updateAvailable) return t("settings.updater.available");
+    return t("settings.updater.check");
   };
 
   const getUpdateStatusAction = () => {

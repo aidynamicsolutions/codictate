@@ -12,7 +12,7 @@ use specta::Type;
 use std::collections::HashMap;
 use std::fs;
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -544,7 +544,7 @@ impl MlxModelManager {
 
     /// Check if a model download is complete by verifying all required files exist.
     /// This is used to detect interrupted downloads on app startup.
-    fn is_model_download_complete_internal(model_path: &PathBuf) -> bool {
+    fn is_model_download_complete_internal(model_path: &Path) -> bool {
         // Required files for a complete MLX model download
         const REQUIRED_FILES: &[&str] = &[
             "config.json",
@@ -817,7 +817,7 @@ impl MlxModelManager {
 
         // Get list of files to download
         // For MLX models, we typically need: config.json, tokenizer files, and model weights
-        let required_files = vec![
+        let required_files = [
             ("config.json", true),
             ("tokenizer.json", true),
             ("tokenizer_config.json", false),

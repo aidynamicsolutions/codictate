@@ -4,7 +4,7 @@
  * with session correlation.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "@/bindings";
 import { listen } from "@tauri-apps/api/event";
 
 let currentSessionId: string | null = null;
@@ -53,12 +53,12 @@ export async function log(
   target: string = "fe"
 ): Promise<void> {
   try {
-    await invoke("log_from_frontend", {
+    await commands.logFromFrontend(
       level,
-      sessionId: currentSessionId,
+      currentSessionId,
       target,
       message,
-    });
+    );
   } catch {
     // Fallback to console if invoke fails
     const sessionPrefix = currentSessionId

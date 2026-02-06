@@ -147,6 +147,7 @@ src/i18n/
 - Functional components with hooks
 - Tailwind CSS v4 + shadcn/ui for styling
 - Path aliases: `@/` → `./src/`
+- **Tauri Commands**: ALWAYS use generated bindings from `@/bindings` (e.g. `commands.myCommand()`) instead of raw `invoke()`. This ensures type safety and autocompletion.
 
 ## shadcn/ui
 

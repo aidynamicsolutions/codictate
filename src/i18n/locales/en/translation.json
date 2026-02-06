@@ -448,6 +448,22 @@
     "deleteModel": "Delete {{modelName}}"
   },
   "settings": {
+    "updater": {
+      "checking": "Checking for updates...",
+      "available": "Update available",
+      "upToDate": "Up to date",
+      "downloading": "Downloading {{progress}}%",
+      "installing": "Installing...",
+      "preparing": "Preparing...",
+      "check": "Check for updates",
+      "disabled": "Update checking disabled",
+      "restartRequired": "Restart to update",
+      "restart": "Restart",
+      "install": "Install Update",
+      "description": "Current version: v{{version}}",
+      "title": "Update application",
+      "estimation_remaining": "remaining"
+    },
     "general": {
       "title": "General",
       "shortcut": {
@@ -810,20 +826,6 @@
         }
       }
     }
-  },
-  "footer": {
-    "downloadingModel": "Downloading {{model}}...",
-    "checkingUpdates": "Checking for updates...",
-    "updateAvailable": "Update available: {{version}}",
-    "updateAvailableShort": "Update available",
-    "upToDate": "Up to date",
-    "downloadUpdate": "Download Update",
-    "restart": "Restart",
-    "updateCheckingDisabled": "Update Checking Disabled",
-    "downloading": "Downloading... {{progress}}%",
-    "installing": "Installing...",
-    "preparing": "Preparing...",
-    "checkForUpdates": "Check for updates"
   },
   "common": {
     "loading": "Loading...",

@@ -155,7 +155,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     }
 
     #[cfg(unix)]
-    let signals = Signals::new(&[SIGUSR2]).unwrap();
+    let signals = Signals::new([SIGUSR2]).unwrap();
     // Set up SIGUSR2 signal handler for toggling transcription
     #[cfg(unix)]
     signal_handle::setup_signal_handler(app_handle.clone(), signals);
@@ -223,7 +223,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Get the autostart manager and configure based on user setting
     let autostart_manager = app_handle.autolaunch();
-    let settings = settings::get_settings(&app_handle);
+    let settings = settings::get_settings(app_handle);
 
     if settings.autostart_enabled {
         // Enable autostart if user has opted in
@@ -373,6 +373,7 @@ pub fn run() {
         permissions::open_accessibility_settings,
         permissions::open_microphone_settings,
         commands::window::show_main_window,
+        commands::menu::set_update_menu_text,
     ]);
 
     // On other platforms, exclude MLX commands
@@ -473,6 +474,7 @@ pub fn run() {
         permissions::open_accessibility_settings,
         permissions::open_microphone_settings,
         commands::window::show_main_window,
+        commands::menu::set_update_menu_text,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -521,7 +523,7 @@ pub fn run() {
             tracing_config::init_tracing(&log_dir)
                 .expect("Failed to initialize tracing");
             
-            let settings = get_settings(&app.handle());
+            let settings = get_settings(app.handle());
             // Set file log level from settings
             let file_log_level = match settings.log_level {
                 settings::LogLevel::Error => tracing::Level::ERROR,
@@ -562,7 +564,7 @@ pub fn run() {
             tauri::WindowEvent::ThemeChanged(theme) => {
                 tracing::info!("Theme changed to: {:?}", theme);
                 // Update tray icon to match new theme, maintaining idle state
-                utils::change_tray_icon(&window.app_handle(), utils::TrayIconState::Idle);
+                utils::change_tray_icon(window.app_handle(), utils::TrayIconState::Idle);
             }
             _ => {}
         })

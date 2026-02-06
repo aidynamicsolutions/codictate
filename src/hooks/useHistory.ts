@@ -91,7 +91,6 @@ export const useHistory = (): UseHistoryReturn => {
   // We use a ref to track if it's the very first mount vs search update
   useEffect(() => {
     loadHistoryEntries(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearchQuery]); 
 
   // Reload on updates (e.g. deletion)

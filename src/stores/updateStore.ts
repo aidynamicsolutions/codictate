@@ -3,7 +3,7 @@ import { subscribeWithSelector } from "zustand/middleware";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { logError, logInfo } from "@/utils/logging";
-import { invoke } from "@tauri-apps/api/core";
+import { commands } from "@/bindings";
 
 // Define the shape of our store state and actions
 interface UpdateStore {
@@ -51,7 +51,7 @@ export const useUpdateStore = create<UpdateStore>()(
 
     restartApp: async () => {
         try {
-            await invoke("set_update_menu_text", { text: "Check for Updates..." }); // Reset text before restart just in case
+            await commands.setUpdateMenuText("Check for Updates..."); // Reset text before restart just in case
             await relaunch();
         } catch (error) {
             logError(`Failed to restart app: ${error}`, "fe-updater");
@@ -108,7 +108,7 @@ export const useUpdateStore = create<UpdateStore>()(
         const speedSamples: number[] = [];
 
         try {
-            await invoke("set_update_menu_text", { text: "Downloading Update..." });
+            await commands.setUpdateMenuText("Downloading Update...");
         } catch (e) {
              // Ignore if command missing
         }
@@ -119,7 +119,7 @@ export const useUpdateStore = create<UpdateStore>()(
           logInfo("No update available during install attempt", "fe-updater");
           set({ isInstalling: false });
           try {
-             await invoke("set_update_menu_text", { text: "Check for Updates..." });
+             await commands.setUpdateMenuText("Check for Updates...");
           } catch (e) {}
           return;
         }
@@ -181,13 +181,13 @@ export const useUpdateStore = create<UpdateStore>()(
         // Download finish. Set pending restart state.
         set({ isPendingRestart: true, isInstalling: false });
         try {
-            await invoke("set_update_menu_text", { text: "Restart to Update" });
+            await commands.setUpdateMenuText("Restart to Update");
         } catch (e) {}
 
       } catch (error) {
         logError(`Failed to install update: ${error}`, "fe-updater");
         try {
-            await invoke("set_update_menu_text", { text: "Check for Updates..." }); 
+            await commands.setUpdateMenuText("Check for Updates..."); 
         } catch (e) {}
       } finally {
         set({ 

@@ -115,7 +115,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ open, onOpenChange }) =>
                   rel="noopener noreferrer"
                   className="text-xs text-primary hover:underline flex items-center gap-1"
                 >
-                  {t("settings.about.acknowledgments.whisper.name")} <ExternalLink className="h-3 w-3" />
+                  {"Whisper"} <ExternalLink className="h-3 w-3" />
                 </a>
                 <a
                   href="https://github.com/ggerganov/whisper.cpp"
@@ -123,7 +123,7 @@ export const AboutModal: React.FC<AboutModalProps> = ({ open, onOpenChange }) =>
                   rel="noopener noreferrer"
                   className="text-xs text-primary hover:underline flex items-center gap-1"
                 >
-                  {t("settings.about.acknowledgments.whisperCpp.name")} <ExternalLink className="h-3 w-3" />
+                  {"Whisper.cpp"} <ExternalLink className="h-3 w-3" />
                 </a>
              </div>
           </div>

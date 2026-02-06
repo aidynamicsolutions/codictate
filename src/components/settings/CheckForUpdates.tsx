@@ -23,27 +23,27 @@ export const CheckForUpdates: React.FC = () => {
   } = useUpdateCheck();
 
   const getStatusText = () => {
-    if (isPendingRestart) return t("settings.application.updates.restartRequired", "Restart to update");
+    if (isPendingRestart) return t("settings.updater.restartRequired", "Restart to update");
     if (isInstalling) {
       return downloadProgress > 0 && downloadProgress < 100
-        ? t("footer.downloading", {
+        ? t("settings.updater.downloading", {
             progress: downloadProgress.toString().padStart(3),
           })
         : downloadProgress === 100
-        ? t("footer.installing")
-        : t("footer.preparing");
+        ? t("settings.updater.installing")
+        : t("settings.updater.preparing");
     }
-    if (isChecking) return t("footer.checkingUpdates");
-    if (showUpToDate) return t("footer.upToDate");
-    if (updateAvailable) return t("footer.updateAvailableShort");
-    return t("settings.application.updates.description", "Current version: v{{version}}", { version: "0.7.1" }); // Ideally version should be dynamic
+    if (isChecking) return t("settings.updater.checking");
+    if (showUpToDate) return t("settings.updater.upToDate");
+    if (updateAvailable) return t("settings.updater.available");
+    return t("settings.updater.description", "Current version: v{{version}}", { version: "0.7.1" }); // Ideally version should be dynamic
   };
 
   const getButtonLabel = () => {
-    if (isPendingRestart) return t("settings.application.updates.restart", "Restart");
-    if (isInstalling) return t("footer.installing"); // Or disabled
-    if (updateAvailable) return t("settings.application.updates.install", "Install Update");
-    return t("settings.application.updates.check", "Check for Updates...");
+    if (isPendingRestart) return t("settings.updater.restart", "Restart");
+    if (isInstalling) return t("settings.updater.installing"); // Or disabled
+    if (updateAvailable) return t("settings.updater.install", "Install Update");
+    return t("settings.updater.check", "Check for Updates...");
   };
 
   const handleAction = () => {
@@ -79,7 +79,7 @@ export const CheckForUpdates: React.FC = () => {
   return (
     <div className="flex flex-col w-full">
         <SettingsRow
-            title={t("settings.application.updates.title", "Update application")}
+            title={t("settings.updater.title", "Update application")}
             description={
                 <div className="flex flex-col gap-2">
                     <div className="flex items-center gap-2">
@@ -93,13 +93,13 @@ export const CheckForUpdates: React.FC = () => {
                                     isChecking ? (
                                         <span className="flex items-center gap-2">
                                             <Loader2 className="w-3 h-3 animate-spin" />
-                                            {t("footer.checkingUpdates")}
+                                            {t("settings.updater.checking")}
                                         </span>
                                     ) :
-                                    isPendingRestart ? t("settings.application.updates.restartRequired", "Restart to update") :
-                                    showUpToDate ? t("footer.upToDate") :
-                                    updateAvailable ? t("footer.updateAvailableShort") :
-                                    isInstalling ? t("footer.installing") : ""
+                                    isPendingRestart ? t("settings.updater.restartRequired", "Restart to update") :
+                                    showUpToDate ? t("settings.updater.upToDate") :
+                                    updateAvailable ? t("settings.updater.available") :
+                                    isInstalling ? t("settings.updater.installing") : ""
                                 }
                              </span>
                         )}
@@ -118,6 +118,7 @@ export const CheckForUpdates: React.FC = () => {
                             <div className="flex justify-between mt-1 px-1">
                                 {downloadSpeed > 0 && (
                                     <span className="text-xs text-muted-foreground tabular-nums">
+                                        {/* eslint-disable-next-line i18next/no-literal-string */}
                                         {downloadSpeed.toFixed(1)} MB/s
                                     </span>
                                 )}
@@ -125,7 +126,7 @@ export const CheckForUpdates: React.FC = () => {
                                     <span className="text-xs text-muted-foreground tabular-nums">
                                         {downloadEta < 60 
                                             ? `${downloadEta}s` 
-                                            : `${Math.floor(downloadEta / 60)}m ${downloadEta % 60}s`} remaining
+                                            : `${Math.floor(downloadEta / 60)}m ${downloadEta % 60}s`} {t("settings.updater.estimation_remaining", "remaining")}
                                     </span>
                                 )}
                             </div>

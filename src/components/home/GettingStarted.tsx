@@ -77,9 +77,7 @@ export function GettingStarted({ onNavigate }: GettingStartedProps) {
           subtitle={t("home.getStarted.startRecording.subtitle")}
           shortcut={
             <div className="flex gap-1">
-              <kbd className="px-2 py-0.5 bg-muted rounded text-xs font-mono">
-                fn
-              </kbd>
+                {"fn"}
             </div>
           }
           // Not clickable as requested
