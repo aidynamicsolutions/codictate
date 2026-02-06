@@ -2,13 +2,13 @@ use crate::audio_toolkit::{apply_custom_words, filter_transcription_output};
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{get_settings, ModelUnloadTimeout};
 use anyhow::Result;
-use tracing::{debug, error, info, warn};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 use tauri::{AppHandle, Emitter};
+use tracing::{debug, error, info, warn};
 use transcribe_rs::{
     engines::{
         moonshine::{ModelVariant, MoonshineEngine, MoonshineModelParams},
@@ -356,7 +356,10 @@ impl TranscriptionManager {
     pub fn is_session_active(&self, session_id: &str) -> bool {
         let active = self.active_session_id.lock().unwrap();
         let is_active = active.as_deref() == Some(session_id);
-        debug!("Checking if session {} is active. Current active: {:?}. Result: {}", session_id, active, is_active);
+        debug!(
+            "Checking if session {} is active. Current active: {:?}. Result: {}",
+            session_id, active, is_active
+        );
         is_active
     }
 
@@ -379,6 +382,18 @@ impl TranscriptionManager {
             self.maybe_unload_immediately("empty audio");
             return Ok(String::new());
         }
+
+        // Calculate and log RMS (Root Mean Square) to detect if input is silent
+        let sum_squares: f32 = audio.iter().map(|s| s * s).sum();
+        let rms = (sum_squares / audio.len() as f32).sqrt();
+        let db_fs = 20.0 * rms.log10();
+
+        info!(
+            "Starting transcription: {} samples, {:.4} RMS ({:.2} dBFS)",
+            audio.len(),
+            rms,
+            db_fs
+        );
 
         // Check if model is loaded, if not try to load it
         {
@@ -447,19 +462,30 @@ impl TranscriptionManager {
             }
         };
 
+        // Log raw result before any processing
+        info!("Raw transcription output: '{}'", result.text);
+
         // Apply word correction if custom words are configured
         let corrected_result = if !settings.custom_words.is_empty() {
-            apply_custom_words(
+            let corrected = apply_custom_words(
                 &result.text,
                 &settings.custom_words,
                 settings.word_correction_threshold,
-            )
+            );
+            if corrected != result.text {
+                info!("After custom words: '{}'", corrected);
+            }
+            corrected
         } else {
             result.text
         };
 
         // Filter out filler words and hallucinations
         let filtered_result = filter_transcription_output(&corrected_result);
+
+        if filtered_result != corrected_result {
+            info!("After filtering: '{}'", filtered_result);
+        }
 
         let et = std::time::Instant::now();
         let translation_note = if settings.translate_to_english {
@@ -476,9 +502,9 @@ impl TranscriptionManager {
         let final_result = filtered_result;
 
         if final_result.is_empty() {
-            info!("Transcription result is empty");
+            info!("Final transcription result is empty");
         } else {
-            info!("Transcription result: {}", final_result);
+            info!("Final transcription result: {}", final_result);
         }
 
         self.maybe_unload_immediately("transcription");
