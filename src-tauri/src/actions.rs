@@ -426,8 +426,8 @@ impl ShortcutAction for TranscribeAction {
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
-        // Unregister the cancel shortcut when transcription stops
-        shortcut::unregister_cancel_shortcut(app);
+        // We delay unregistering cancel shortcut until after transcription or cancellation
+        // shortcut::unregister_cancel_shortcut(app);
 
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
@@ -449,6 +449,7 @@ impl ShortcutAction for TranscribeAction {
         let session_id = rm.get_current_session_id().unwrap_or_else(|| "unknown".to_string());
         
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
+        let session_id_for_task = session_id.clone();
 
         tauri::async_runtime::spawn({
             let session_span = info_span!("session", session = %session_id);
@@ -462,6 +463,9 @@ impl ShortcutAction for TranscribeAction {
 
                 let stop_recording_time = Instant::now();
                 if let Some(samples) = rm.stop_recording(&binding_id) {
+                    // Register this session as active for transcription
+                    tm.set_active_session(session_id_for_task.clone());
+                    
                     // Start showing transcribing overlay NOW, after we have confirmed valid samples.
                     // This protects against "phantom stops" from double-triggers showing the overlay incorrectly.
                     show_transcribing_overlay(&ah);
@@ -476,6 +480,15 @@ impl ShortcutAction for TranscribeAction {
                     let samples_clone = samples.clone();
                     match tm.transcribe(samples) {
                         Ok(transcription) => {
+                            // Check if the session was cancelled during transcription
+                            if !tm.is_session_active(&session_id_for_task) {
+                                debug!("Transcription for session {} was cancelled, discarding result", session_id_for_task);
+                                utils::hide_overlay_after_transcription(&ah);
+                                change_tray_icon(&ah, TrayIconState::Idle);
+                                shortcut::unregister_cancel_shortcut(&ah);
+                                return;
+                            }
+
                             debug!(
                                 "Transcription completed in {:?}: '{}'",
                                 transcription_time.elapsed(),
@@ -492,6 +505,15 @@ impl ShortcutAction for TranscribeAction {
                                     maybe_convert_chinese_variant(&settings, &transcription).await
                                 {
                                     final_text = converted_text;
+                                }
+
+                                // Check cancellation again before expensive LLM post-processing
+                                if !tm.is_session_active(&session_id_for_task) {
+                                    debug!("Session {} cancelled before post-processing, aborting", session_id_for_task);
+                                    utils::hide_overlay_after_transcription(&ah);
+                                    change_tray_icon(&ah, TrayIconState::Idle);
+                                    shortcut::unregister_cancel_shortcut(&ah);
+                                    return;
                                 }
 
                                 // Then apply regular post-processing if enabled
@@ -576,6 +598,9 @@ impl ShortcutAction for TranscribeAction {
                 if let Ok(mut states) = ah.state::<ManagedToggleState>().lock() {
                     states.active_toggles.insert(binding_id, false);
                 }
+                
+                // Always ensure cancel shortcut is unregistered at the end
+                shortcut::unregister_cancel_shortcut(&ah);
             }
         });
 

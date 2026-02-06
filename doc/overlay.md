@@ -14,10 +14,10 @@ To prevent visual flickering associated with OS window mapping/unmapping (`show(
     *   **Frontend**: Opacity `0` (CSS).
 
 2.  **Visible (Active)**
-    *   **Modes**: Recording, Processing, Transcribing.
+    *   **Modes**: Recording, Processing, Transcribing, Connecting.
     *   **Window**: Remains `visible`.
     *   **Interaction**: `set_ignore_cursor_events(false)` (Interactive).
-    *   **Frontend**: Opacity `1` (via CSS transition).
+    *   **UI**: Opacity `1`. The "Cancel" button remains clickable in all these states to allow aborting the operation.
 
 ### Zero-Latency Optimizations
 

@@ -8,7 +8,7 @@ Concise documentation of Codictate's keyboard shortcut system for speech-to-text
 |--------|------------------|----------|-------------|
 | **Transcribe** | `Option+Space` (or `fn`) | **Push-to-Talk** | Hold to record, release to transcribe. Always instant. |
 | **Hands-free** | `fn+space` | **Toggle** | Press to start, press again to stop. |
-| Cancel | `esc` | Instant | Cancel current recording (auto-registered) |
+| Cancel | `esc` | Instant | Cancel current operation (recording or transcription) |
 
 > **Note**: The behavior is tied to the **Action**, not the specific key. Any key mapped to "Transcribe" will function as Push-to-Talk. Any key mapped to "Hands-free" will function as a Toggle.
 
@@ -27,7 +27,10 @@ The system enforces distinct behaviors for the two main actions to prevent confu
     - Starts recording on first press.
     - Stops recording on second press.
     - Ignores key release events.
-    - Best for long-form dictation.
+3.  **Cancellation Logic**:
+    -   **During Recording**: Stops the recording immediately and discards audio.
+    -   **During Transcription**: The underlying transcription process continues (cannot be aborted safely), but the **result is discarded**. The overlay disappears immediately, and no text is pasted.
+    -   **Shortcut**: `Escape` works in all states (Recording, Transcribing, Processing).
 
 ### Mode Detection (Fn Key Special Case)
 

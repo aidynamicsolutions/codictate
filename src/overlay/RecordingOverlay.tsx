@@ -262,7 +262,7 @@ const RecordingOverlay: React.FC = () => {
         </div>
 
         <div className="overlay-right">
-          {state === "recording" && (
+          {(state === "recording" || state === "transcribing" || state === "processing" || state === "connecting") && (
             <div
               className="cancel-button"
               onClick={() => {

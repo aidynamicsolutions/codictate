@@ -1,13 +1,13 @@
 use tracing::{debug, error, warn};
 use serde::Serialize;
 use specta::Type;
-use std::sync::Arc;
+
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::actions::ACTION_MAP;
-use crate::managers::audio::AudioRecordingManager;
+
 use crate::settings::ShortcutBinding;
 use crate::settings::{
     self, get_settings, ClipboardHandling, LLMPrompt, OverlayPosition, PasteMethod, SoundTheme,
@@ -958,17 +958,15 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                 if let Some(action) = ACTION_MAP.get(&binding_id_for_closure) {
                     debug!("Global Shortcut Event: id='{}' state={:?} shortcut='{}'", binding_id_for_closure, event.state, shortcut_string);
                     if binding_id_for_closure == "cancel" {
-                        let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
-                        if audio_manager.is_recording() && event.state == ShortcutState::Pressed {
+
+                        if event.state == ShortcutState::Pressed {
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
-                        return;
                     } else if binding_id_for_closure == "paste_last_transcript" {
                         // Paste last transcript is a one-shot action - always trigger on press
                         if event.state == ShortcutState::Pressed {
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
-                        return;
                     } else if binding_id_for_closure == "transcribe" {
                         // Main transcribe shortcut is ALWAYS Push-to-Talk (Press=Start, Release=Stop)
                         if event.state == ShortcutState::Pressed {

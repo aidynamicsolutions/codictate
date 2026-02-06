@@ -45,6 +45,7 @@ pub struct TranscriptionManager {
     watcher_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     is_loading: Arc<Mutex<bool>>,
     loading_condvar: Arc<Condvar>,
+    active_session_id: Arc<Mutex<Option<String>>>,
 }
 
 impl TranscriptionManager {
@@ -64,6 +65,7 @@ impl TranscriptionManager {
             watcher_handle: Arc::new(Mutex::new(None)),
             is_loading: Arc::new(Mutex::new(false)),
             loading_condvar: Arc::new(Condvar::new()),
+            active_session_id: Arc::new(Mutex::new(None)),
         };
 
         // Start the idle watcher
@@ -341,6 +343,23 @@ impl TranscriptionManager {
         current_model.clone()
     }
 
+    pub fn set_active_session(&self, session_id: String) {
+        let mut active = self.active_session_id.lock().unwrap();
+        *active = Some(session_id);
+    }
+
+    pub fn clear_active_session(&self) {
+        let mut active = self.active_session_id.lock().unwrap();
+        *active = None;
+    }
+
+    pub fn is_session_active(&self, session_id: &str) -> bool {
+        let active = self.active_session_id.lock().unwrap();
+        let is_active = active.as_deref() == Some(session_id);
+        debug!("Checking if session {} is active. Current active: {:?}. Result: {}", session_id, active, is_active);
+        is_active
+    }
+
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
         // Update last activity timestamp
         self.last_activity.store(
@@ -417,7 +436,6 @@ impl TranscriptionManager {
                 LoadedEngine::Parakeet(parakeet_engine) => {
                     let params = ParakeetInferenceParams {
                         timestamp_granularity: TimestampGranularity::Segment,
-                        ..Default::default()
                     };
                     parakeet_engine
                         .transcribe_samples(audio, Some(params))
