@@ -12,7 +12,7 @@ import { logInfo, logWarn, logDebug } from "@/utils/logging";
 import { AudioAGC } from "@/utils/audioAGC";
 
 
-type OverlayState = "recording" | "transcribing" | "processing" | "connecting";
+type OverlayState = "recording" | "transcribing" | "processing" | "connecting" | "cancelling";
 
 // SVG dimensions and border radius (constants)
 const SVG_WIDTH = 234;
@@ -76,6 +76,7 @@ const RecordingOverlay: React.FC = () => {
         
         // Update state IMMEDIATELY before any async operations
         // This ensures the UI shows the correct state as soon as the event arrives
+        logInfo(`RecordingOverlay: processing show-overlay event: state=${overlayState}`, "fe-overlay");
         setState(overlayState);
         setIsVisible(true);
         logDebug(`RecordingOverlay: Set isVisible=true, state=${overlayState}`, "fe-overlay");
@@ -192,7 +193,7 @@ const RecordingOverlay: React.FC = () => {
       return <div style={{ width: 24 }} />;
     } 
     
-    // For connecting, transcribing, and processing, we return null (no icon)
+    // For connecting, transcribing, processing, and cancelling, we return null (no icon)
     // to allow the text to be perfectly centered in the overlay.
     return null;
   };
@@ -259,17 +260,26 @@ const RecordingOverlay: React.FC = () => {
               </div>
             </div>
           )}
+          {state === "cancelling" && (
+            <div className="connecting-container">
+              <div className="connecting-text">
+                {t("overlay.cancelling", "Cancelling...")}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="overlay-right">
-          {(state === "recording" || state === "transcribing" || state === "processing" || state === "connecting") && (
+          {(state === "recording" || state === "transcribing" || state === "processing" || state === "connecting" || state === "cancelling") && (
             <div
-              className="cancel-button"
+              className={`cancel-button ${state === "cancelling" ? "disabled" : ""}`}
               onClick={() => {
-                commands.cancelOperation();
+                if (state !== "cancelling") {
+                  commands.cancelOperation();
+                }
               }}
             >
-              <CancelIcon />
+              {state !== "cancelling" && <CancelIcon />}
             </div>
           )}
         </div>

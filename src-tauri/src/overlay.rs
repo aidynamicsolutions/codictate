@@ -142,9 +142,19 @@ enum OverlayState {
     Transcribing,
     Processing,
     Connecting,
+    Cancelling,
 }
 
 static OVERLAY_STATE: Lazy<Mutex<OverlayState>> = Lazy::new(|| Mutex::new(OverlayState::Hidden));
+
+/// Check if the overlay is in any active state (not Hidden)
+pub fn is_overlay_active() -> bool {
+    if let Ok(state) = OVERLAY_STATE.lock() {
+        !matches!(*state, OverlayState::Hidden)
+    } else {
+        false
+    }
+}
 
 /// Track whether the overlay webview is ready to receive events.
 /// This prevents the race condition where show-overlay events are emitted
@@ -170,7 +180,7 @@ pub fn mark_overlay_ready(app_handle: &AppHandle) {
         match current_state {
             OverlayState::Recording => {
                 if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
-                    tracing::info!("mark_overlay_ready: State is Recording, re-emitting show-overlay");
+                    tracing::debug!("mark_overlay_ready: State is Recording, re-emitting show-overlay");
                     let _ = overlay.emit("show-overlay", "recording");
                     
                     // Also ensure interaction is enabled
@@ -179,21 +189,29 @@ pub fn mark_overlay_ready(app_handle: &AppHandle) {
             },
             OverlayState::Transcribing => {
                 if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
-                    tracing::info!("mark_overlay_ready: State is Transcribing, re-emitting show-overlay");
+                    tracing::debug!("mark_overlay_ready: State is Transcribing, re-emitting show-overlay");
                     let _ = overlay.emit("show-overlay", "transcribing");
                     let _ = overlay.set_ignore_cursor_events(false);
                 }
             },
             OverlayState::Processing => {
                 if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
-                    tracing::info!("mark_overlay_ready: State is Processing, re-emitting show-overlay");
+                    tracing::debug!("mark_overlay_ready: State is Processing, re-emitting show-overlay");
                     let _ = overlay.emit("show-overlay", "processing");
                 }
             },
             OverlayState::Connecting => {
                 if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
-                    tracing::info!("mark_overlay_ready: State is Connecting, re-emitting show-overlay");
+                    tracing::debug!("mark_overlay_ready: State is Connecting, re-emitting show-overlay");
                     let _ = overlay.emit("show-overlay", "connecting");
+                    let _ = overlay.set_ignore_cursor_events(false);
+                }
+            },
+            OverlayState::Cancelling => {
+                if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
+                    tracing::debug!("mark_overlay_ready: State is Cancelling, re-emitting show-overlay");
+                    let _ = overlay.emit("show-overlay", "cancelling");
+                    // Keep interaction enabled or disabled based on preference, though usually cancelling is brief
                     let _ = overlay.set_ignore_cursor_events(false);
                 }
             },
@@ -534,7 +552,7 @@ pub fn hide_overlay_if_recording(app_handle: &AppHandle) {
     // Check state - bail if we are Transcribing, Processing, or Connecting
     if let Ok(mut state) = OVERLAY_STATE.lock() {
         match *state {
-            OverlayState::Transcribing | OverlayState::Processing | OverlayState::Connecting => {
+            OverlayState::Transcribing | OverlayState::Processing | OverlayState::Connecting | OverlayState::Cancelling => {
                 debug!("hide_overlay_if_recording: Ignoring hide because state is {:?}", *state);
                 return;
             }
@@ -563,9 +581,9 @@ pub fn hide_overlay_if_recording(app_handle: &AppHandle) {
 /// Shows the "connecting" overlay window (Connecting state)
 /// This should appear IMMEDIATELY on fn press for instant visual feedback.
 pub fn show_connecting_overlay(app_handle: &AppHandle) {
-    use tracing::{debug, info, warn};
+    use tracing::{debug, warn};
     
-    info!("show_connecting_overlay: entry - showing IMMEDIATELY");
+    debug!("show_connecting_overlay: entry - showing IMMEDIATELY");
     
     // Update state to Connecting
     if let Ok(mut state) = OVERLAY_STATE.lock() {
@@ -614,6 +632,43 @@ pub fn show_connecting_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// Shows the cancelling overlay window (Cancelling state)
+pub fn show_cancelling_overlay(app_handle: &AppHandle) {
+    use tracing::{debug, warn};
+    
+    debug!("show_cancelling_overlay: entry");
+    
+    // Update state to Cancelling
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        debug!("show_cancelling_overlay: Transitioning state from {:?} to Cancelling", *state);
+        *state = OverlayState::Cancelling;
+    }
+
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_position == OverlayPosition::None {
+        debug!("show_cancelling_overlay: overlay disabled in settings, skipping");
+        return;
+    }
+
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Ensure visible if checks pass
+        let is_visible_before = overlay_window.is_visible().unwrap_or(false);
+        if !is_visible_before {
+             debug!("show_cancelling_overlay: Window was hidden, showing it now");
+             let _ = overlay_window.show();
+        }
+        
+        // Emit event to switch to cancelling state
+        let emit_result = overlay_window.emit("show-overlay", "cancelling");
+        debug!("show_cancelling_overlay: emit('show-overlay', 'cancelling') result={:?}", emit_result);
+        
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
+    } else {
+        warn!("show_cancelling_overlay: overlay window NOT FOUND!");
+    }
+}
+
 /// Safely hides the overlay after transcription/processing is done.
 /// Only hides if the state is still Transcribing or Processing.
 /// If the state has changed to Recording (new session started), it does NOT hide.
@@ -625,8 +680,8 @@ pub fn hide_overlay_after_transcription(app_handle: &AppHandle) {
     // Check state - bail if we are Recording (new session)
     if let Ok(mut state) = OVERLAY_STATE.lock() {
         match *state {
-            OverlayState::Recording => {
-                debug!("hide_overlay_after_transcription: Ignoring hide because state is Recording (new session started)");
+            OverlayState::Recording | OverlayState::Cancelling | OverlayState::Connecting => {
+                debug!("hide_overlay_after_transcription: Ignoring hide because state is {:?} (active/new session)", *state);
                 return;
             }
             _ => {

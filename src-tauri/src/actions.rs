@@ -594,6 +594,9 @@ impl ShortcutAction for TranscribeAction {
                     change_tray_icon(&ah, TrayIconState::Idle);
                 }
 
+                // Clear active session to ensure unregistration works
+                tm.clear_active_session();
+
                 // Clear toggle state now that transcription is complete
                 if let Ok(mut states) = ah.state::<ManagedToggleState>().lock() {
                     states.active_toggles.insert(binding_id, false);

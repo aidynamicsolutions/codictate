@@ -879,6 +879,7 @@
   "overlay": {
     "transcribing": "Transcribing...",
     "processing": "Processing Transcription...",
+    "cancelling": "Cancelling...",
     "starting": "Starting microphone..."
   },
   "recording": {

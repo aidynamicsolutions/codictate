@@ -1,4 +1,4 @@
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use serde::Serialize;
 use specta::Type;
 
@@ -15,6 +15,9 @@ use crate::settings::{
 };
 use crate::tray;
 use crate::ManagedToggleState;
+use crate::managers::audio::AudioRecordingManager;
+use crate::managers::transcription::TranscriptionManager;
+use std::sync::Arc;
 
 pub fn init_shortcuts(app: &AppHandle) {
     let default_bindings = settings::get_default_settings().bindings;
@@ -888,9 +891,13 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
             if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Err(e) = register_shortcut(&app_clone, cancel_binding) {
-                    eprintln!("Failed to register cancel shortcut: {}", e);
+                debug!("Attempting to register cancel shortcut: {}", cancel_binding.current_binding);
+                match register_shortcut(&app_clone, cancel_binding) {
+                    Ok(_) => debug!("Successfully registered cancel shortcut"),
+                    Err(e) => error!("Failed to register cancel shortcut: {}", e),
                 }
+            } else {
+                 warn!("No 'cancel' binding found in settings");
             }
         });
     }
@@ -908,7 +915,27 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
     {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
+            // Check if we should actually unregister
+            // If recording is active or any transcription session is active, we must KEEP the shortcut registered
+            let audio_manager = app_clone.state::<Arc<AudioRecordingManager>>();
+            let tm = app_clone.state::<Arc<TranscriptionManager>>();
+            
+            let is_recording = audio_manager.is_recording();
+            // We need a thread-safe way to check if any session is active. 
+            // Checking active_session_id is a reasonable proxy for "is transcribing"
+            // assuming it's managed correctly.
+            let is_transcribing = tm.is_any_session_active();
+
+            if is_recording || is_transcribing {
+                 info!(
+                     "Skipping unregister_cancel_shortcut: session still active (recording={}, transcribing={})",
+                     is_recording, is_transcribing
+                 );
+                 return;
+            }
+
             if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
+                debug!("Unregistering cancel shortcut");
                 // We ignore errors here as it might already be unregistered
                 let _ = unregister_shortcut(&app_clone, cancel_binding);
             }
@@ -958,13 +985,14 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                 if let Some(action) = ACTION_MAP.get(&binding_id_for_closure) {
                     debug!("Global Shortcut Event: id='{}' state={:?} shortcut='{}'", binding_id_for_closure, event.state, shortcut_string);
                     if binding_id_for_closure == "cancel" {
-
                         if event.state == ShortcutState::Pressed {
+                            tracing::debug!("Shortcut: 'cancel' pressed - triggering action.start");
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
                     } else if binding_id_for_closure == "paste_last_transcript" {
                         // Paste last transcript is a one-shot action - always trigger on press
                         if event.state == ShortcutState::Pressed {
+                            tracing::debug!("Shortcut: 'paste_last_transcript' pressed - triggering action.start");
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
                     } else if binding_id_for_closure == "transcribe" {

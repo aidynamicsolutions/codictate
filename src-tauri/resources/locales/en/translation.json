@@ -667,7 +667,9 @@
   },
   "overlay": {
     "transcribing": "Transcribing...",
-    "processing": "Processing Transcription..."
+    "processing": "Processing Transcription...",
+    "cancelling": "Cancelling...",
+    "starting": "Starting microphone..."
   },
   "recording": {
     "limitWarning": "Recording ends in 30 seconds"

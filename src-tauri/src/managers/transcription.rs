@@ -363,6 +363,11 @@ impl TranscriptionManager {
         is_active
     }
 
+    pub fn is_any_session_active(&self) -> bool {
+        let active = self.active_session_id.lock().unwrap();
+        active.is_some()
+    }
+
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
         // Update last activity timestamp
         self.last_activity.store(

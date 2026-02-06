@@ -19,6 +19,16 @@ To prevent visual flickering associated with OS window mapping/unmapping (`show(
     *   **Interaction**: `set_ignore_cursor_events(false)` (Interactive).
     *   **UI**: Opacity `1`. The "Cancel" button remains clickable in all these states to allow aborting the operation.
 
+### Cancellation & State Locking
+
+When the user initiates a cancellation:
+1.  The overlay state is immediately set to `Cancelling`.
+2.  This acts as a **State Lock**.
+3.  Any concurrent background tasks (like "stop recording cleanup") that try to hide the overlay will check this state and **abort** their hide request.
+4.  Only the dedicated cancellation cleanup task (which runs after a 600ms delay) has the authority to transition from `Cancelling` to `Hidden`.
+
+This ensures the "Cancelling..." feedback is never prematurely clobbered by race conditions.
+
 ### Zero-Latency Optimizations
 
 To ensure the overlay appears **instantly (0ms delay)** when the shortcut is pressed, we implement several critical optimizations:

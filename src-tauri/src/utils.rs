@@ -59,7 +59,32 @@ pub fn get_recording_limit_seconds() -> u32 {
 /// Centralized cancellation function that can be called from anywhere in the app.
 /// Handles cancelling both recording and transcription operations and updates UI state.
 pub fn cancel_current_operation(app: &AppHandle) {
-    info!("Initiating operation cancellation...");
+    info!("Cancellation initiated");
+
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    let tm = app.state::<Arc<TranscriptionManager>>();
+
+    // Guard: Only proceed if there is actually something to cancel
+    // This prevents "ghost" cancellations when the shortcut remains registered but idle
+    let is_recording = audio_manager.is_recording();
+    let is_transcribing = tm.is_any_session_active();
+    let is_overlay_active = crate::overlay::is_overlay_active();
+
+    if !is_recording && !is_transcribing && !is_overlay_active {
+        debug!("Cancellation: Ignored (idle state)");
+        // Just in case, try to unregister the shortcut if it's stuck
+        shortcut::unregister_cancel_shortcut(app);
+        return;
+    }
+
+    // CRITICAL: Clear active session IMMEDIATELY to prevent pending transcriptions from pasting
+    // Do not defer this to the background thread!
+    tm.clear_active_session();
+
+    // Show cancelling state on overlay IMMEDIATELY to prevent race conditions
+    // where other threads (e.g. action.stop) might try to hide the overlay.
+    // By setting state to Cancelling now, we block hide_overlay_if_recording from working.
+    crate::overlay::show_cancelling_overlay(app);
 
     // Unregister the cancel shortcut asynchronously
     shortcut::unregister_cancel_shortcut(app);
@@ -70,24 +95,31 @@ pub fn cancel_current_operation(app: &AppHandle) {
     if let Ok(mut states) = toggle_state_manager.lock() {
         states.active_toggles.values_mut().for_each(|v| *v = false);
     } else {
-        warn!("Failed to lock toggle state manager during cancellation");
+        warn!("Cancellation: Failed to lock toggle state manager");
     }
 
     // Cancel any ongoing recording
-    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.cancel_recording();
+    
+    // Spawn a thread for the delay and cleanup to avoid blocking the main thread/event loop
+    // Blocking here prevents the 'show-overlay' event from being processed by the frontend!
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        // info!("Cancellation: Sleeping for 600ms (in background thread)");
+        std::thread::sleep(std::time::Duration::from_millis(600));
 
-    // Update tray icon and hide overlay
-    change_tray_icon(app, crate::tray::TrayIconState::Idle);
-    hide_recording_overlay(app);
+        // Update tray icon and hide overlay
+        change_tray_icon(&app_clone, crate::tray::TrayIconState::Idle);
+        hide_recording_overlay(&app_clone);
 
-    // Unload model if immediate unload is enabled
-    let tm = app.state::<Arc<TranscriptionManager>>();
+        // Unload model if immediate unload is enabled
+        let tm = app_clone.state::<Arc<TranscriptionManager>>();
 
-    tm.clear_active_session();
-    tm.maybe_unload_immediately("cancellation");
+        // Session is already cleared, but unload might be needed
+        tm.maybe_unload_immediately("cancellation");
 
-    info!("Operation cancellation completed - returned to idle state");
+        info!("Cancellation completed");
+    });
 }
 
 /// Check if using the Wayland display server protocol
