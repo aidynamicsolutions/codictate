@@ -153,7 +153,10 @@ impl AudioRecorder {
                 // Wait for the first audio packet to confirm data is flowing (max 3 seconds)
                 // This is crucial for Bluetooth devices which take time to actually send data.
                 if let Err(_) = data_started_rx.recv_timeout(Duration::from_secs(3)) {
-                     tracing::warn!("Timeout waiting for audio data to start flowing. Device might be silent or slow.");
+                     // Make this fatal so we can trigger failover
+                     let msg = "Timeout waiting for audio data to start flowing. Device might be silent or slow.";
+                     tracing::error!("{}", msg);
+                     return Err(msg.into());
                 }
 
                 self.device = Some(device);

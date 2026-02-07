@@ -8,7 +8,7 @@ export const MicrophoneSelector: React.FC = React.memo(
   () => {
     const { t } = useTranslation();
     const {
-      getSetting,
+      settings,  // Subscribe to settings object directly for re-render on changes
       audioDevices,
       refreshAudioDevices,
       isLoading,
@@ -26,8 +26,8 @@ export const MicrophoneSelector: React.FC = React.memo(
       (d) => d.is_default && d.name !== "Default" && d.name !== "default"
     );
     
-    // Determine effective selection
-    const selectedSetting = getSetting("selected_microphone");
+    // Determine effective selection - now reading directly from settings
+    const selectedSetting = settings?.selected_microphone;
     const isUsingSystemDefault = 
       selectedSetting === "default" || 
       selectedSetting === "Default" || 

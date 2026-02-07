@@ -547,6 +547,10 @@
       "volume": {
         "title": "Volume",
         "description": "Adjust the volume of audio feedback sounds"
+      },
+      "clamshellMicrophone": {
+        "title": "Clamshell Microphone",
+        "description": "Microphone to use when laptop lid is closed"
       }
     },
     "advanced": {
@@ -771,10 +775,6 @@
       "alwaysOnMicrophone": {
         "label": "Always-On Microphone",
         "description": "Keep microphone active for faster response"
-      },
-      "clamshellMicrophone": {
-        "title": "Clamshell Microphone",
-        "description": "Microphone to use when laptop lid is closed"
       },
       "postProcessingToggle": {
         "label": "Post Processing",

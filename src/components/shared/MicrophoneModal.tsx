@@ -97,7 +97,6 @@ export const MicrophoneModal: React.FC<MicrophoneModalProps> = ({
     refreshAudioDevices,
     getSetting,
     updateSetting,
-    resetSetting,
   } = useSettings();
 
   // Audio level state - these are AGC-normalized for display
@@ -191,13 +190,11 @@ export const MicrophoneModal: React.FC<MicrophoneModalProps> = ({
 
   const handleMicrophoneSelect = useCallback(
     async (device: { name: string; is_default: boolean }) => {
-      // If user clicks the system default device, we set preference to "Default" (reset)
-      // Otherwise set to specific device name
-      if (device.is_default) {
-           await resetSetting("selected_microphone");
-      } else {
-           await updateSetting("selected_microphone", device.name);
-      }
+      // Always save the explicit device name, even if it's the system default.
+      // This is critical because if we reset to "Default", the backend applies
+      // Bluetooth-avoidance logic (preferring built-in mic). By saving the 
+      // explicit name, the user's intent is preserved and Bluetooth devices work.
+      await updateSetting("selected_microphone", device.name);
       
       // Reset AGC and restart preview to apply new device
       agcRef.current.reset();
@@ -206,7 +203,7 @@ export const MicrophoneModal: React.FC<MicrophoneModalProps> = ({
       
       onOpenChange(false);
     },
-    [updateSetting, resetSetting, onOpenChange]
+    [updateSetting, onOpenChange]
   );
 
   return (

@@ -69,9 +69,12 @@ pub fn get_microphone_mode(app: AppHandle) -> Result<bool, String> {
 
 #[tauri::command]
 #[specta::specta]
-pub fn get_available_microphones(app: AppHandle) -> Result<Vec<AudioDevice>, String> {
-    let devices =
-        list_input_devices().map_err(|e| format!("Failed to list audio devices: {}", e))?;
+pub async fn get_available_microphones(app: AppHandle) -> Result<Vec<AudioDevice>, String> {
+    // Run blocking device enumeration on a thread pool
+    let devices = tauri::async_runtime::spawn_blocking(move || {
+        list_input_devices().map_err(|e| format!("Failed to list audio devices: {}", e))
+    }).await
+    .map_err(|e| format!("Task join error: {}", e))??;
 
     let mut result = vec![AudioDevice {
         index: "default".to_string(),
@@ -106,18 +109,49 @@ pub fn get_available_microphones(app: AppHandle) -> Result<Vec<AudioDevice>, Str
 #[tauri::command]
 #[specta::specta]
 pub fn set_selected_microphone(app: AppHandle, device_name: String) -> Result<(), String> {
+    let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
+    
+    // When user explicitly selects a device, clear the ENTIRE blocklist.
+    // This prevents stale blocklist entries from accumulating across sessions
+    // and blocking valid fallback devices like MacBook Pro.
+    let was_blocked = {
+        let blocked = rm.get_blocked_devices();
+        let was_in_blocklist = blocked.contains(&device_name);
+        
+        if !blocked.is_empty() {
+            tracing::info!(
+                "User explicitly selected device '{}'. Clearing entire blocklist ({:?}) for fresh start.",
+                device_name, blocked
+            );
+            rm.set_blocked_devices(std::collections::HashSet::new());
+        }
+        // Reset detection counters for fresh start
+        rm.reset_dead_device_counters();
+        
+        was_in_blocklist
+    };
+    
     let mut settings = get_settings(&app);
     settings.selected_microphone = if device_name == "default" {
         None
     } else {
-        Some(device_name)
+        Some(device_name.clone())
     };
     write_settings(&app, settings);
 
     // Update the audio manager to use the new device
-    let rm = app.state::<Arc<AudioRecordingManager>>();
-    rm.update_selected_device()
-        .map_err(|e| format!("Failed to update selected device: {}", e))?;
+    // Spawn this on a background task so we don't block the UI while waiting for the stream
+    // to initialize (which can take 3-6s if devices are failing/retrying)
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = rm.update_selected_device() {
+            tracing::error!("Failed to update selected device (background task): {}", e);
+        }
+        
+        // If device was previously blocked, log that we're re-testing
+        if was_blocked {
+            tracing::info!("Re-testing previously blocked device '{}' per user request", device_name);
+        }
+    });
 
     Ok(())
 }
@@ -225,7 +259,7 @@ pub fn is_recording(app: AppHandle) -> bool {
 /// Start microphone preview mode - opens the mic stream to emit levels without recording
 #[tauri::command]
 #[specta::specta]
-pub fn start_mic_preview(app: AppHandle) -> Result<(), String> {
+pub async fn start_mic_preview(app: AppHandle) -> Result<(), String> {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager
         .start_microphone_stream()

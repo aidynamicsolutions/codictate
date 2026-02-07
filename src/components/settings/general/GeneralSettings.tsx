@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { type } from "@tauri-apps/plugin-os";
 import { MicrophoneSelector } from "../MicrophoneSelector";
+import { ClamshellMicrophoneSelector } from "../ClamshellMicrophoneSelector";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { SettingsRow } from "../../ui/SettingsRow";
 import { OutputDeviceSelector } from "../OutputDeviceSelector";
@@ -120,6 +121,8 @@ export const GeneralSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.sound.title")}>
         <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
+        {/* Clamshell mode microphone - only shown on laptops */}
+        <ClamshellMicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <AudioFeedback descriptionMode="tooltip" grouped={true} />
         <OutputDeviceSelector disabled={!audioFeedbackEnabled} />
         <VolumeSlider disabled={!audioFeedbackEnabled} />

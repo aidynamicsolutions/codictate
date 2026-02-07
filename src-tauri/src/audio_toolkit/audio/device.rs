@@ -1,5 +1,6 @@
 use cpal::traits::{DeviceTrait, HostTrait};
 
+#[derive(Clone)]
 pub struct CpalDeviceInfo {
     pub index: String,
     pub name: String,

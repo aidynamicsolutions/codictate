@@ -10,6 +10,7 @@ import { useSettings } from "./hooks/useSettings";
 import { commands } from "@/bindings";
 import { initLogging } from "@/utils/logging";
 import { useModelStore } from "./stores/modelStore";
+import { useSettingsStore } from "./stores/settingsStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { listen } from "@tauri-apps/api/event";
 import { AboutModal } from "./components/AboutModal";
@@ -102,6 +103,9 @@ function App() {
         setCurrentSection("settings");
         // 3. Ensure window is focused/visible (handled by backend usually, but ensures frontend is ready)
     });
+    return () => {
+        unlistenPromise.then(unlisten => unlisten());
+    };
   }, []);
 
   // Listen for about menu item
@@ -112,6 +116,29 @@ function App() {
     return () => {
         unlistenPromise.then(unlisten => unlisten());
     };
+  }, []);
+
+  // Listen for auto-switched microphone event
+  useEffect(() => {
+      const unlistenPromise = listen("audio-device-auto-switched", async (event: any) => {
+          const payload = event.payload as { previous: string; current: string };
+          console.log("Audio device auto-switched:", payload);
+          
+          // Refresh settings and devices to reflect the change
+          await useSettingsStore.getState().refreshSettings();
+          await useSettingsStore.getState().refreshAudioDevices();
+          
+          // Show toast
+          const { toast } = await import("sonner");
+          toast.warning("Microphone Changed", {
+              description: `Switched to ${payload.current} due to connection error with ${payload.previous}.`,
+              duration: 5000,
+          });
+      });
+      
+      return () => {
+          unlistenPromise.then(unlisten => unlisten());
+      };
   }, []);
 
   const checkOnboardingStatus = async () => {

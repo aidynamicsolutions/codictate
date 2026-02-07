@@ -2,9 +2,16 @@ import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { commands } from "@/bindings";
 import { Dropdown } from "../ui/Dropdown";
-import { SettingContainer } from "../ui/SettingContainer";
+import { SettingsRow } from "../ui/SettingsRow";
 import { ResetButton } from "../ui/ResetButton";
 import { useSettings } from "../../hooks/useSettings";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/shared/ui/tooltip";
+import { InfoIcon } from "lucide-react";
 
 interface ClamshellMicrophoneSelectorProps {
   descriptionMode?: "inline" | "tooltip";
@@ -12,7 +19,7 @@ interface ClamshellMicrophoneSelectorProps {
 }
 
 export const ClamshellMicrophoneSelector: React.FC<ClamshellMicrophoneSelectorProps> =
-  React.memo(({ descriptionMode = "tooltip", grouped = false }) => {
+  React.memo(({ descriptionMode = "tooltip" }) => {
     const { t } = useTranslation();
     const {
       getSetting,
@@ -67,12 +74,28 @@ export const ClamshellMicrophoneSelector: React.FC<ClamshellMicrophoneSelectorPr
       label: device.name,
     }));
 
+    const titleNode = (
+      <div className="flex items-center gap-2">
+        <span>{t("settings.sound.clamshellMicrophone.title")}</span>
+        {descriptionMode === "tooltip" && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <InfoIcon className="h-3.5 w-3.5 text-muted-foreground/70 cursor-help" />
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="max-w-xs">{t("settings.sound.clamshellMicrophone.description")}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
+      </div>
+    );
+
     return (
-      <SettingContainer
-        title={t("settings.debug.clamshellMicrophone.title")}
-        description={t("settings.debug.clamshellMicrophone.description")}
-        descriptionMode={descriptionMode}
-        grouped={grouped}
+      <SettingsRow
+        title={titleNode}
+        description={descriptionMode === "inline" ? t("settings.sound.clamshellMicrophone.description") : undefined}
       >
         <div className="flex items-center space-x-1">
           <Dropdown
@@ -96,7 +119,7 @@ export const ClamshellMicrophoneSelector: React.FC<ClamshellMicrophoneSelectorPr
             disabled={isUpdating("clamshell_microphone") || isLoading}
           />
         </div>
-      </SettingContainer>
+      </SettingsRow>
     );
   });
 
