@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import MicrophonePermissions from "./components/MicrophonePermissions";
@@ -7,12 +7,12 @@ import Onboarding from "./components/onboarding";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/shared/ui/sidebar";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
 import { useSettings } from "./hooks/useSettings";
+import { useTauriEvent } from "./hooks/useTauriEvent";
 import { commands } from "@/bindings";
-import { initLogging } from "@/utils/logging";
+import { initLogging, logError, logInfo } from "@/utils/logging";
 import { useModelStore } from "./stores/modelStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useUpdateStore } from "./stores/updateStore";
-import { listen } from "@tauri-apps/api/event";
 import { AboutModal } from "./components/AboutModal";
 
 const renderSettingsContent = (
@@ -39,7 +39,7 @@ function App() {
   // Show window when the app is ready (prevents flash of white)
   useEffect(() => {
     commands.showMainWindow().catch((e: any) => {
-      console.error("Failed to show main window:", e);
+      logError(`Failed to show main window: ${e}`, "App");
     });
   }, []);
 
@@ -86,60 +86,37 @@ function App() {
   }, [settings?.debug_mode, updateSetting]);
 
   // Listen for update check requests (e.g. from menu)
-  useEffect(() => {
-    const unlistenPromise = listen("check-for-updates", () => {
-        // 1. Manually trigger check using global store
-        const store = useUpdateStore.getState();
-        
-        if (store.isPendingRestart) {
-            store.restartApp();
-            return;
-        }
+  useTauriEvent("check-for-updates", () => {
+    const store = useUpdateStore.getState();
+    
+    if (store.isPendingRestart) {
+      store.restartApp();
+      return;
+    }
 
-        store.checkForUpdates(true);
-        store.setShouldScrollToUpdates(true);
-        
-        // 2. Navigate to settings (where the check status is displayed)
-        setCurrentSection("settings");
-        // 3. Ensure window is focused/visible (handled by backend usually, but ensures frontend is ready)
-    });
-    return () => {
-        unlistenPromise.then(unlisten => unlisten());
-    };
-  }, []);
+    store.checkForUpdates(true);
+    store.setShouldScrollToUpdates(true);
+    setCurrentSection("settings");
+  });
 
   // Listen for about menu item
-  useEffect(() => {
-    const unlistenPromise = listen("open-about", () => {
-        setShowAbout(true);
-    });
-    return () => {
-        unlistenPromise.then(unlisten => unlisten());
-    };
-  }, []);
+  useTauriEvent("open-about", () => {
+    setShowAbout(true);
+  });
 
   // Listen for auto-switched microphone event
-  useEffect(() => {
-      const unlistenPromise = listen("audio-device-auto-switched", async (event: any) => {
-          const payload = event.payload as { previous: string; current: string };
-          console.log("Audio device auto-switched:", payload);
-          
-          // Refresh settings and devices to reflect the change
-          await useSettingsStore.getState().refreshSettings();
-          await useSettingsStore.getState().refreshAudioDevices();
-          
-          // Show toast
-          const { toast } = await import("sonner");
-          toast.warning("Microphone Changed", {
-              description: `Switched to ${payload.current} due to connection error with ${payload.previous}.`,
-              duration: 5000,
-          });
-      });
-      
-      return () => {
-          unlistenPromise.then(unlisten => unlisten());
-      };
-  }, []);
+  useTauriEvent<{ previous: string; current: string }>("audio-device-auto-switched", async (event) => {
+    logInfo(`Audio device auto-switched: ${JSON.stringify(event.payload)}`, "App");
+    
+    // Refresh settings and devices to reflect the change
+    await useSettingsStore.getState().refreshSettings();
+    await useSettingsStore.getState().refreshAudioDevices();
+    
+    toast.warning("Microphone Changed", {
+      description: `Switched to ${event.payload.current} due to connection error with ${event.payload.previous}.`,
+      duration: 5000,
+    });
+  });
 
   const checkOnboardingStatus = async () => {
     try {
@@ -151,7 +128,7 @@ function App() {
           // Initialize shortcuts when onboarding is already complete
           // (During onboarding, this is called from PermissionsStep.tsx)
           commands.initializeShortcuts().catch((e) => {
-            console.error("Failed to initialize shortcuts:", e);
+            logError(`Failed to initialize shortcuts: ${e}`, "App");
           });
           setShowOnboarding(false);
           return;
@@ -160,7 +137,7 @@ function App() {
       // If not completed, show onboarding
       setShowOnboarding(true);
     } catch (error) {
-      console.error("Failed to check onboarding status:", error);
+      logError(`Failed to check onboarding status: ${error}`, "App");
       setShowOnboarding(true);
     }
   };
