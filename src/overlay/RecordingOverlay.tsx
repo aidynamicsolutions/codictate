@@ -6,10 +6,11 @@ import {
 } from "../components/icons";
 import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
-import { syncLanguageFromSettings } from "@/i18n";
+import i18n, { syncLanguageFromSettings } from "@/i18n";
 import { colors } from "@/theme";
 import { logInfo, logWarn, logDebug } from "@/utils/logging";
 import { AudioAGC } from "@/utils/audioAGC";
+import { getLanguageDirection } from "@/lib/utils/rtl";
 
 
 type OverlayState = "recording" | "transcribing" | "processing" | "connecting" | "cancelling";
@@ -41,6 +42,7 @@ const RecordingOverlay: React.FC = () => {
   const [levels, setLevels] = useState<number[]>(Array(16).fill(0));
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   const agcRef = useRef(new AudioAGC());
+  const direction = getLanguageDirection(i18n.language);
   
   // Recording time state
   const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -54,6 +56,7 @@ const RecordingOverlay: React.FC = () => {
     () => SVG_PATH_LENGTH * (1 - progress),
     [progress]
   );
+
 
   useEffect(() => {
     // React StrictMode-safe pattern: https://react.dev/learn/synchronizing-with-effects#fetching-data
@@ -201,6 +204,7 @@ const RecordingOverlay: React.FC = () => {
   return (
     <div 
       className={`recording-overlay-wrapper ${isVisible ? "fade-in" : "fade-out"}`}
+      dir={direction}
     >
       {/* SVG countdown border - uniform animation along perimeter */}
       {state === "recording" && (

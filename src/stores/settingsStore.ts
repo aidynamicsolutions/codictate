@@ -68,6 +68,7 @@ const DEFAULT_AUDIO_DEVICE: AudioDevice = {
   index: "default",
   name: "Default",
   is_default: true,
+  is_bluetooth: false,
 };
 
 const settingUpdaters: {

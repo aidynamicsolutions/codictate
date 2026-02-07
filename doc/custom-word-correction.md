@@ -1,27 +1,37 @@
 # Custom Word Correction
 
-Custom word correction automatically replaces transcribed words with user-defined alternatives, useful for proper nouns, brand names, and domain-specific terminology.
+Custom word correction automatically replaces transcribed words with user-defined alternatives. It is designed to handle proper nouns, brand names, and domain-specific terminology that speech-to-text models often misinterpret.
 
-## How It Works
+## "Best of Both Worlds" Algorithm
 
-The algorithm uses three techniques to find matches:
-
-1. **Exact Match** — Case-insensitive exact match checked first (highest priority)
-2. **Multi-Word Phrase Match** — Consecutive words combined to match compound terms (e.g., "chat GPT" → "ChatGPT")
-3. **Fuzzy Match** — Single-word matching using:
-   - Double Metaphone (phonetic similarity)
-   - Damerau-Levenshtein (edit distance with transpositions)
+We use a hybrid approach that combines **N-gram analysis** (from `main`) with **Advanced Phonetic/Fuzzy Matching** (from `llm`). This allows us to correct both single words and split multi-word phrases even when they are phonetically matched rather than exactly matched.
 
 ### Matching Process
 
-```
-Input words → Try single exact match? → Yes → Replace
-                                      ↓ No
-                                      → Try multi-word exact match (up to 3 words)?
-                                      ↓ Yes → Replace entire phrase
-                                      ↓ No
-                                      → Fuzzy match (phonetic + edit distance)
-                                      → Score < threshold? → Replace
+1.  **Normalization**: Input text and custom words are normalized (lowercase, punctuation stripped).
+2.  **N-gram Sliding Window**: We scan the input text using a sliding window of 1 to 3 words. This allows us to catch phrases like "Chat G P T" and map them to "ChatGPT".
+3.  **Hybrid Matching**: For each n-gram, we attempt to match it against your Custom Words using three prioritized techniques:
+    *   **Exact Match**: Highest priority. (e.g., "handy" -> "Handy")
+    *   **Phonetic Match**: Uses **Double Metaphone** to catch "sounds-like" errors. (e.g., "chat jepity" -> "ChatGPT")
+    *   **Fuzzy Match**: Uses string similarity algorithms:
+        *   **Jaro-Winkler**: For short words (≤6 chars) to prioritize prefix matching.
+        *   **Damerau-Levenshtein**: For longer words to handle transpositions and typos.
+
+### Logic Flow
+
+```mermaid
+graph TD
+    A[Input Text] --> B[Tokenize into Words]
+    B --> C{Iterate Words}
+    C --> D[Generate N-grams (1-3 words)]
+    D --> E{Match Found?}
+    E -- Exact --> F[Replace with Custom Word]
+    E -- Phonetic --> F
+    E -- Fuzzy --> F
+    E -- No Match --> G[Next N-gram]
+    F --> H[Advance Iterator past N-gram]
+    G --> H
+    H --> C
 ```
 
 ## Configuration
@@ -33,50 +43,30 @@ Input words → Try single exact match? → Yes → Replace
 
 ## Examples
 
-| Input | Custom Word | Result | Match Type |
-|-------|-------------|--------|------------|
-| "handy" | "Handy" | "Handy" | Single-word exact |
-| "chat GPT" | "ChatGPT" | "ChatGPT" | Multi-word exact |
-| "teh" | "the" | "the" | Edit distance (transposition) |
-| "kat" | "cat" | "cat" | Phonetic |
-| "Anthrapik" | "Anthropic" | "Anthropic" | Phonetic + edit |
+| Input Transcription | Custom Word | Match Type | Result |
+|---------------------|-------------|------------|--------|
+| "handy"             | "Handy"     | Exact      | "Handy" |
+| "chat G P T"        | "ChatGPT"   | N-gram + Exact | "ChatGPT" |
+| "chat jepity"       | "ChatGPT"   | N-gram + Phonetic | "ChatGPT" |
+| "Anthrapik"         | "Anthropic" | Fuzzy (Levenshtein) | "Anthropic" |
+| "teh"               | "the"       | Fuzzy (Transposition) | "the" |
 
 ## Technical Details
 
 - **Location**: `src-tauri/src/audio_toolkit/text.rs`
-- **Phonetic Algorithm**: Double Metaphone (via `rphonetic` crate)
-- **Edit Distance**: Damerau-Levenshtein for long words, Jaro-Winkler for short (via `strsim` crate)
-- **Max window size**: 3 words (for multi-word matching)
+- **Phonetic Algorithm**: Double Metaphone (via `rphonetic`)
+- **String Similarity**: Jaro-Winkler & Damerau-Levenshtein (via `strsim`)
+- **Key Config**: `SHORT_WORD_THRESHOLD = 6` (Switch point for similarity algos)
 
-### Multi-Word Matching
+### Why this Hybrid Approach?
 
-Multi-word matching only uses **exact matching** to prevent false positives:
-- "chat GPT" → "chatgpt" matches "ChatGPT" ✅
-- "at Anthropic" does NOT match "Anthropic" (not exact) ✅
-
-### Hybrid String Similarity
-
-| Word Length | Algorithm | Why |
-|-------------|-----------|-----|
-| ≤6 chars (similar lengths) | **Jaro-Winkler** | Better prefix matching for names |
-| >6 chars | **Damerau-Levenshtein** | Better transposition handling |
-
-### Why Double Metaphone?
-
-Double Metaphone (1990) improves on Soundex (1918) with:
-- Dual phonetic codes for better coverage
-- Multilingual support (not English-only)
-- Lower false positive rate
-
-### Why Damerau-Levenshtein?
-
-Treats transpositions ("teh" → "the") as single edits instead of two, better matching common speech-to-text errors.
+- **N-grams** alone (previous technique) handled "Chat G P T" well but failed on "Anthrapik" if not exact.
+- **Phonetic/Fuzzy** alone (previous technique) handled "Anthrapik" well but failed on split phrases like "Chat G P T".
+- **Hybrid** handles **BOTH**: It can take "Chat G P T", combine it into a candidate string, and then phonetically match that candidate against "ChatGPT".
 
 ## Known Limitations
 
-| Limitation | Reason | Impact |
-|------------|--------|--------|
-| **English-optimized phonetics** | Double Metaphone designed for Latin/English | Low — STT outputs primarily ASCII |
-| **No diacritic normalization** | "café" stays as-is, not normalized to "cafe" | Low — STT typically strips accents |
-| **Case from first word only** | Multi-word matches use first word's case pattern | Acceptable for most use cases |
-| **Max 3-word phrases** | Performance trade-off | Increase `max_window_size` if needed |
+| Limitation | Impact |
+|------------|--------|
+| **Performance** | N-gram analysis is O(N*M) where M is window size (3). Negligible for typical transcription lengths. |
+| **Over-correction** | Aggressive phonetic matching *can* produce false positives. Adjust `threshold` if needed. |

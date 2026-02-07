@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Toaster, toast } from "sonner";
+import { useTranslation } from "react-i18next";
+import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
 import MicrophonePermissions from "./components/MicrophonePermissions";
@@ -30,8 +32,10 @@ const renderSettingsContent = (
 
 
 function App() {
+  const { i18n } = useTranslation();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [showAbout, setShowAbout] = useState(false);
+  const direction = getLanguageDirection(i18n.language);
   const [currentSection, setCurrentSection] =
     useState<SidebarSection>("home");
   const { settings, updateSetting } = useSettings();
@@ -54,11 +58,10 @@ function App() {
     useModelStore.getState().initialize();
   }, []);
 
+  // Initialize RTL direction when language changes
   useEffect(() => {
-    checkOnboardingStatus();
-  }, []);
-
-  // Note: Permission event listeners are now handled by AccessibilityPermissions and MicrophonePermissions components
+    initializeRTL(i18n.language);
+  }, [i18n.language]);
 
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
@@ -127,9 +130,17 @@ function App() {
         if (userProfile.onboarding_completed) {
           // Initialize shortcuts when onboarding is already complete
           // (During onboarding, this is called from PermissionsStep.tsx)
-          commands.initializeShortcuts().catch((e) => {
-            logError(`Failed to initialize shortcuts: ${e}`, "App");
+          Promise.all([
+            commands.initializeEnigo(),
+            commands.initializeShortcuts(),
+          ]).catch((e) => {
+            logError(`Failed to initialize: ${e}`, "App");
           });
+          
+          // Refresh devices
+          useSettingsStore.getState().refreshAudioDevices();
+          useSettingsStore.getState().refreshOutputDevices();
+          
           setShowOnboarding(false);
           return;
         }
@@ -160,6 +171,7 @@ function App() {
         } as React.CSSProperties
       }
       className="h-screen w-full overflow-hidden"
+      dir={direction}
     >
       <Toaster
         theme="system"

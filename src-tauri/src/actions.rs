@@ -29,17 +29,11 @@ pub trait ShortcutAction: Send + Sync {
 }
 
 // Transcribe Action
-struct TranscribeAction;
+struct TranscribeAction {
+    post_process: bool,
+}
 
-async fn maybe_post_process_transcription(
-    app: &AppHandle,
-    settings: &AppSettings,
-    transcription: &str,
-) -> Option<String> {
-    if !settings.post_process_enabled {
-        return None;
-    }
-
+async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, transcription: &str) -> Option<String> {
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
@@ -150,6 +144,7 @@ async fn maybe_post_process_transcription(
         let mlx_manager = app.state::<Arc<MlxModelManager>>();
         return match mlx_manager.process_text(&processed_prompt).await {
             Ok(result) => {
+                let result: String = result;
                 if result.trim().is_empty() {
                     debug!("MLX Local AI returned an empty response");
                     None
@@ -450,6 +445,7 @@ impl ShortcutAction for TranscribeAction {
         
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let session_id_for_task = session_id.clone();
+        let post_process = self.post_process;
 
         tauri::async_runtime::spawn({
             let session_span = info_span!("session", session = %session_id);
@@ -477,17 +473,18 @@ impl ShortcutAction for TranscribeAction {
                     );
 
                     let transcription_time = Instant::now();
-                    let samples_clone = samples.clone();
+                    let samples_clone = samples.clone(); // Clone for history saving
                     match tm.transcribe(samples) {
                         Ok(transcription) => {
-                            // Check if the session was cancelled during transcription
+                             // Check if the session was cancelled during transcription (from llm)
                             if !tm.is_session_active(&session_id_for_task) {
                                 debug!("Transcription for session {} was cancelled, discarding result", session_id_for_task);
-                                utils::hide_overlay_after_transcription(&ah);
+                                utils::hide_recording_overlay(&ah);
                                 change_tray_icon(&ah, TrayIconState::Idle);
                                 shortcut::unregister_cancel_shortcut(&ah);
                                 return;
                             }
+                            
 
                             debug!(
                                 "Transcription completed in {:?}: '{}'",
@@ -518,8 +515,12 @@ impl ShortcutAction for TranscribeAction {
 
                                 // Then apply regular post-processing if enabled
                                 // Uses final_text which may already have Chinese conversion applied
-                                if let Some(processed_text) =
-                                    maybe_post_process_transcription(&ah, &settings, &final_text).await
+                                let processed = if post_process || settings.post_process_enabled {
+                                    post_process_transcription(&ah, &settings, &final_text).await
+                                } else {
+                                    None
+                                };
+                                if let Some(processed_text) = processed
                                 {
                                     post_processed_text = Some(processed_text.clone());
                                     final_text = processed_text;
@@ -733,11 +734,19 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     let mut map = HashMap::new();
     map.insert(
         "transcribe".to_string(),
-        Arc::new(TranscribeAction) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction {
+            post_process: false,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "transcribe_with_post_process".to_string(),
+        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_handsfree".to_string(),
-        Arc::new(TranscribeAction) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction {
+            post_process: false,
+        }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

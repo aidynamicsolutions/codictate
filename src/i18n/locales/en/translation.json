@@ -490,6 +490,10 @@
           "cancel": {
             "name": "Cancel",
             "description": "Cancels the current recording."
+          },
+          "transcribe_with_post_process": {
+            "name": "Post-Processing Hotkey",
+            "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
           }
         },
         "errors": {
@@ -620,7 +624,9 @@
     },
     "postProcessing": {
       "title": "Post Process",
-      "disabledNotice": "Post processing is currently disabled. Enable it in Debug settings to configure.",
+      "hotkey": {
+        "title": "Hotkey"
+      },
       "api": {
         "title": "API (OpenAI Compatible)",
         "provider": {

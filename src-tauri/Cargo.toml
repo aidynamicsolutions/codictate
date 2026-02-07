@@ -111,6 +111,10 @@ objc2-foundation = "0.3"
 [target.'cfg(all(target_os = "macos", target_arch = "aarch64"))'.dependencies]
 hf-hub = { version = "0.4.3", default-features = false, features = ["tokio"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
+gtk = "0.18"
+
 [profile.release]
 lto = true
 codegen-units = 1

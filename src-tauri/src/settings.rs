@@ -288,9 +288,7 @@ pub struct AppSettings {
     #[serde(default = "default_app_language")]
     pub app_language: String,
 
-    // Note: Onboarding/user profile fields have been moved to user_profile.rs / user_store.json
-    #[serde(default)]
-    pub experimental_enabled: bool,
+
     #[serde(default = "default_paste_delay_ms")]
     pub paste_delay_ms: u64,
     #[serde(default = "default_paste_restore_delay_ms")]
@@ -561,6 +559,26 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_shortcut.to_string(),
         },
     );
+    #[cfg(target_os = "windows")]
+    let default_post_process_shortcut = "ctrl+shift+space";
+    #[cfg(target_os = "macos")]
+    let default_post_process_shortcut = "option+shift+space";
+    #[cfg(target_os = "linux")]
+    let default_post_process_shortcut = "ctrl+shift+space";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let default_post_process_shortcut = "alt+shift+space";
+
+    bindings.insert(
+        "transcribe_with_post_process".to_string(),
+        ShortcutBinding {
+            id: "transcribe_with_post_process".to_string(),
+            name: "Transcribe with Post-Processing".to_string(),
+            description: "Converts your speech into text and applies AI post-processing."
+                .to_string(),
+            default_binding: default_post_process_shortcut.to_string(),
+            current_binding: default_post_process_shortcut.to_string(),
+        },
+    );
     bindings.insert(
         "cancel".to_string(),
         ShortcutBinding {
@@ -651,7 +669,7 @@ pub fn get_default_settings() -> AppSettings {
         mute_while_recording: false,
         append_trailing_space: true,
         app_language: default_app_language(),
-        experimental_enabled: false,
+
         paste_delay_ms: default_paste_delay_ms(),
         paste_restore_delay_ms: default_paste_restore_delay_ms(),
     }

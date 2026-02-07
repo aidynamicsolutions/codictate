@@ -18,7 +18,9 @@
     "format:frontend": "prettier --write .",
     "format:backend": "cd src-tauri && cargo fmt",
     "logs": "tail -f ~/Library/Logs/com.pais.codictate/codictate*.log",
-    "logs:grep": "grep -E \"$1\" ~/Library/Logs/com.pais.codictate/codictate*.log | tail -50"
+    "logs:grep": "grep -E \"$1\" ~/Library/Logs/com.pais.codictate/codictate*.log | tail -50",
+    "test:playwright": "playwright test",
+    "test:playwright:ui": "playwright test --ui"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans": "^5.2.10",
@@ -61,6 +63,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.0",
     "@tauri-apps/cli": "^2.9.1",
     "@types/canvas-confetti": "^1.9.0",
     "@types/node": "^24.9.1",
