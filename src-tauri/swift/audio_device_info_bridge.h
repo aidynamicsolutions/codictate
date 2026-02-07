@@ -18,6 +18,10 @@ int32_t is_audio_device_builtin(const char *device_name);
 /// Returns: 1 = Virtual, 0 = not Virtual, -1 = device not found or error
 int32_t is_audio_device_virtual(const char *device_name);
 
+/// Check if an audio device is a Continuity Camera (iPhone mic).
+/// Returns: 1 = Continuity Camera, 0 = not, -1 = device not found or error
+int32_t is_audio_device_continuity_camera(const char *device_name);
+
 /// Get the transport type of an audio device as a string (for debugging).
 /// Returns NULL if device not found. Caller must free with free_transport_type_string.
 char *get_audio_device_transport_type(const char *device_name);

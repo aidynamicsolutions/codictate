@@ -89,3 +89,13 @@ File: `sidecar/**/*.py`
 logger.info("Model loaded", extra={'session': session_id})
 logger.error(f"Inference failed: {e}")
 ```
+
+### Swift (Native macOS FFI)
+File: `src-tauri/swift/*.swift`
+
+**Do NOT add logging in Swift.** Swift code is compiled as a static library and called via FFI from Rust. Return codes (-1/0/1) communicate status; Rust wrappers log outcomes.
+
+If debugging Swift during development:
+1. Use Xcode debugger with breakpoints
+2. Temporarily add `print()` (remove before commit)
+3. Check Rust logs for function outcomes

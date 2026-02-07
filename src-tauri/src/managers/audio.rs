@@ -8,7 +8,7 @@ use crate::utils;
 use anyhow::Result;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Listener, Manager};
+use tauri::{Emitter, Manager};
 use tracing::{debug, error, info, warn};
 use tauri_plugin_notification::NotificationExt;
 
@@ -103,10 +103,6 @@ fn set_mute(mute: bool) {
 
 const WHISPER_SAMPLE_RATE: usize = 16000;
 
-/// Grace period after failover during which 0-sample detection is suppressed.
-/// This prevents false positives when the new device is still initializing.
-const FAILOVER_GRACE_PERIOD_SECS: u64 = 10;
-
 /* ──────────────────────────────────────────────────────────────── */
 
 #[derive(Clone, Debug)]
@@ -127,63 +123,19 @@ pub enum MicrophoneMode {
 fn create_audio_recorder(
     vad_path: &str,
     app_handle: &tauri::AppHandle,
-    zero_level_count: Arc<Mutex<u32>>,
-    failover_timestamp: Arc<Mutex<Option<Instant>>>,
-    current_device_name: Arc<Mutex<Option<String>>>,
 ) -> Result<AudioRecorder, anyhow::Error> {
     let silero = SileroVad::new(vad_path, 0.3)
         .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {}", e))?;
     let smoothed_vad = SmoothedVad::new(Box::new(silero), 15, 15, 2);
 
-    // Recorder with VAD plus a spectrum-level callback that forwards updates to
-    // the frontend and monitors for dead devices.
+    // Recorder with VAD plus a spectrum-level callback that forwards updates to the frontend.
     let recorder = AudioRecorder::new()
         .map_err(|e| anyhow::anyhow!("Failed to create AudioRecorder: {}", e))?
         .with_vad(Box::new(smoothed_vad))
         .with_level_callback({
             let app_handle = app_handle.clone();
-            let current_device_name = current_device_name.clone();
             move |levels| {
                 utils::emit_levels(&app_handle, &levels);
-                
-                // Dead device detection: check if all levels are zero
-                // Levels at ~30ms intervals, 50 readings = ~1.5s of sustained zeros
-                const ZERO_THRESHOLD: f32 = 0.001;
-                const DEAD_DEVICE_READINGS: u32 = 50;
-                
-                let all_zero = levels.iter().all(|&l| l < ZERO_THRESHOLD);
-                
-                let mut count = zero_level_count.lock().unwrap();
-                if all_zero {
-                    *count += 1;
-                    
-                    if *count >= DEAD_DEVICE_READINGS {
-                        // Check if we already triggered failover (timestamp is Some)
-                        let mut triggered = failover_timestamp.lock().unwrap();
-                        if triggered.is_none() {
-                            *triggered = Some(Instant::now());
-                            // Get the device name at the time of detection to include in event
-                            let dead_device_name = current_device_name.lock().unwrap().clone()
-                                .unwrap_or_else(|| "unknown".to_string());
-                            warn!("Dead device detected: {} consecutive zero-level readings on '{}'. Triggering failover.", *count, dead_device_name);
-                            let _ = app_handle.emit("audio-device-dead", serde_json::json!({
-                                "reason": "sustained_zero_levels",
-                                "count": *count,
-                                "device": dead_device_name
-                            }));
-                        }
-                    }
-                } else {
-                    // Reset counter if we get non-zero audio
-                    if *count > 0 {
-                        debug!("Audio signal detected, resetting zero-level counter");
-                        *count = 0;
-                        // NOTE: Do NOT reset failover_timestamp here!
-                        // The timestamp expires naturally after FAILOVER_GRACE_PERIOD_SECS.
-                        // Resetting it here was the bug - it removed protection before
-                        // the 0-sample check in stop_recording() could use it.
-                    }
-                }
             }
         });
 
@@ -210,13 +162,7 @@ pub struct AudioRecordingManager {
     /// Channel to stop the time tracking timer
     timer_stop_tx: Arc<Mutex<Option<mpsc::Sender<()>>>>,
     
-    /// Counter for consecutive zero-level readings (dead device detection)
-    zero_level_count: Arc<Mutex<u32>>,
-    /// Timestamp of last failover (for grace period protection against false 0-sample detection)
-    failover_timestamp: Arc<Mutex<Option<Instant>>>,
-    /// Blocklist of dead devices (prevents switching back to them)
-    blocked_devices: Arc<Mutex<std::collections::HashSet<String>>>,
-    /// The name of the device currently opened in the stream (for accurate failover)
+    /// The name of the device currently opened in the stream (for logging)
     current_device_name: Arc<Mutex<Option<String>>>,
 }
 
@@ -243,9 +189,6 @@ impl AudioRecordingManager {
             has_recorded_before: Arc::new(Mutex::new(false)),
             recording_start_time: Arc::new(Mutex::new(None)),
             timer_stop_tx: Arc::new(Mutex::new(None)),
-            zero_level_count: Arc::new(Mutex::new(0)),
-            failover_timestamp: Arc::new(Mutex::new(None)),
-            blocked_devices: Arc::new(Mutex::new(std::collections::HashSet::new())),
             current_device_name: Arc::new(Mutex::new(None)),
         };
 
@@ -254,133 +197,7 @@ impl AudioRecordingManager {
             manager.start_microphone_stream()?;
         }
 
-        // Setup dead device event listener
-        manager.setup_dead_device_listener();
-
         Ok(manager)
-    }
-    
-    /// Setup listener for dead device detection events.
-    /// When 'audio-device-dead' is emitted, this triggers immediate failover.
-    fn setup_dead_device_listener(&self) {
-        let manager = self.clone();
-        self.app_handle.listen("audio-device-dead", move |event| {
-            // Extract device name from event payload to verify this event is for current device
-            let event_device: Option<String> = serde_json::from_str::<serde_json::Value>(event.payload())
-                .ok()
-                .and_then(|v| v.get("device").and_then(|d| d.as_str().map(|s| s.to_string())));
-            
-            // Spawn a thread to handle failover (avoid blocking event loop)
-            let manager = manager.clone();
-            std::thread::spawn(move || {
-                // Get the CURRENT device name to compare with event
-                let current_device = manager.current_device_name.lock().unwrap().clone();
-                
-                // CRITICAL: Only process if event is for the current device.
-                // This prevents stale events from old device from triggering failover on new device.
-                if let Some(ref event_dev) = event_device {
-                    if let Some(ref curr_dev) = current_device {
-                        if event_dev != curr_dev {
-                            debug!("Ignoring stale audio-device-dead event: event for '{}' but current device is '{}'", event_dev, curr_dev);
-                            return;
-                        }
-                    }
-                }
-                
-                let failed_device_name = current_device.unwrap_or_else(|| "Default".to_string());
-                
-                info!("Received audio-device-dead event for '{}', triggering failover", failed_device_name);
-                
-                // Add the failed device to the blocklist to prevent switching back
-                {
-                    let mut blocked = manager.blocked_devices.lock().unwrap();
-                    if blocked.insert(failed_device_name.clone()) {
-                        info!("Added '{}' to dead device blocklist", failed_device_name);
-                    }
-                }
-                
-                // Enumerate devices and find fallback
-                if let Ok(devices) = list_input_devices() {
-                    if let Some((fallback_name, _fallback_device)) = 
-                        manager.find_fallback_device_from_list(&failed_device_name, devices) 
-                    {
-                        info!("Immediate failover: Switching from {} to {}", failed_device_name, fallback_name);
-                        
-                        // IMPORTANT: Remove the fallback device from blocklist if it was there
-                        // (from a previous failover session). This ensures it can be used.
-                        {
-                            let mut blocked = manager.blocked_devices.lock().unwrap();
-                            if blocked.remove(&fallback_name) {
-                                info!("Removed '{}' from blocklist (now active as fallback)", fallback_name);
-                            }
-                        }
-                        
-                        // CRITICAL: Update current_device_name BEFORE stopping old stream
-                        // This ensures any dead-device events that arrive during transition
-                        // are correctly identified as stale (for old device) and filtered out.
-                        *manager.current_device_name.lock().unwrap() = Some(fallback_name.clone());
-                        
-                        // Update settings with new device
-                        let mut settings = get_settings(&manager.app_handle);
-                        settings.selected_microphone = Some(fallback_name.clone());
-                        crate::settings::write_settings(&manager.app_handle, settings);
-                        
-                        // Stop and restart mic stream with new device
-                        manager.stop_microphone_stream();
-                        
-                        // CRITICAL: Set failover timestamp FIRST to give the 0-sample check a grace period,
-                        // then reset the counter. This prevents false positives during device transition.
-                        *manager.failover_timestamp.lock().unwrap() = Some(Instant::now());
-                        manager.reset_zero_level_counter_only();
-                        
-                        if let Err(e) = manager.start_microphone_stream() {
-                            error!("Failed to restart mic stream after failover: {}", e);
-                        }
-                        
-                        // Notify frontend and system AFTER settings are written
-                        info!("Emitting audio-device-auto-switched event: {} -> {}", failed_device_name, fallback_name);
-                        let _ = manager.app_handle.emit("audio-device-auto-switched", serde_json::json!({
-                            "previous": failed_device_name,
-                            "current": fallback_name
-                        }));
-                        
-                        let _ = manager.app_handle.notification().builder()
-                            .title("Microphone Changed")
-                            .body(&format!("Switched to {} because {} was unavailable.", fallback_name, failed_device_name))
-                            .show();
-                    } else {
-                        warn!("No fallback device found during immediate failover");
-                    }
-                }
-            });
-        });
-    }
-    
-    /* ---------- blocklist management --------------------------------------- */
-    
-    /// Get a copy of the blocked devices set.
-    pub fn get_blocked_devices(&self) -> std::collections::HashSet<String> {
-        self.blocked_devices.lock().unwrap().clone()
-    }
-    
-    /// Replace the blocked devices set.
-    pub fn set_blocked_devices(&self, devices: std::collections::HashSet<String>) {
-        *self.blocked_devices.lock().unwrap() = devices;
-    }
-    
-    /// Reset dead device detection counters (used when user explicitly re-selects a device).
-    pub fn reset_dead_device_counters(&self) {
-        *self.zero_level_count.lock().unwrap() = 0;
-        *self.failover_timestamp.lock().unwrap() = None;
-    }
-    
-    /// Reset ONLY the zero-level counter (used during failover).
-    /// IMPORTANT: This does NOT reset failover_timestamp, allowing the 0-sample check
-    /// to correctly identify that a failover just occurred and skip blocklist addition.
-    pub fn reset_zero_level_counter_only(&self) {
-        *self.zero_level_count.lock().unwrap() = 0;
-        // Note: Do NOT reset failover_timestamp here - it acts as a grace period
-        // to prevent false positives immediately after switching devices.
     }
 
     /* ---------- helper methods --------------------------------------------- */
@@ -409,16 +226,6 @@ impl AudioRecordingManager {
 
         // Logic for handling standard selection vs Default
         if let Some(name) = &settings.selected_microphone {
-            // Check if this device is in the blocklist (previously detected as dead)
-            let blocked = self.blocked_devices.lock().unwrap();
-            if blocked.contains(name) {
-                info!("Selected microphone '{}' is in blocklist (dead device). Finding fallback...", name);
-                drop(blocked);
-                // Find a non-blocked fallback
-                return self.find_fallback_device_from_list(name, devices).map(|(_, d)| d);
-            }
-            drop(blocked);
-            
             // User explicitly selected a microphone -> Use it strictly
             return devices
                 .into_iter()
@@ -455,17 +262,6 @@ impl AudioRecordingManager {
         devices.into_iter().find(|d| d.is_default).map(|d| d.device)
     }
     
-    /// Wrapper that fetches devices and calls get_effective_device_from_list.
-    /// Only used when device list hasn't been pre-fetched.
-    fn get_effective_microphone_device(&self, settings: &AppSettings) -> Option<cpal::Device> {
-        match list_input_devices() {
-            Ok(devices) => self.get_effective_device_from_list(settings, devices),
-            Err(e) => {
-                debug!("Failed to list devices: {}", e);
-                None
-            }
-        }
-    }
 
     /// Get the name of the currently effective microphone device.
     /// This considers clamshell mode overrides and falls back to the default device.
@@ -640,9 +436,6 @@ impl AudioRecordingManager {
         let recorder = Arc::clone(&self.recorder);
         let app_handle = self.app_handle.clone();
         let did_mute = Arc::clone(&self.did_mute);
-        let zero_level_count = Arc::clone(&self.zero_level_count);
-        let failover_timestamp = Arc::clone(&self.failover_timestamp);
-        let current_device_name = Arc::clone(&self.current_device_name);
         
         std::thread::spawn(move || {
             // Open the microphone stream to trigger Bluetooth profile switch
@@ -664,7 +457,7 @@ impl AudioRecordingManager {
             {
                 let mut recorder_guard = recorder.lock().unwrap();
                 if recorder_guard.is_none() {
-                    match create_audio_recorder(vad_path.to_str().unwrap(), &app_handle, zero_level_count.clone(), failover_timestamp.clone(), current_device_name.clone()) {
+                    match create_audio_recorder(vad_path.to_str().unwrap(), &app_handle) {
                         Ok(rec) => *recorder_guard = Some(rec),
                         Err(e) => {
                             debug!("Pre-warm failed to create recorder: {}", e);
@@ -755,7 +548,7 @@ impl AudioRecordingManager {
                 }
             };
             
-            match create_audio_recorder(vad_path.to_str().unwrap(), &self.app_handle, self.zero_level_count.clone(), self.failover_timestamp.clone(), self.current_device_name.clone()) {
+            match create_audio_recorder(vad_path.to_str().unwrap(), &self.app_handle) {
                 Ok(rec) => {
                     *recorder_opt = Some(rec);
                     debug!("Audio recorder warmed up successfully");
@@ -805,10 +598,6 @@ impl AudioRecordingManager {
 
         let start_time = Instant::now();
         info!("[TIMING] start_microphone_stream starting...");
-
-        // Reset zero-level counter (but NOT failover_timestamp) to prevent false positives
-        // from stale readings during device transitions
-        self.reset_zero_level_counter_only();
 
         // ══════════════════════════════════════════════════════════════════════
         // PHASE 2: Device enumeration OUTSIDE of locks (this is the slow part)
@@ -861,71 +650,58 @@ impl AudioRecordingManager {
             *recorder_opt = Some(create_audio_recorder(
                 vad_path.to_str().unwrap(),
                 &self.app_handle,
-                self.zero_level_count.clone(),
-                self.failover_timestamp.clone(),
-                self.current_device_name.clone(),
             )?);
         }
+        // Get the actual device to open - may differ from selected_device if fallback needed
+        let (device_to_open, active_device_name) = if selected_device.is_none() && settings.selected_microphone.is_some() {
+            // Selected device not found in device list - it's disconnected
+            // Trigger fallback BEFORE attempting to open
+            warn!("Selected device '{}' not found in available devices - triggering fallback", target_device_name);
+            
+            if let Some((fallback_name, fallback_device)) = 
+                self.find_fallback_device_from_list(&target_device_name, devices.clone()) 
+            {
+                info!("Switching to fallback device: {}", fallback_name);
+                
+                // Update settings to persist the fallback choice
+                let mut settings = get_settings(&self.app_handle);
+                settings.selected_microphone = Some(fallback_name.clone());
+                crate::settings::write_settings(&self.app_handle, settings);
+                
+                // Notify frontend and system
+                info!("Emitting audio-device-auto-switched event: {} -> {}", target_device_name, fallback_name);
+                let _ = self.app_handle.emit("audio-device-auto-switched", serde_json::json!({
+                    "previous": target_device_name,
+                    "current": fallback_name
+                }));
+                
+                let _ = self.app_handle.notification().builder()
+                    .title("Microphone Changed")
+                    .body(&format!("Switched to {} - {} is disconnected.", fallback_name, target_device_name))
+                    .show();
+                
+                (Some(fallback_device), fallback_name)
+            } else {
+                // No fallback found - will try default device
+                warn!("No fallback device found, attempting to use system default");
+                (None, "Default".to_string())
+            }
+        } else {
+            // Device exists or using default - proceed normally
+            (selected_device.clone(), target_device_name.clone())
+        };
 
         if let Some(rec) = recorder_opt.as_mut() {
-            // First attempt to open with the selected device
-            if let Err(e) = rec.open(selected_device.clone()) {
-                error!("Failed to open recorder (attempt 1): {}", e);
+            // First attempt to open with the target device (already resolved via fallback if needed)
+            if let Err(e) = rec.open(device_to_open.clone()) {
+                error!("Failed to open recorder: {}", e);
                 
-                // ══════════════════════════════════════════════════════════════
-                // FAILOVER: Use pre-fetched device list to find fallback
-                // (No new list_input_devices call - use the devices we already have)
-                // ══════════════════════════════════════════════════════════════
-                if let Some((fallback_name, fallback_device)) = 
-                    self.find_fallback_device_from_list(&target_device_name, devices) 
-                {
-                    info!("Retrying with fallback device: {}", fallback_name);
-                    
-                    // IMPORTANT: Remove the fallback device from blocklist if it was there
-                    // (from a previous failover session). This ensures it can be used.
-                    {
-                        let mut blocked = self.blocked_devices.lock().unwrap();
-                        if blocked.remove(&fallback_name) {
-                            info!("Removed '{}' from blocklist (now active as fallback)", fallback_name);
-                        }
-                    }
-                    
-                    // Update settings to persist the fallback choice
-                    let mut settings = get_settings(&self.app_handle);
-                    settings.selected_microphone = Some(fallback_name.clone());
-                    crate::settings::write_settings(&self.app_handle, settings);
-                    
-                    // Notify frontend and system AFTER settings are written
-                    info!("Emitting audio-device-auto-switched event: {} -> {}", target_device_name, fallback_name);
-                    let _ = self.app_handle.emit("audio-device-auto-switched", serde_json::json!({
-                        "previous": target_device_name,
-                        "current": fallback_name
-                    }));
-                    
-                    let _ = self.app_handle.notification().builder()
-                        .title("Microphone Changed")
-                        .body(&format!("Switched to {} due to connection error.", fallback_name))
-                        .show();
-                    
-                    // Retry open with fallback
-                    rec.reset_cache();
-                    rec.open(Some(fallback_device))
-                        .map_err(|e| anyhow::anyhow!("Failed to open fallback recorder: {}", e))?;
-                    
-                    // CRITICAL: Reset dead device counters after successful fallback
-                    // to prevent false positives from stale zero-level readings
-                    *self.zero_level_count.lock().unwrap() = 0;
-                    *self.failover_timestamp.lock().unwrap() = None;
-                    
-                    // Track the fallback device as current
-                    *self.current_device_name.lock().unwrap() = Some(fallback_name);
-                } else {
-                    // No fallback found, propagate original error
-                    return Err(anyhow::anyhow!("Failed to open recorder and no fallback found: {}", e));
-                }
+                // If we already did a fallback above, there's no more fallback to try
+                // Just fail with an error
+                return Err(anyhow::anyhow!("Failed to open microphone: {}", e));
             } else {
-                // Successfully opened with target device - track it
-                *self.current_device_name.lock().unwrap() = Some(target_device_name.clone());
+                // Successfully opened - track the active device
+                *self.current_device_name.lock().unwrap() = Some(active_device_name.clone());
             }
         }
 
@@ -948,9 +724,6 @@ impl AudioRecordingManager {
     ) -> Option<(String, cpal::Device)> {
         info!("[TIMING] Finding fallback device (using pre-fetched list, no new enumeration)");
         
-        // Get blocked devices for filtering
-        let blocked = self.blocked_devices.lock().unwrap();
-        
         // Filter candidates
         let mut candidates: Vec<_> = devices
             .into_iter()
@@ -960,22 +733,20 @@ impl AudioRecordingManager {
                     return false;
                 }
                 
-                // Exclude blocked devices (previously detected as dead)
-                if blocked.contains(&d.name) {
-                    debug!("Excluding '{}' from fallback candidates (in blocklist)", d.name);
+                // Exclude virtual/phantom devices
+                if crate::audio_device_info::is_device_virtual(&d.name) {
                     return false;
                 }
                 
-                // Exclude virtual/phantom devices
-                if crate::audio_device_info::is_device_virtual(&d.name) {
+                // Exclude Continuity Camera (iPhone) microphones - unreliable
+                if crate::audio_device_info::is_device_continuity_camera(&d.name) {
+                    debug!("Excluding '{}' from fallback candidates (Continuity Camera)", d.name);
                     return false;
                 }
                 
                 true
             })
             .collect();
-        
-        drop(blocked);
 
         // Sort by priority: Built-in first, then Wired, then Bluetooth
         candidates.sort_by(|a, b| {
@@ -1311,76 +1082,9 @@ impl AudioRecordingManager {
                 // debug!("Got {} samples", s_len);
                 
                 // Check for 0 samples - this likely means the audio stream died (e.g. device disconnected)
-                // Trigger failover to a working device
+                // User will see no audio movement in the visualizer and can switch manually
                 if s_len == 0 {
-                    warn!("Recording yielded 0 samples - device may have disconnected. Triggering failover...");
-                    
-                    // Check if a failover just happened - if so, this is likely a false positive
-                    // (the stream returned 0 samples during the mic switch transition)
-                    let in_grace_period = self.failover_timestamp.lock().unwrap()
-                        .map(|t| t.elapsed().as_secs() < FAILOVER_GRACE_PERIOD_SECS)
-                        .unwrap_or(false);
-                    if in_grace_period {
-                        warn!("Skipping blocklist addition - within {}s grace period after failover", FAILOVER_GRACE_PERIOD_SECS);
-                        // Don't add to blocklist, just force restart
-                        self.stop_microphone_stream();
-                    } else {
-                        // Get current device name to exclude from fallback search
-                        let settings = get_settings(&self.app_handle);
-                        let failed_device_name = settings.selected_microphone.clone()
-                            .unwrap_or_else(|| "Default".to_string());
-                        
-                        // Add to blocklist to prevent switching back
-                        {
-                            let mut blocked = self.blocked_devices.lock().unwrap();
-                            if blocked.insert(failed_device_name.clone()) {
-                                info!("Added '{}' to dead device blocklist", failed_device_name);
-                            }
-                        }
-                        
-                        // Enumerate devices and find fallback (outside any locks at this point)
-                        if let Ok(devices) = list_input_devices() {
-                            if let Some((fallback_name, _fallback_device)) = 
-                                self.find_fallback_device_from_list(&failed_device_name, devices) 
-                            {
-                                info!("Switching to fallback device after 0-sample recording: {}", fallback_name);
-                                
-                                // IMPORTANT: Remove the fallback device from blocklist if it was there
-                                {
-                                    let mut blocked = self.blocked_devices.lock().unwrap();
-                                    if blocked.remove(&fallback_name) {
-                                        info!("Removed '{}' from blocklist (now active as fallback)", fallback_name);
-                                    }
-                                }
-                                
-                                // Update settings to use the fallback device
-                                let mut settings = get_settings(&self.app_handle);
-                                settings.selected_microphone = Some(fallback_name.clone());
-                                crate::settings::write_settings(&self.app_handle, settings);
-                                
-                                // Notify frontend and system AFTER settings are written
-                                info!("Emitting audio-device-auto-switched event: {} -> {}", failed_device_name, fallback_name);
-                                let _ = self.app_handle.emit("audio-device-auto-switched", serde_json::json!({
-                                    "previous": failed_device_name,
-                                    "current": fallback_name
-                                }));
-                                
-                                let _ = self.app_handle.notification().builder()
-                                    .title("Microphone Changed")
-                                    .body(&format!("Switched to {} because {} was unavailable.", fallback_name, failed_device_name))
-                                    .show();
-                            } else {
-                                warn!("No fallback device found, will retry with same device");
-                            }
-                        }
-                        
-                        // CRITICAL: Reset dead device counters after successful fallback
-                        // to prevent false positives from stale zero-level readings on next recording
-                        self.reset_dead_device_counters();
-                        
-                        // Force restart - next recording will use the new device
-                        self.stop_microphone_stream();
-                    }
+                    warn!("Recording yielded 0 samples - device may have stopped working. User should check audio visualizer and switch microphone if needed.");
                 }
 
                 if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
@@ -1408,93 +1112,6 @@ impl AudioRecordingManager {
             RecordingState::Preparing { binding_id, .. } => Some(binding_id.clone()),
             RecordingState::Idle => None,
         }
-    }
-
-    /* ---------- failover logic --------------------------------------------- */
-
-    /// Attempts to switch to a fallback microphone, excluding the current failed device.
-    /// Returns the new device name if successful.
-    fn switch_to_fallback_mic(&self, failed_device_name: &str) -> Option<String> {
-        info!("Attempting to switch to fallback microphone (failed: {})", failed_device_name);
-
-        let devices = match crate::audio_toolkit::audio::list_input_devices() {
-            Ok(d) => d,
-            Err(e) => {
-                error!("Failed to list devices for fallback: {}", e);
-                return None;
-            }
-        };
-
-        // Filter candidates
-        let mut candidates: Vec<_> = devices
-            .into_iter()
-            .filter(|d| {
-                // Exclude the failed device
-                if d.name == failed_device_name {
-                    return false;
-                }
-                
-                // Exclude virtual/phantom devices (unless we are desperate, but user said never virtual)
-                if crate::audio_device_info::is_device_virtual(&d.name) {
-                    return false;
-                }
-                
-                true
-            })
-            .collect();
-
-        // Sort by priority:
-        // 1. Built-in
-        // 2. Wired (not bluetooth)
-        // 3. Bluetooth (last resort)
-        candidates.sort_by(|a, b| {
-            let a_builtin = crate::audio_device_info::is_device_builtin(&a.name);
-            let b_builtin = crate::audio_device_info::is_device_builtin(&b.name);
-            
-            if a_builtin && !b_builtin {
-                return std::cmp::Ordering::Less; // a comes first
-            }
-            if !a_builtin && b_builtin {
-                return std::cmp::Ordering::Greater;
-            }
-            
-            let a_bt = crate::audio_device_info::is_device_bluetooth(&a.name);
-            let b_bt = crate::audio_device_info::is_device_bluetooth(&b.name);
-            
-            if !a_bt && b_bt {
-                return std::cmp::Ordering::Less; // non-bt comes first
-            }
-            if a_bt && !b_bt {
-                return std::cmp::Ordering::Greater;
-            }
-            
-            std::cmp::Ordering::Equal
-        });
-
-        if let Some(best) = candidates.first() {
-            info!("Found fallback device: {}", best.name);
-            
-            // Update settings
-            let mut settings = get_settings(&self.app_handle);
-            settings.selected_microphone = Some(best.name.clone());
-            crate::settings::write_settings(&self.app_handle, settings);
-            
-            // Notify frontend and system
-            let _ = self.app_handle.emit("audio-device-auto-switched", serde_json::json!({
-                "previous": failed_device_name,
-                "current": best.name
-            }));
-            
-            let _ = self.app_handle.notification().builder()
-                .title("Microphone Changed")
-                .body(&format!("Switched to {} due to connection error.", best.name))
-                .show();
-
-            return Some(best.name.clone());
-        }
-
-        warn!("No suitable fallback microphone found");
-        None
     }
 
     /// Get the current session ID if recording is active

@@ -14,6 +14,7 @@ mod ffi {
         pub fn is_audio_device_bluetooth(device_name: *const c_char) -> c_int;
         pub fn is_audio_device_builtin(device_name: *const c_char) -> c_int;
         pub fn is_audio_device_virtual(device_name: *const c_char) -> c_int;
+        pub fn is_audio_device_continuity_camera(device_name: *const c_char) -> c_int;
     }
 
     /// Check if a device is Bluetooth using CoreAudio on macOS.
@@ -52,7 +53,17 @@ mod ffi {
         }
     }
 
-
+    /// Check if a device is a Continuity Camera (iPhone mic) using CoreAudio on macOS.
+    /// Returns Some(true) if Continuity Camera, Some(false) if not, None if device not found.
+    pub fn check_continuity_camera(device_name: &str) -> Option<bool> {
+        let c_name = CString::new(device_name).ok()?;
+        let result = unsafe { is_audio_device_continuity_camera(c_name.as_ptr()) };
+        match result {
+            1 => Some(true),
+            0 => Some(false),
+            _ => None,
+        }
+    }
 }
 
 /// Common Bluetooth device name patterns for fallback detection.
@@ -186,6 +197,32 @@ pub fn is_device_virtual(device_name: &str) -> bool {
     {
         match ffi::check_virtual(device_name) {
             Some(is_virt) => return is_virt,
+            None => return false,
+        }
+    }
+    
+    #[cfg(not(target_os = "macos"))]
+    false
+}
+
+/// Check if an audio device is a Continuity Camera (iPhone microphone).
+///
+/// On macOS, this uses CoreAudio's transport type property to detect
+/// `kAudioDeviceTransportTypeContinuityCaptureWired` and `*Wireless`.
+/// Continuity Camera microphones are unreliable for speech-to-text.
+pub fn is_device_continuity_camera(device_name: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        match ffi::check_continuity_camera(device_name) {
+            Some(is_cc) => {
+                if is_cc {
+                    debug!(
+                        device = device_name,
+                        "Device is a Continuity Camera (iPhone) microphone - excluding from list"
+                    );
+                }
+                return is_cc;
+            }
             None => return false,
         }
     }

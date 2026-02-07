@@ -91,7 +91,15 @@ pub async fn get_available_microphones(app: AppHandle) -> Result<Vec<AudioDevice
         
         let is_virtual = crate::audio_device_info::is_device_virtual(&d.name);
         
+        // Filter out virtual devices (unless currently selected)
         if is_virtual && d.name != selected {
+            return None;
+        }
+        
+        // Filter out Continuity Camera (iPhone) mics - unreliable for speech-to-text
+        // Always filter these even if selected, since they shouldn't be used
+        if crate::audio_device_info::is_device_continuity_camera(&d.name) {
+            tracing::debug!("Filtering Continuity Camera device from UI: {}", d.name);
             return None;
         }
 
@@ -111,26 +119,6 @@ pub async fn get_available_microphones(app: AppHandle) -> Result<Vec<AudioDevice
 pub fn set_selected_microphone(app: AppHandle, device_name: String) -> Result<(), String> {
     let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
     
-    // When user explicitly selects a device, clear the ENTIRE blocklist.
-    // This prevents stale blocklist entries from accumulating across sessions
-    // and blocking valid fallback devices like MacBook Pro.
-    let was_blocked = {
-        let blocked = rm.get_blocked_devices();
-        let was_in_blocklist = blocked.contains(&device_name);
-        
-        if !blocked.is_empty() {
-            tracing::info!(
-                "User explicitly selected device '{}'. Clearing entire blocklist ({:?}) for fresh start.",
-                device_name, blocked
-            );
-            rm.set_blocked_devices(std::collections::HashSet::new());
-        }
-        // Reset detection counters for fresh start
-        rm.reset_dead_device_counters();
-        
-        was_in_blocklist
-    };
-    
     let mut settings = get_settings(&app);
     settings.selected_microphone = if device_name == "default" {
         None
@@ -145,11 +133,6 @@ pub fn set_selected_microphone(app: AppHandle, device_name: String) -> Result<()
     tauri::async_runtime::spawn(async move {
         if let Err(e) = rm.update_selected_device() {
             tracing::error!("Failed to update selected device (background task): {}", e);
-        }
-        
-        // If device was previously blocked, log that we're re-testing
-        if was_blocked {
-            tracing::info!("Re-testing previously blocked device '{}' per user request", device_name);
         }
     });
 
