@@ -1,6 +1,6 @@
 import React, { Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Sparkles, Home, Sliders, Book } from "lucide-react";
+import { Cog, FlaskConical, History, Sparkles, Home, Sliders, Book, Cpu } from "lucide-react";
 import CodictateLogo from "./icons/CodictateLogo";
 import { useSettings } from "../hooks/useSettings";
 import HomeContent from "./home/Home";
@@ -24,6 +24,7 @@ import {
   HistorySettings,
   DebugSettings,
   PostProcessingSettings,
+  ModelsSettings,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -62,6 +63,13 @@ export const SECTIONS_CONFIG = {
     component: DictionaryPage,
     enabled: () => true,
   },
+  models: {
+    labelKey: "sidebar.models",
+    icon: Cpu,
+    component: ModelsSettings,
+    enabled: () => true,
+  },
+
   postprocessing: {
     labelKey: "sidebar.postProcessing",
     icon: Sparkles,
