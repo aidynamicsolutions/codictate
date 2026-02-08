@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { commands } from "@/bindings";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingsRow } from "../ui/SettingsRow";
-import { ResetButton } from "../ui/ResetButton";
+import { Button } from "@/components/shared/ui/button";
 import { useSettings } from "../../hooks/useSettings";
 import {
   Tooltip,
@@ -11,7 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/shared/ui/tooltip";
-import { InfoIcon } from "lucide-react";
+import { InfoIcon, RotateCcw } from "lucide-react";
 
 interface ClamshellMicrophoneSelectorProps {
   descriptionMode?: "inline" | "tooltip";
@@ -114,10 +114,16 @@ export const ClamshellMicrophoneSelector: React.FC<ClamshellMicrophoneSelectorPr
             }
             onRefresh={refreshAudioDevices}
           />
-          <ResetButton
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={handleReset}
             disabled={isUpdating("clamshell_microphone") || isLoading}
-          />
+            title={t("common.reset")}
+            className="h-8 w-8"
+          >
+            <RotateCcw className="h-4 w-4" />
+          </Button>
         </div>
       </SettingsRow>
     );

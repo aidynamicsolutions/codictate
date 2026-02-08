@@ -142,3 +142,17 @@ pub async fn cancel_download(
         .cancel_download(&model_id)
         .map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+#[specta::specta]
+pub async fn get_recommended_first_model(
+    model_manager: State<'_, Arc<ModelManager>>,
+) -> Result<String, String> {
+    let models = model_manager.get_available_models();
+    // Prioritize recommended models
+    if let Some(model) = models.iter().find(|m| m.is_recommended) {
+        return Ok(model.id.clone());
+    }
+    // Fallback to "small" usually
+    Ok("small".to_string())
+}

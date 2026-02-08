@@ -8,10 +8,9 @@ import {
   Dropdown,
   SettingContainer,
   SettingsGroup,
-  Textarea,
 } from "@/components/ui";
+import { Textarea } from "@/components/shared/ui/textarea";
 import { Button } from "@/components/shared/ui/button";
-import { ResetButton } from "../../ui/ResetButton";
 import { Input } from "@/components/shared/ui/input";
 
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
@@ -133,16 +132,18 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
               onBlur={() => {}}
               className="flex-1 min-w-[380px]"
             />
-            <ResetButton
+            <Button
               onClick={state.handleRefreshModels}
               disabled={state.isFetchingModels}
-              ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
-              className="flex h-10 w-10 items-center justify-center"
+              title={t("settings.postProcessing.api.model.refreshModels")}
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10"
             >
               <RefreshCcw
                 className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
               />
-            </ResetButton>
+            </Button>
           </div>
         </SettingContainer>
       )}
@@ -453,3 +454,4 @@ export const PostProcessingSettings: React.FC = () => {
     </div>
   );
 };
+

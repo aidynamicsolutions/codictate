@@ -15,8 +15,8 @@ import {
   getTranslatedModelName,
 } from "../../lib/utils/modelTranslation";
 import { LANGUAGES } from "../../lib/constants/languages";
-import Badge from "../ui/Badge";
-import { Button } from "../ui/Button";
+import { Badge } from "@/components/shared/ui/badge";
+import { Button } from "@/components/shared/ui/button";
 
 // Get display text for model's language support
 const getLanguageDisplayText = (
@@ -138,10 +138,10 @@ const ModelCard: React.FC<ModelCardProps> = ({
               {displayName}
             </h3>
             {showRecommended && model.is_recommended && (
-              <Badge variant="primary">{t("onboarding.recommended")}</Badge>
+              <Badge variant="default">{t("onboarding.recommended")}</Badge>
             )}
             {status === "active" && (
-              <Badge variant="primary">
+              <Badge variant="default">
                 <Check className="w-3 h-3 mr-1" />
                 {t("modelSelector.active")}
               </Badge>
@@ -217,11 +217,11 @@ const ModelCard: React.FC<ModelCardProps> = ({
         )}
         {onDelete && (status === "available" || status === "active") && (
           <Button
-            variant="danger-ghost"
+            variant="ghost"
             size="sm"
             onClick={handleDelete}
             title={t("modelSelector.deleteModel", { modelName: displayName })}
-            className="flex items-center gap-1.5 ml-auto"
+            className="flex items-center gap-1.5 ml-auto text-destructive hover:text-destructive hover:bg-destructive/10"
           >
             <Trash2 className="w-3.5 h-3.5" />
             <span>{t("common.delete")}</span>
@@ -254,7 +254,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
               )}
               {onCancel && (
                 <Button
-                  variant="danger-ghost"
+                  variant="ghost"
                   size="sm"
                   onClick={(e) => {
                     e.preventDefault();
@@ -262,6 +262,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
                     onCancel(model.id);
                   }}
                   aria-label={t("modelSelector.cancelDownload")}
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
                 >
                   {t("modelSelector.cancel")}
                 </Button>

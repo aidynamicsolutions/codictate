@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { commands } from "@/bindings";
 import { SettingContainer } from "../../ui/SettingContainer";
-import { PathDisplay } from "../../ui/PathDisplay";
+import { Button } from "@/components/shared/ui/button";
 
 interface LogDirectoryProps {
   descriptionMode?: "tooltip" | "inline";
@@ -67,7 +67,20 @@ export const LogDirectory: React.FC<LogDirectoryProps> = ({
           {t("errors.loadDirectory", { error })}
         </div>
       ) : (
-        <PathDisplay path={logDir} onOpen={handleOpen} disabled={!logDir} />
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0 px-2 py-2 bg-mid-gray/10 border border-mid-gray/80 rounded-lg text-xs font-mono break-all select-text cursor-text">
+            {logDir}
+          </div>
+          <Button
+            onClick={handleOpen}
+            variant="secondary"
+            size="sm"
+            disabled={!logDir}
+            className="px-3 py-2"
+          >
+            {t("common.open")}
+          </Button>
+        </div>
       )}
     </SettingContainer>
   );
