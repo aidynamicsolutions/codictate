@@ -1,9 +1,10 @@
-use tracing::info;
+use tracing::{info, debug};
 use rphonetic::{DoubleMetaphone, Encoder};
 use strsim::{damerau_levenshtein, jaro_winkler};
 use unicode_segmentation::UnicodeSegmentation;
 use once_cell::sync::Lazy;
 use regex::Regex;
+use crate::settings::CustomWordEntry;
 
 /// Threshold for using Jaro-Winkler vs Damerau-Levenshtein
 /// Jaro-Winkler is better for short strings due to prefix emphasis
@@ -45,33 +46,38 @@ impl PhoneticCodes {
     }
 }
 
-/// Represents a custom word that may be a multi-word phrase
+/// Represents a custom word entry prepared for matching
 #[derive(Debug, Clone)]
 struct CustomPhrase {
-    /// Original form as provided by user
-    original: String,
-    /// Phonetic codes of concatenated form (for "chat gpt" → "chatgpt")
+    entry: CustomWordEntry,
+    /// Phonetic codes of concatenated input (for fuzzy matching)
     phonetic: PhoneticCodes,
-    /// Concatenated lowercase form for matching
-    concatenated: String,
+    /// Concatenated lowercase input for matching
+    concatenated_input: String,
 }
 
 impl CustomPhrase {
-    fn new(original: &str, encoder: &DoubleMetaphone) -> Self {
-        let normalized = original.to_lowercase();
+    fn new(entry: CustomWordEntry, encoder: &DoubleMetaphone) -> Self {
+        // Use input for matching. If input is empty (shouldn't happen ideally), fallback to replacement
+        let match_text = if entry.input.trim().is_empty() {
+            &entry.replacement
+        } else {
+            &entry.input
+        };
+
+        let normalized = match_text.to_lowercase();
         // Remove spaces and non-alphanumeric characters for "concatenated" form
-        // This MUST match how we process n-grams in build_ngram
-        let concatenated: String = normalized
+        let concatenated_input: String = normalized
             .chars()
             .filter(|c| c.is_alphanumeric())
             .collect();
             
-        let phonetic = PhoneticCodes::new(encoder, &concatenated);
+        let phonetic = PhoneticCodes::new(encoder, &concatenated_input);
 
         Self {
-            original: original.to_string(),
+            entry,
             phonetic,
-            concatenated,
+            concatenated_input,
         }
     }
 }
@@ -91,12 +97,12 @@ fn build_ngram(words: &[&str]) -> String {
         .concat()
 }
 
-/// Applies custom word corrections to transcribed text using fuzzy matching
+/// Applies custom word corrections to transcribed text using fuzzy or strict matching
 /// 
 /// "Best of Both Worlds" Implementation:
 /// - Uses N-gram sliding window (from main) to catch split phrases ("Chat G P T" -> "ChatGPT")
 /// - Uses Double Metaphone + Jaro-Winkler/Levenshtein (from llm) for superior accuracy
-pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -> String {
+pub fn apply_custom_words(text: &str, custom_words: &[CustomWordEntry], threshold: f64) -> String {
     if custom_words.is_empty() {
         return text.to_string();
     }
@@ -112,7 +118,7 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
     let double_metaphone = DoubleMetaphone::default();
     let phrases: Vec<CustomPhrase> = custom_words
         .iter()
-        .map(|w| CustomPhrase::new(w, &double_metaphone))
+        .map(|w| CustomPhrase::new(w.clone(), &double_metaphone))
         .collect();
 
     let words: Vec<&str> = text.split_whitespace().collect();
@@ -127,8 +133,6 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
         let mut matched = false;
 
         // Try n-grams from longest (3) to shortest (1) - greedy matching
-        // This allows capturing "Chat G P T" (4 words? max 3? main uses 3)
-        // Main used 1..=3. let's stick to that.
         for n in (1..=3).rev() {
             if i + n > words.len() {
                 continue;
@@ -141,31 +145,47 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
                 continue;
             }
 
+            debug!("[CustomWords] Checking n-gram: '{}' (n={})", ngram_words.join(" "), n);
+
             let mut best_match: Option<&CustomPhrase> = None;
             let mut best_score = f64::MAX;
 
             // Check against all custom phrases
             for phrase in &phrases {
                 // 1. Exact match check
-                if ngram_text == phrase.concatenated {
+                // For is_replacement=true: case-insensitive (btw, Btw, BTW all match)
+                // For vocabulary entries: case-sensitive exact match
+                let is_exact_match = if phrase.entry.is_replacement {
+                    ngram_text.eq_ignore_ascii_case(&phrase.concatenated_input)
+                } else {
+                    ngram_text == phrase.concatenated_input
+                };
+                
+                if is_exact_match {
                     // Exact match is perfect
                     best_match = Some(phrase);
                     best_score = 0.0;
                     break; // Can't beat exact match
                 }
 
-                // 2. Fuzzy match checks (single words only)
-                
-                // Industry best practice: Double Metaphone and fuzzy matching are designed
-                // for single words, not concatenated phrases. For multi-word n-grams,
-                // only exact matches are allowed to prevent false positives like
-                // "use chat gpt" incorrectly matching "ChatGPT".
-                if n > 1 {
+                // 2. Fuzzy match checks (Skip if is_replacement is TRUE - exact only)
+                if phrase.entry.is_replacement {
+                    debug!("[CustomWords] Skipping fuzzy: is_replacement=true for '{}'", phrase.entry.input);
+                    continue;
+                }
+
+                // Allow fuzzy matching for multi-word n-grams ONLY if the entry itself
+                // is also multi-word (and word counts match). This prevents single-word
+                // entries like "ChatGPT" from incorrectly matching multi-word phrases
+                // like "use chat gpt", while allowing corrections like "super wisper".
+                let entry_word_count = phrase.entry.input.split_whitespace().count();
+                if n != entry_word_count {
+                    debug!("[CustomWords] Skipping fuzzy: word count {} != {}", n, entry_word_count);
                     continue;
                 }
                 
                 // Skip if lengths are too different (optimization + prevents over-matching)
-                let len_diff = (ngram_text.len() as i32 - phrase.concatenated.len() as i32).abs();
+                let len_diff = (ngram_text.len() as i32 - phrase.concatenated_input.len() as i32).abs();
                 if len_diff > 5 {
                      continue;
                 }
@@ -174,7 +194,7 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
                 // Use Jaro-Winkler for short strings (better for names/prefixes)
                 // Use Damerau-Levenshtein for longer strings (better for transpositions)
                 let len1 = ngram_text.len();
-                let len2 = phrase.concatenated.len();
+                let len2 = phrase.concatenated_input.len();
                 let lengths_similar = len1.min(len2) * 2 >= len1.max(len2);
                 let use_jaro = len1 <= SHORT_WORD_THRESHOLD
                     && len2 <= SHORT_WORD_THRESHOLD
@@ -182,7 +202,7 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
 
                 let base_score = if use_jaro {
                     // Jaro-Winkler returns 0.0-1.0 similarity, convert to distance
-                    let jw_distance = 1.0 - jaro_winkler(&ngram_text, &phrase.concatenated);
+                    let jw_distance = 1.0 - jaro_winkler(&ngram_text, &phrase.concatenated_input);
                     // Only accept if very similar
                     if jw_distance > 0.2 {
                         1.0 // Reject
@@ -191,7 +211,7 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
                     }
                 } else {
                     // Damerau-Levenshtein normalized by length
-                    let damerau_dist = damerau_levenshtein(&ngram_text, &phrase.concatenated);
+                    let damerau_dist = damerau_levenshtein(&ngram_text, &phrase.concatenated_input);
                     let max_len = len1.max(len2) as f64;
                     if max_len > 0.0 {
                         damerau_dist as f64 / max_len
@@ -211,6 +231,11 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
                     base_score
                 };
 
+                debug!(
+                    "[CustomWords] Score for '{}' vs '{}': base={:.3}, phonetic={}, combined={:.3}",
+                    ngram_text, phrase.entry.input, base_score, phonetic_match, combined_score
+                );
+
                 if combined_score < threshold && combined_score < best_score {
                     best_match = Some(phrase);
                     best_score = combined_score;
@@ -222,14 +247,42 @@ pub fn apply_custom_words(text: &str, custom_words: &[String], threshold: f64) -
                 let (prefix, _) = extract_punctuation(ngram_words[0]);
                 let (_, suffix) = extract_punctuation(ngram_words[n - 1]);
 
-                // Preserve case from first word
-                let corrected = preserve_case_pattern(ngram_words[0], &phrase.original);
+                // Determine replacement text
+                // If is_replacement=true: Use exact replacement (e.g. "btw" -> "by the way")
+                // If is_replacement=false (vocabulary/fuzzy): preserve case pattern from input
+                
+                let corrected = if phrase.entry.is_replacement {
+                    // Replacement mode: Adapt case based on input pattern
+                    // btw → by the way, Btw → By the way, BTW → BY THE WAY
+                    let input_combined: String = ngram_words.join("");
+                    let first_char = input_combined.chars().next();
+                    let is_all_upper = input_combined.chars().all(|c| !c.is_alphabetic() || c.is_uppercase());
+                    let is_title_case = first_char.map_or(false, |c| c.is_uppercase()) && !is_all_upper;
+                    
+                    if is_all_upper && input_combined.chars().any(|c| c.is_alphabetic()) {
+                        // ALL CAPS input → ALL CAPS output
+                        phrase.entry.replacement.to_uppercase()
+                    } else if is_title_case {
+                        // Title Case input → Capitalize first letter of output
+                        let mut chars: Vec<char> = phrase.entry.replacement.chars().collect();
+                        if let Some(first_char) = chars.get_mut(0) {
+                            *first_char = first_char.to_uppercase().next().unwrap_or(*first_char);
+                        }
+                        chars.into_iter().collect()
+                    } else {
+                        // lowercase input → use replacement as-is
+                        phrase.entry.replacement.clone()
+                    }
+                } else {
+                    // Vocabulary/Fuzzy mode: preserve case pattern from input
+                    preserve_case_pattern(ngram_words[0], &phrase.entry.replacement)
+                };
 
                 info!(
                     "[CustomWords] Matched {} word(s): '{}' -> '{}' (score={:.3})",
                     n,
                     ngram_words.join(" "),
-                    phrase.original,
+                    phrase.entry.replacement,
                     best_score
                 );
 
@@ -390,10 +443,31 @@ pub fn count_words(text: &str) -> usize {
 mod tests {
     use super::*;
 
+    /// Vocabulary entry: fuzzy matching enabled (is_replacement=false)
+    fn vocabulary(input: &str, replacement: &str) -> CustomWordEntry {
+        CustomWordEntry {
+            input: input.to_string(),
+            replacement: replacement.to_string(),
+            is_replacement: false, // Fuzzy matching enabled
+        }
+    }
+
+    /// Exact replacement entry: exact match only (is_replacement=true)
+    fn exact_replacement(input: &str, replacement: &str) -> CustomWordEntry {
+        CustomWordEntry {
+            input: input.to_string(),
+            replacement: replacement.to_string(),
+            is_replacement: true, // Exact match only
+        }
+    }
+
     #[test]
     fn test_apply_custom_words_exact_match() {
         let text = "hello world";
-        let custom_words = vec!["Hello".to_string(), "World".to_string()];
+        let custom_words = vec![
+            vocabulary("Hello", "Hello"),
+            vocabulary("World", "World"),
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert_eq!(result, "Hello World");
     }
@@ -401,9 +475,66 @@ mod tests {
     #[test]
     fn test_apply_custom_words_fuzzy_match() {
         let text = "helo wrold";
-        let custom_words = vec!["hello".to_string(), "world".to_string()];
+        let custom_words = vec![
+            vocabulary("hello", "hello"),
+            vocabulary("world", "world"),
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert_eq!(result, "hello world");
+    }
+
+    #[test]
+    fn test_strict_replacement() {
+        let text = "btw I am busy";
+        let custom_words = vec![
+            exact_replacement("btw", "by the way"),
+        ];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "by the way I am busy");
+    }
+
+    #[test]
+    fn test_strict_replacement_case_handling() {
+        // "Btw" -> "By the way" (Title Case)
+        let text = "Btw I am busy";
+        let custom_words = vec![
+            exact_replacement("btw", "by the way"),
+        ];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "By the way I am busy");
+    }
+
+    #[test]
+    fn test_strict_replacement_all_caps() {
+        // "BTW" -> "BY THE WAY" (ALL CAPS)
+        let text = "BTW I am busy";
+        let custom_words = vec![
+            exact_replacement("btw", "by the way"),
+        ];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "BY THE WAY I am busy");
+    }
+
+    #[test]
+    fn test_strict_replacement_no_fuzzy() {
+        // "bt" should NOT match "btw" strictly
+        let text = "bt I am busy";
+        let custom_words = vec![
+            exact_replacement("btw", "by the way"),
+        ];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "bt I am busy");
+    }
+
+    #[test]
+    fn test_correction_fuzzy() {
+        // "super wisper" -> "SuperWhisper"
+        let text = "I use super wisper";
+        let custom_words = vec![
+            vocabulary("super whisper", "SuperWhisper"),
+        ];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I use SuperWhisper");
     }
 
     #[test]
@@ -424,7 +555,10 @@ mod tests {
     #[test]
     fn test_exact_match_before_fuzzy() {
         let text = "handy is a great app";
-        let custom_words = vec!["Handy".to_string(), "Candy".to_string()];
+        let custom_words = vec![
+            vocabulary("Handy", "Handy"), 
+            vocabulary("Candy", "Candy")
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert_eq!(result, "Handy is a great app");
     }
@@ -433,27 +567,43 @@ mod tests {
     fn test_multi_word_phrase_exact() {
         // "chat GPT" (two words) should match "ChatGPT" custom word
         let text = "I use chat GPT daily";
-        let custom_words = vec!["ChatGPT".to_string()];
+        let custom_words = vec![
+            vocabulary("ChatGPT", "ChatGPT"),
+        ];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I use ChatGPT daily");
+    }
+
+    #[test]
+    fn test_multi_word_replacement() {
+        // UI example: "chat gpt" → "ChatGPT" with "Replace with different text" toggle ON
+        // This is exact replacement mode (is_replacement=true), not fuzzy vocabulary mode
+        let text = "I use chat gpt daily";
+        let custom_words = vec![
+            exact_replacement("chat gpt", "ChatGPT"),
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert_eq!(result, "I use ChatGPT daily");
     }
     
     #[test]
     fn test_apply_custom_words_ngram_three_words() {
-        // "Chat G P T" should NOT match since max n-gram is 3
-        // but "Chat G P" (3 words) could potentially match if exact
+        // "ChatGPT" is a single-word entry, so fuzzy matching only works for 1-word n-grams.
+        // "Chat" is close enough to "ChatGPT" for a fuzzy match, but "G", "P", "T" are not.
+        // Multi-word n-gram fuzzy matching is blocked because word counts don't match (3 != 1).
         let text = "use Chat G P T for this";
-        let custom_words = vec!["ChatGPT".to_string()];
+        let custom_words = vec![
+            vocabulary("ChatGPT", "ChatGPT"),
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
-        // The algorithm uses n=1..3, so "Chat G P T" (4 words) won't fully match
-        // But individual words may still get processed
-        assert!(!result.is_empty());
+        // Only "Chat" gets matched to "ChatGPT", "G P T" remain unchanged
+        assert_eq!(result, "use ChatGPT G P T for this");
     }
 
     #[test]
     fn test_empty_custom_words() {
         let text = "hello world";
-        let custom_words: Vec<String> = vec![];
+        let custom_words: Vec<CustomWordEntry> = vec![];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert_eq!(result, "hello world");
     }
@@ -462,7 +612,9 @@ mod tests {
     fn test_phonetic_matching() {
         // "kat" sounds like "cat" - phonetic match
         let text = "I have a kat";
-        let custom_words = vec!["cat".to_string()];
+        let custom_words = vec![
+            vocabulary("cat", "cat"),
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert_eq!(result, "I have a cat");
     }
@@ -471,7 +623,9 @@ mod tests {
     fn test_punctuation_preserved() {
         // Punctuation should be preserved around matches
         let text = "I use chatgpt!";
-        let custom_words = vec!["ChatGPT".to_string()];
+        let custom_words = vec![
+            vocabulary("ChatGPT", "ChatGPT"),
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
         assert_eq!(result, "I use ChatGPT!");
     }
@@ -481,7 +635,9 @@ mod tests {
         // "use chat gpt" should NOT consume "use" 
         // (this was the bug we fixed)
         let text = "I use chat gpt daily";
-        let custom_words = vec!["ChatGPT".to_string()];
+        let custom_words = vec![
+            vocabulary("ChatGPT", "ChatGPT"),
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
         // "use" must be preserved, only "chat gpt" should become "ChatGPT"
         assert!(result.contains("use"));

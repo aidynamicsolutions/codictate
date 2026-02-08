@@ -45,15 +45,15 @@ pub fn get_default_settings() -> Result<AppSettings, String> {
 #[tauri::command]
 #[specta::specta]
 pub fn reset_app_settings(app: AppHandle) -> Result<AppSettings, String> {
-    // Get current settings to preserve custom words
+    // Get current settings to preserve dictionary
     let current_settings = get_settings(&app);
-    let custom_words = current_settings.custom_words;
+    let dictionary = current_settings.dictionary;
 
     // Get default settings
     let mut default_settings = crate::settings::get_default_settings();
     
-    // Restore custom words
-    default_settings.custom_words = custom_words;
+    // Restore dictionary
+    default_settings.dictionary = dictionary;
     
     write_settings(&app, default_settings.clone());
     Ok(default_settings)

@@ -48,7 +48,43 @@ bun run lint              # ESLint for frontend
 bun run lint:fix          # ESLint with auto-fix
 bun run format            # Prettier + cargo fmt
 bun run format:check      # Check formatting without changes
+
+# Frontend unit tests
+bun run test              # Run tests once
+bun run test:watch        # Watch mode for development
 ```
+
+## Frontend Testing
+
+Uses [Vitest](https://vitest.dev/) for unit tests. Config in `vitest.config.ts`.
+
+**When to write tests:**
+- Pure utility functions (validation, formatting, calculations)
+- Complex business logic extracted from components
+- Functions with multiple edge cases
+
+**Test file location:** Place `*.test.ts` next to the source file in `src/`.
+
+**Example pattern:**
+```typescript
+// src/utils/myUtil.ts
+export function myFunction(input: string): boolean { ... }
+
+// src/utils/myUtil.test.ts
+import { describe, it, expect } from "vitest";
+import { myFunction } from "./myUtil";
+
+describe("myFunction", () => {
+  it("handles empty input", () => {
+    expect(myFunction("")).toBe(false);
+  });
+});
+```
+
+**Tips:**
+- Extract testable logic from React components into `src/utils/`
+- Test edge cases: empty inputs, case sensitivity, unicode, large datasets
+- Use helper factories for complex test data (see `dictionaryUtils.test.ts`)
 
 **Model Setup (Required for Development):**
 

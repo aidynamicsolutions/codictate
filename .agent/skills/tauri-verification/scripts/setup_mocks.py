@@ -30,7 +30,8 @@ const mockInvoke = async (cmd, args) => {
               transcribe: { current_binding: null, default_binding: "option+space" },
               transcribe_handsfree: { current_binding: null, default_binding: "option+shift+space" },
               paste_last_transcript: { current_binding: null, default_binding: "command+shift+v" }
-          }
+          },
+          dictionary: []
       };
     }
 
@@ -101,6 +102,11 @@ const mockInvoke = async (cmd, args) => {
     if (cmd === "suspendBinding") return null;
     if (cmd === "resumeBinding") return null;
     if (cmd === "startFnKeyMonitor") return null;
+
+    if (cmd === "update_custom_words") {
+        console.log("[Mock] update_custom_words called with:", args);
+        return null;
+    }
 
     if (cmd.includes("plugin:macos-permissions")) return "granted";
     if (cmd === "plugin:os|locale") return "en-US";

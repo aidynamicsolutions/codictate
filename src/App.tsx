@@ -197,7 +197,7 @@ function App() {
           </div>
           <div
             className={`flex-1 flex flex-col ${
-              currentSection === "history" ? "overflow-hidden" : "overflow-y-auto"
+              currentSection === "history" || currentSection === "dictionary" ? "overflow-hidden" : "overflow-y-auto"
             }`}
           >
             <div className="flex-1 flex flex-col items-center p-4 gap-4 min-h-0 w-full">

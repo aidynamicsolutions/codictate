@@ -215,6 +215,14 @@ impl SoundTheme {
     }
 }
 
+
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct CustomWordEntry {
+    pub input: String,
+    pub replacement: String,
+    pub is_replacement: bool,
+}
+
 /* still handy for composing the initial JSON in the store ------------- */
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct AppSettings {
@@ -254,7 +262,7 @@ pub struct AppSettings {
     #[serde(default = "default_log_level")]
     pub log_level: LogLevel,
     #[serde(default)]
-    pub custom_words: Vec<String>,
+    pub dictionary: Vec<CustomWordEntry>,
     #[serde(default)]
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
@@ -652,7 +660,8 @@ pub fn get_default_settings() -> AppSettings {
         overlay_position: default_overlay_position(),
         debug_mode: false,
         log_level: default_log_level(),
-        custom_words: Vec::new(),
+
+        dictionary: Vec::new(),
         model_unload_timeout: ModelUnloadTimeout::Min2,
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),

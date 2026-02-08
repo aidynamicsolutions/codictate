@@ -1,9 +1,10 @@
 import React, { Suspense } from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, FlaskConical, History, Sparkles, Home, Sliders } from "lucide-react";
+import { Cog, FlaskConical, History, Sparkles, Home, Sliders, Book } from "lucide-react";
 import CodictateLogo from "./icons/CodictateLogo";
 import { useSettings } from "../hooks/useSettings";
 import HomeContent from "./home/Home";
+import { DictionaryPage } from "./dictionary/DictionaryPage";
 import {
   Sidebar as SidebarPrimitive,
   SidebarContent,
@@ -53,6 +54,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.settings",
     icon: Cog,
     component: GeneralSettings,
+    enabled: () => true,
+  },
+  dictionary: {
+    labelKey: "sidebar.dictionary",
+    icon: Book,
+    component: DictionaryPage,
     enabled: () => true,
   },
   postprocessing: {

@@ -12,8 +12,54 @@
     "settings": "Settings",
     "postProcessing": "Post Process",
     "history": "History",
+    "dictionary": "Dictionary",
     "debug": "Debug",
     "about": "About"
+  },
+  "dictionary": {
+    "title": "Dictionary",
+    "description": "Manage custom words and phrases for correction and replacement.",
+    "hero_tagline": "Codictate learns how you speak.",
+    "hero_description": "Teach Codictate your unique words — names, jargon, or terms it might mishear.",
+    "add_new": "Add new",
+    "add_new_word": "Add new word",
+    "add_word": "Add word",
+    "add_entry": "Add Entry",
+    "edit_entry": "Edit Entry",
+    "modal_description": "Add a word or phrase you want Codictate to recognize.",
+    "word_to_recognize": "Word to recognize",
+    "input_phrase": "When I say",
+    "input_placeholder": "e.g. modal",
+    "replacement_phrase": "Replace with",
+    "input_required": "Input is required",
+    "replacement_placeholder": "e.g. Wispr",
+    "fuzzy_correction": "Correct a misspelling",
+    "fuzzy_description": "When enabled, this turns your custom word into a correction rule. Codictate will automatically replace the incorrect version whenever it's dictated.",
+    "replace_with_text": "Replace with different text",
+    "replacement_description": "Enable this to replace phrases with different text. Examples: 'chat gpt' → 'ChatGPT', 'btw' → 'by the way', 'my email' → 'john@example.com'. Tip: match the word count (e.g. 'chat gpt' is 2 words, so it matches when you say 2 words).",
+    "when_i_say": "When I say...",
+    "replace_with": "Replace with...",
+    "saved_success": "Dictionary updated",
+    "save_failed": "Failed to update dictionary",
+    "deleted_success": "Entry deleted",
+    "delete_failed": "Failed to delete entry",
+    "delete_confirm": "This action cannot be undone. This will permanently delete this dictionary entry.",
+    "search_placeholder": "Search...",
+    "no_match": "No matching entries found.",
+    "empty": "No dictionary entries yet.",
+    "empty_description": "Add words to help Codictate learn your vocabulary.",
+    "correction": "Correction",
+    "replacement": "Replacement",
+    "found_results": "{{count}} found",
+    "duplicate_error": "This word already exists in your dictionary",
+    "input_example": "e.g. my email",
+    "replacement_example": "e.g. john@example.com",
+    "sort": {
+      "newest": "Newest first",
+      "oldest": "Oldest first",
+      "az": "A-Z",
+      "za": "Z-A"
+    }
   },
   "home": {
     "welcome": "Welcome back,",
@@ -612,14 +658,6 @@
           "hour1": "After 1 hour",
           "sec5": "After 5 seconds (Debug)"
         }
-      },
-      "customWords": {
-        "title": "Custom Words",
-        "description": "Add words that are often misheard or misspelled during transcription. The system will automatically correct similar-sounding words to match your list.",
-        "placeholder": "Add a word",
-        "add": "Add",
-        "addedWords": "Added words",
-        "remove": "Remove {{word}}"
       }
     },
     "postProcessing": {

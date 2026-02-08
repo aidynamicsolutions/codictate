@@ -471,10 +471,10 @@ impl TranscriptionManager {
         info!("Raw transcription output: '{}'", result.text);
 
         // Apply word correction if custom words are configured
-        let corrected_result = if !settings.custom_words.is_empty() {
+        let corrected_result = if !settings.dictionary.is_empty() {
             let corrected = apply_custom_words(
                 &result.text,
-                &settings.custom_words,
+                &settings.dictionary,
                 settings.word_correction_threshold,
             );
             if corrected != result.text {

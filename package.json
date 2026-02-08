@@ -20,7 +20,9 @@
     "logs": "tail -f ~/Library/Logs/com.pais.codictate/codictate*.log",
     "logs:grep": "grep -E \"$1\" ~/Library/Logs/com.pais.codictate/codictate*.log | tail -50",
     "test:playwright": "playwright test",
-    "test:playwright:ui": "playwright test --ui"
+    "test:playwright:ui": "playwright test --ui",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans": "^5.2.10",
@@ -78,6 +80,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "prettier": "^3.6.2",
     "typescript": "~5.6.3",
-    "vite": "^6.4.1"
+    "vite": "^6.4.1",
+    "vitest": "^4.0.18"
   }
 }
