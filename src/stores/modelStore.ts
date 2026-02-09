@@ -31,6 +31,7 @@ interface ModelsStore {
   hasAnyModels: boolean;
   isFirstRun: boolean;
   initialized: boolean;
+  shouldScrollToLanguageModels: boolean;
 
   // Actions
   initialize: () => Promise<void>;
@@ -45,6 +46,7 @@ interface ModelsStore {
   isModelDownloading: (modelId: string) => boolean;
   isModelExtracting: (modelId: string) => boolean;
   getDownloadProgress: (modelId: string) => DownloadProgress | undefined;
+  setShouldScrollToLanguageModels: (value: boolean) => void;
 
   // Internal setters
   setModels: (models: ModelInfo[]) => void;
@@ -66,12 +68,14 @@ export const useModelStore = create<ModelsStore>()(
     hasAnyModels: false,
     isFirstRun: false,
     initialized: false,
+    shouldScrollToLanguageModels: false,
 
     // Internal setters
     setModels: (models) => set({ models }),
     setCurrentModel: (currentModel) => set({ currentModel }),
     setError: (error) => set({ error }),
     setLoading: (loading) => set({ loading }),
+    setShouldScrollToLanguageModels: (value) => set({ shouldScrollToLanguageModels: value }),
 
     loadModels: async () => {
       try {

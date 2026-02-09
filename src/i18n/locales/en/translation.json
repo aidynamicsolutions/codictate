@@ -612,7 +612,19 @@
         "translation": "Translation",
         "allLanguages": "All Languages"
       },
-      "noModelsMatch": "No models match this filter."
+      "noModelsMatch": "No models match this filter.",
+      "showMore": "Show {{count}} more",
+      "showLess": "Show less",
+      "languageModels": {
+        "title": "Language Models",
+        "description": "Local AI models used to clean up, rephrase or translate the raw text.",
+        "infoTooltip": "All models are 4-bit quantized for efficient Apple Silicon inference.",
+        "yourModels": "Downloaded Models",
+        "availableModels": "Available to Download",
+        "noModels": "No language models available.",
+        "viewInModels": "View in Models",
+        "selectedModel": "Selected: {{modelName}}"
+      }
     },
     "sound": {
       "title": "Sound",
@@ -700,7 +712,7 @@
         "title": "Hotkey"
       },
       "api": {
-        "title": "API (OpenAI Compatible)",
+        "title": "AI Model for Post Processing",
         "provider": {
           "title": "Provider",
           "description": "Select an OpenAI-compatible provider."
@@ -757,23 +769,14 @@
         "title": "Local AI Model",
         "description": "Select a model for offline processing. All models are 4-bit quantized for efficient Apple Silicon inference.",
         "recommended": "Recommended",
-        "download": "Download",
-        "downloading": "Downloading...",
-        "cancel": "Cancel",
         "retry": "Retry",
-        "select": "Select",
         "cancelDelete": "Cancel",
         "confirmDelete": "Delete",
-        "notDownloaded": "Not Downloaded",
-        "downloaded": "Downloaded",
-        "ready": "Ready",
-        "loading": "Loading...",
         "failed": "Failed",
         "size": "Size",
         "ram": "RAM",
-        "notAvailable": "Local AI requires Apple Silicon Mac",
-        "default": "Default",
-        "showInFinder": "Show in Finder"
+        "showInFinder": "Show in Finder",
+        "downloadModel": "Download Model"
       }
     },
     "history": {

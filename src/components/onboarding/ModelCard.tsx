@@ -163,7 +163,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
               <p className="text-xs text-text/60 w-14 text-right">
                 {t("onboarding.modelCard.accuracy")}
               </p>
-              <div className="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
+              <div className="w-38 h-2 bg-mid-gray/20 rounded-full overflow-hidden border border-mid-gray/30">
                 <div
                   className="h-full bg-logo-primary rounded-full"
                   style={{ width: `${model.accuracy_score * 100}%` }}
@@ -174,7 +174,7 @@ const ModelCard: React.FC<ModelCardProps> = ({
               <p className="text-xs text-text/60 w-14 text-right">
                 {t("onboarding.modelCard.speed")}
               </p>
-              <div className="w-16 h-1.5 bg-mid-gray/20 rounded-full overflow-hidden">
+              <div className="w-38 h-2 bg-mid-gray/20 rounded-full overflow-hidden border border-mid-gray/30">
                 <div
                   className="h-full bg-logo-primary rounded-full"
                   style={{ width: `${model.speed_score * 100}%` }}

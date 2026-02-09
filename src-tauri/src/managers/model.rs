@@ -151,7 +151,7 @@ impl ModelManager {
                 is_directory: false,
                 engine_type: EngineType::Whisper,
                 accuracy_score: 0.80,
-                speed_score: 0.40,
+                speed_score: 0.75,
                 supports_translation: false, // Turbo doesn't support translation
                 is_recommended: false,
                 supported_languages: whisper_languages.clone(),

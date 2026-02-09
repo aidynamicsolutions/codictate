@@ -393,6 +393,10 @@ fn default_app_language() -> String {
 }
 
 fn default_post_process_provider_id() -> String {
+    // Default to Local MLX on Apple Silicon Macs for best out-of-box experience
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    return LOCAL_MLX_PROVIDER_ID.to_string();
+    #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
     "openai".to_string()
 }
 

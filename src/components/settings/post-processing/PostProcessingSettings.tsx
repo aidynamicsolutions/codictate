@@ -20,12 +20,22 @@ import { ModelSelect } from "../PostProcessingSettingsApi/ModelSelect";
 import { usePostProcessProviderState } from "../PostProcessingSettingsApi/usePostProcessProviderState";
 import { ShortcutInput } from "../ShortcutInput";
 import { useSettings } from "../../../hooks/useSettings";
-import { MlxModelSelector } from "../MlxModelSelector";
+import { useMlxModels } from "@/hooks/useMlxModels";
+import { useModelStore } from "@/stores/modelStore";
 
-const PostProcessingSettingsApiComponent: React.FC = () => {
+interface PostProcessingSettingsApiProps {
+  onNavigate?: (section: string) => void;
+}
+
+const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProps> = ({ onNavigate }) => {
   const { t } = useTranslation();
   const state = usePostProcessProviderState();
+  const { models: mlxModels } = useMlxModels();
+  const { setShouldScrollToLanguageModels } = useModelStore();
 
+  // Find the selected MLX model's display name
+  const selectedMlxModel = mlxModels.find((m) => m.id === state.model);
+  const selectedMlxModelName = selectedMlxModel?.display_name ?? state.model;
   return (
     <>
       <SettingContainer
@@ -51,10 +61,43 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
           </Alert>
         ) : null
       ) : state.isMlxProvider ? (
-        <MlxModelSelector
-          selectedModelId={state.model}
-          onModelSelect={state.handleModelSelect}
-        />
+        <SettingContainer
+          title={t("settings.postProcessing.mlx.title")}
+          description={t("settings.postProcessing.mlx.description")}
+          descriptionMode="tooltip"
+          layout="horizontal"
+          grouped={true}
+        >
+          <div className="flex items-center gap-2">
+            {state.model ? (
+              <>
+                <span className="text-sm text-text">
+                  {selectedMlxModelName}
+                </span>
+                <button
+                  onClick={() => {
+                    setShouldScrollToLanguageModels(true);
+                    onNavigate?.("models");
+                  }}
+                  className="text-xs text-logo-primary hover:underline"
+                >
+                  ({t("settings.models.languageModels.viewInModels")})
+                </button>
+              </>
+            ) : (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  setShouldScrollToLanguageModels(true);
+                  onNavigate?.("models");
+                }}
+              >
+                {t("settings.postProcessing.mlx.downloadModel")}
+              </Button>
+            )}
+          </div>
+        </SettingContainer>
       ) : (
         <>
           {state.selectedProvider?.id === "custom" && (
@@ -101,7 +144,7 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
         </>
       )}
 
-      {/* Hide model dropdown for Apple and MLX providers - MLX uses MlxModelSelector */}
+      {/* Hide model dropdown for Apple and MLX providers - MLX uses Models page */}
       {!state.isAppleProvider && !state.isMlxProvider && (
         <SettingContainer
           title={t("settings.postProcessing.api.model.title")}
@@ -431,7 +474,11 @@ export const PostProcessingSettingsPrompts = React.memo(
 );
 PostProcessingSettingsPrompts.displayName = "PostProcessingSettingsPrompts";
 
-export const PostProcessingSettings: React.FC = () => {
+interface PostProcessingSettingsProps {
+  onNavigate?: (section: string) => void;
+}
+
+export const PostProcessingSettings: React.FC<PostProcessingSettingsProps> = ({ onNavigate }) => {
   const { t } = useTranslation();
 
   return (
@@ -445,7 +492,7 @@ export const PostProcessingSettings: React.FC = () => {
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.postProcessing.api.title")}>
-        <PostProcessingSettingsApi />
+        <PostProcessingSettingsApi onNavigate={onNavigate} />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.postProcessing.prompts.title")}>
