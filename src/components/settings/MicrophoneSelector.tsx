@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { useSettings } from "../../hooks/useSettings";
 import { MicrophoneModal } from "@/components/shared/MicrophoneModal";
 import { SettingsRow } from "../ui/SettingsRow";
+import { isDefaultMicSetting, resolveDefaultMicName } from "@/utils/microphoneUtils";
 
 export const MicrophoneSelector: React.FC = React.memo(
   () => {
@@ -16,35 +17,28 @@ export const MicrophoneSelector: React.FC = React.memo(
 
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-    // Refresh devices on mount to ensure we have the system default name
+    // Refresh devices on mount to ensure we have the device list
     useEffect(() => {
         refreshAudioDevices();
     }, [refreshAudioDevices]);
-
-    // Find the real system default device
-    const systemDefaultMic = audioDevices.find(
-      (d) => d.is_default && d.name !== "Default" && d.name !== "default"
-    );
     
     // Determine effective selection - now reading directly from settings
     const selectedSetting = settings?.selected_microphone;
-    const isUsingSystemDefault = 
-      selectedSetting === "default" || 
-      selectedSetting === "Default" || 
-      !selectedSetting;
+    const isUsingSystemDefault = isDefaultMicSetting(selectedSetting);
 
-    const effectiveSelectedMicName = isUsingSystemDefault 
-        ? (systemDefaultMic?.name || "Default") 
+    // Resolve the actual mic name when Default is selected (display only — backend is authoritative)
+    const resolvedDefaultName = useMemo(
+      () => isUsingSystemDefault ? resolveDefaultMicName(audioDevices) : null,
+      [isUsingSystemDefault, audioDevices],
+    );
+
+    const displayLabel = isUsingSystemDefault
+        ? (resolvedDefaultName
+            ? t("settings.sound.microphone.defaultWithName", { name: resolvedDefaultName })
+            : (t("common.default") || "Default"))
         : (selectedSetting || "Default");
 
-    // "Default" label key
-    const defaultLabel = t("common.default") || "Default";
-    
-    const displayLabel = isUsingSystemDefault
-        ? `${effectiveSelectedMicName} (${defaultLabel})`
-        : effectiveSelectedMicName;
-
-    const effectiveDevice = audioDevices.find(d => d.name === effectiveSelectedMicName);
+    const effectiveDevice = isUsingSystemDefault ? null : audioDevices.find(d => d.name === selectedSetting);
     const showBluetoothWarning = effectiveDevice?.is_bluetooth || false;
 
     return (

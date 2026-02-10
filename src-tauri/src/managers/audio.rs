@@ -226,11 +226,14 @@ impl AudioRecordingManager {
 
         // Logic for handling standard selection vs Default
         if let Some(name) = &settings.selected_microphone {
-            // User explicitly selected a microphone -> Use it strictly
-            return devices
-                .into_iter()
-                .find(|d| d.name == *name)
-                .map(|d| d.device);
+            // "default" / "Default" means use system default (same as None)
+            if !name.eq_ignore_ascii_case("default") {
+                // User explicitly selected a microphone -> Use it strictly
+                return devices
+                    .into_iter()
+                    .find(|d| d.name == *name)
+                    .map(|d| d.device);
+            }
         }
         
         // "Default" is selected (None in settings)
@@ -252,9 +255,21 @@ impl AudioRecordingManager {
                 if let Some(builtin) = builtin_mic {
                     info!("Found Built-in fallback microphone: '{}'. Using it instead of Bluetooth default.", builtin.name);
                     return Some(builtin.device.clone());
-                } else {
-                    info!("No Built-in microphone found. Falling back to Bluetooth default.");
                 }
+                
+                // No built-in found — try any non-Bluetooth, non-virtual device
+                let non_bt_mic = devices.iter().find(|d| {
+                    !crate::audio_device_info::is_device_bluetooth(&d.name)
+                    && !crate::audio_device_info::is_device_virtual(&d.name)
+                    && !crate::audio_device_info::is_device_continuity_camera(&d.name)
+                });
+                
+                if let Some(alt) = non_bt_mic {
+                    info!("No Built-in mic found, using non-Bluetooth alternative: '{}'", alt.name);
+                    return Some(alt.device.clone());
+                }
+                
+                info!("No non-Bluetooth microphone found. Falling back to Bluetooth default.");
             }
         }
         
@@ -416,9 +431,14 @@ impl AudioRecordingManager {
     /// so when the user presses fn, the mic is already in the correct mode.
     /// This significantly reduces perceived latency for Bluetooth mics.
     pub fn prewarm_bluetooth_mic(&self) {
-        // Only pre-warm Bluetooth devices
-        if !self.is_current_device_bluetooth() {
-            debug!("Skipping pre-warm: not a Bluetooth device");
+        // Only pre-warm if user has explicitly selected a Bluetooth device.
+        // When using "Default", we prefer built-in mics, so no BT pre-warm needed.
+        let explicitly_selected_bt = self.get_selected_device_name_fast()
+            .map(|name| crate::audio_device_info::is_device_bluetooth(&name))
+            .unwrap_or(false);
+        
+        if !explicitly_selected_bt {
+            debug!("Skipping pre-warm: not an explicitly selected Bluetooth device");
             return;
         }
         
@@ -653,7 +673,10 @@ impl AudioRecordingManager {
             )?);
         }
         // Get the actual device to open - may differ from selected_device if fallback needed
-        let (device_to_open, active_device_name) = if selected_device.is_none() && settings.selected_microphone.is_some() {
+        // Treat "default"/"Default" the same as None (not an explicit device selection)
+        let has_explicit_device = settings.selected_microphone.as_ref()
+            .is_some_and(|name| !name.eq_ignore_ascii_case("default"));
+        let (device_to_open, active_device_name) = if selected_device.is_none() && has_explicit_device {
             // Selected device not found in device list - it's disconnected
             // Trigger fallback BEFORE attempting to open
             warn!("Selected device '{}' not found in available devices - triggering fallback", target_device_name);
@@ -686,9 +709,27 @@ impl AudioRecordingManager {
                 warn!("No fallback device found, attempting to use system default");
                 (None, "Default".to_string())
             }
-        } else {
-            // Device exists or using default - proceed normally
+        } else if selected_device.is_some() {
+            // Device found - proceed normally
             (selected_device.clone(), target_device_name.clone())
+        } else {
+            // No specific device resolved — pick best available to avoid cpal
+            // defaulting to a Bluetooth device the OS just switched to
+            let best = devices.iter().find(|d| {
+                crate::audio_device_info::is_device_builtin(&d.name)
+            }).or_else(|| devices.iter().find(|d| {
+                !crate::audio_device_info::is_device_bluetooth(&d.name)
+                && !crate::audio_device_info::is_device_virtual(&d.name)
+                && !crate::audio_device_info::is_device_continuity_camera(&d.name)
+            })).or_else(|| devices.iter().find(|d| d.is_default));
+
+            match best {
+                Some(dev) => {
+                    info!("No device resolved, using best available: '{}'", dev.name);
+                    (Some(dev.device.clone()), dev.name.clone())
+                }
+                None => (None, "Default".to_string()),
+            }
         };
 
         if let Some(rec) = recorder_opt.as_mut() {

@@ -12,9 +12,9 @@
 ## Selection Flow
 
 ```
-User clicks device in MicrophoneModal
+User picks "Default" or a specific device in MicrophoneModal
        ↓
-settingsStore calls commands.setSelectedMicrophone()
+Frontend saves "default" (for Default) or explicit device name
        ↓
 Backend stores in settings, calls rm.update_selected_device()
        ↓
@@ -26,12 +26,24 @@ get_effective_device_from_list() determines actual device to use
 `get_effective_device_from_list()` in `audio.rs`:
 
 1. If clamshell mode + clamshell_microphone set → use clamshell mic
-2. If selected_microphone is Some(name) → use that device
-3. If selected_microphone is None ("Default"):
-   - If system default is Bluetooth → fallback to built-in mic
+2. If selected_microphone is `None`, `"default"`, or `"Default"` → treated as "Default" mode:
+   - If system default is Bluetooth → multi-tier fallback (see below)
    - Otherwise → use system default
+3. If selected_microphone is any other `Some(name)` → use that device strictly
 
-**Note:** When user explicitly selects a Bluetooth device, we store the name (not `None`), so Bluetooth-avoidance is bypassed.
+**Note:** When user explicitly selects a Bluetooth device, we store the device name, so Bluetooth-avoidance is bypassed.
+
+## Bluetooth Avoidance
+
+When "Default" is selected and the system default mic is Bluetooth (e.g., AirPods), the app avoids it to prevent low-quality audio (BT uses HFP/SCO profile for mic input). The fallback priority is:
+
+1. **Built-in microphone** (e.g., MacBook Pro Microphone)
+2. **Any non-Bluetooth, non-virtual device** (e.g., USB mic)
+3. **Bluetooth default** (last resort, only if no alternatives exist)
+
+This also applies in `start_microphone_stream()` as a safety net: if `get_effective_device_from_list()` returns `None`, the stream-open code resolves a device using the same priority instead of passing `None` to `cpal` (which would use the system default and could be Bluetooth).
+
+**Bluetooth Pre-warm:** `prewarm_bluetooth_mic()` only triggers the A2DP→HFP profile switch at startup if the user has **explicitly** selected a Bluetooth device. When "Default" is selected, no pre-warm occurs since the app will use a built-in mic instead.
 
 ## Clamshell Mode
 
@@ -81,6 +93,17 @@ This ensures the UI stays in sync when a previously selected mic is disconnected
 - User should manually switch to a different microphone via settings
 
 This design choice simplifies the codebase and avoids unexpected device switching.
+
+## Microphone Modal UI
+
+The modal (`MicrophoneModal.tsx`) presents two types of options:
+
+1. **"Default" option** — always shown at the top. Saves `"default"` to settings, which triggers backend BT-avoidance logic. Subtitle explains "Automatically selects the best available microphone".
+2. **Individual devices** — listed below Default. Bluetooth devices are sorted to the bottom and display an amber "Bluetooth" badge with a tooltip warning about reduced quality.
+
+**Display label** in settings row (`MicrophoneSelector.tsx`): When Default is selected, shows `"Default (MacBook Pro Microphone)"` (resolved via shared `resolveDefaultMicName()` utility). This is display-only — the backend makes the authoritative device choice.
+
+**Shared utilities** (`src/utils/microphoneUtils.ts`): `isDefaultMicSetting()` and `resolveDefaultMicName()` consolidate the default-detection and display-name-resolution logic used by both components.
 
 ## Frontend-Backend Sync
 

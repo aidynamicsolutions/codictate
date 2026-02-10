@@ -7,9 +7,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/shared/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/shared/ui/tooltip";
 import { useSettings } from "@/hooks/useSettings";
 import { commands } from "@/bindings";
 import { AudioAGC } from "@/utils/audioAGC";
+import { isDefaultMicSetting } from "@/utils/microphoneUtils";
 
 // Audio level bars component with AGC normalization built-in
 export const AudioLevelBars: React.FC<{ levels: number[] }> = ({ levels }) => {
@@ -33,14 +39,15 @@ export const AudioLevelBars: React.FC<{ levels: number[] }> = ({ levels }) => {
 // Microphone option component for the dialog
 const MicrophoneOption: React.FC<{
   name: string;
+  subtitle?: string;
   isSelected: boolean;
-  isSystemDefault?: boolean;
+  isBluetooth?: boolean;
+  bluetoothBadgeLabel?: string;
+  bluetoothTooltipText?: string;
   levels?: number[];
   onClick: () => void;
-}> = ({ name, isSelected, isSystemDefault, levels, onClick }) => {
-  const { t } = useTranslation();
-
-  return (
+}> = ({ name, subtitle, isSelected, isBluetooth, bluetoothBadgeLabel, bluetoothTooltipText, levels, onClick }) => {
+  const button = (
     <button
       type="button"
       onClick={onClick}
@@ -51,15 +58,18 @@ const MicrophoneOption: React.FC<{
       }`}
     >
       <div className="flex items-center justify-between">
-        <div className="flex flex-col gap-1">
-          <span className="font-medium text-foreground">
-            {name}
-            {isSystemDefault && (
-              <span className="ml-2 text-xs text-muted-foreground">
-                ({t("onboarding.microphoneCheck.dialog.default")})
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-foreground">{name}</span>
+            {isBluetooth && bluetoothBadgeLabel && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                {bluetoothBadgeLabel}
               </span>
             )}
-          </span>
+          </div>
+          {subtitle && (
+            <span className="text-xs text-muted-foreground">{subtitle}</span>
+          )}
         </div>
         {isSelected && levels && (
           <div className="flex items-end gap-0.5 h-6">
@@ -78,6 +88,21 @@ const MicrophoneOption: React.FC<{
       </div>
     </button>
   );
+
+  if (isBluetooth && bluetoothTooltipText) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          {button}
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs text-center">
+          {bluetoothTooltipText}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return button;
 };
 
 interface MicrophoneModalProps {
@@ -159,48 +184,45 @@ export const MicrophoneModal: React.FC<MicrophoneModalProps> = ({
 
   // Derived state for selection
   const selectedMicrophone = getSetting("selected_microphone") || "Default";
+  const isUsingDefault = isDefaultMicSetting(selectedMicrophone);
   const actualMicrophones = useMemo(
     () => audioDevices.filter((d) => d.name !== "Default"),
     [audioDevices]
   );
-  const systemDefaultMic = useMemo(
-    () => actualMicrophones.find((d) => d.is_default),
-    [actualMicrophones]
-  );
 
-  const effectiveSelectedMic = useMemo(() => {
-    if ((selectedMicrophone === "Default" || selectedMicrophone === "default") && systemDefaultMic) {
-      return systemDefaultMic.name;
-    }
-    return selectedMicrophone;
-  }, [selectedMicrophone, systemDefaultMic]);
+  const effectiveSelectedMic = isUsingDefault ? "Default" : selectedMicrophone;
 
-  // Sorting
+  // Sorting — bluetooth always at bottom, then selected device first, then alphabetical
   const sortedMicrophones = useMemo(() => {
     return [...actualMicrophones].sort((a, b) => {
-      const aIsSelected = a.name === effectiveSelectedMic;
-      const bIsSelected = b.name === effectiveSelectedMic;
+      // Bluetooth devices always go to the bottom
+      if (a.is_bluetooth && !b.is_bluetooth) return 1;
+      if (!a.is_bluetooth && b.is_bluetooth) return -1;
+      // Within same category, selected first
+      const aIsSelected = !isUsingDefault && a.name === effectiveSelectedMic;
+      const bIsSelected = !isUsingDefault && b.name === effectiveSelectedMic;
       if (aIsSelected && !bIsSelected) return -1;
       if (!aIsSelected && bIsSelected) return 1;
-      if (a.is_default && !b.is_default) return -1;
-      if (!a.is_default && b.is_default) return 1;
       return a.name.localeCompare(b.name);
     });
-  }, [actualMicrophones, effectiveSelectedMic]);
+  }, [actualMicrophones, effectiveSelectedMic, isUsingDefault]);
+
+  const handleSelectDefault = useCallback(async () => {
+    // Reset to "default" — backend applies BT-avoidance, preferring built-in mic
+    await updateSetting("selected_microphone", "default");
+    agcRef.current.reset();
+    await commands.stopMicPreview();
+    await commands.startMicPreview();
+    onOpenChange(false);
+  }, [updateSetting, onOpenChange]);
 
   const handleMicrophoneSelect = useCallback(
     async (device: { name: string; is_default: boolean }) => {
-      // Always save the explicit device name, even if it's the system default.
-      // This is critical because if we reset to "Default", the backend applies
-      // Bluetooth-avoidance logic (preferring built-in mic). By saving the 
-      // explicit name, the user's intent is preserved and Bluetooth devices work.
+      // Save explicit device name — preserves user intent (e.g., BT devices work)
       await updateSetting("selected_microphone", device.name);
-      
-      // Reset AGC and restart preview to apply new device
       agcRef.current.reset();
       await commands.stopMicPreview();
       await commands.startMicPreview();
-      
       onOpenChange(false);
     },
     [updateSetting, onOpenChange]
@@ -217,14 +239,24 @@ export const MicrophoneModal: React.FC<MicrophoneModalProps> = ({
 
         <div className="flex flex-col gap-2 mt-4">
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+            {/* "Default" option — uses smart device selection with BT avoidance */}
+            <MicrophoneOption
+              name={t("onboarding.microphoneCheck.dialog.defaultOption")}
+              subtitle={t("onboarding.microphoneCheck.dialog.defaultDescription")}
+              isSelected={isUsingDefault}
+              levels={isUsingDefault ? displayLevels : undefined}
+              onClick={handleSelectDefault}
+            />
             {sortedMicrophones.map((device) => {
-              const isSelected = effectiveSelectedMic === device.name;
+              const isSelected = !isUsingDefault && effectiveSelectedMic === device.name;
               return (
                 <MicrophoneOption
                   key={device.index}
                   name={device.name}
                   isSelected={isSelected}
-                  isSystemDefault={device.is_default}
+                  isBluetooth={device.is_bluetooth}
+                  bluetoothBadgeLabel={device.is_bluetooth ? t("settings.sound.microphone.bluetoothBadge") : undefined}
+                  bluetoothTooltipText={device.is_bluetooth ? t("settings.sound.microphone.bluetoothTooltip") : undefined}
                   levels={isSelected ? displayLevels : undefined}
                   onClick={() => handleMicrophoneSelect(device)}
                 />

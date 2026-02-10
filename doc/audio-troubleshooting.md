@@ -25,3 +25,16 @@
 - Ensure microphone is close to sound source
 - Check for electrical interference from nearby cables
 - Adjust system input volume
+
+## Bluetooth Microphone Quality
+
+**Issue**: When AirPods or other Bluetooth headphones connect, macOS can switch the default input to the Bluetooth mic, which uses the HFP/SCO profile (significantly lower quality than built-in mics).
+
+**How the app handles it**: When "Default" is selected, the app automatically avoids Bluetooth microphones and prefers the built-in mic. No user action is needed.
+
+**If you explicitly want to use a Bluetooth mic**: Select it by name in Settings → Sound → Microphone. The app will use it and apply a warmup delay for Bluetooth profile stabilization.
+
+**If quality is still poor with Bluetooth**:
+- Use the built-in MacBook microphone or a USB microphone instead
+- Bluetooth mics are limited by the HFP profile (~8kHz bandwidth, "AM radio" quality)
+- This is a Bluetooth protocol limitation, not an app issue

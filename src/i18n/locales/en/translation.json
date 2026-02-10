@@ -309,7 +309,9 @@
         "title": "Select Microphone",
         "autoDetect": "Auto-detect",
         "autoDetectDescription": "Uses the system default microphone",
-        "default": "default"
+        "default": "default",
+        "defaultOption": "Default",
+        "defaultDescription": "Automatically selects the best available microphone"
       }
     },
     "hotkeySetup": {
@@ -641,7 +643,10 @@
       "title": "Sound",
       "microphone": {
         "title": "Microphone",
-        "bluetoothWarning": "Bluetooth microphones reduce audio quality significantly while dictating. We recommend using the internal or wired microphone."
+        "bluetoothWarning": "Bluetooth microphones reduce audio quality significantly while dictating. We recommend using the internal or wired microphone.",
+        "defaultWithName": "Default ({{name}})",
+        "bluetoothBadge": "Bluetooth",
+        "bluetoothTooltip": "Bluetooth microphones may offer reduced transcription accuracy due to lower audio quality. We recommend using a built-in or wired microphone for best results."
       },
       "audioFeedback": {
         "label": "Audio Feedback",
