@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { InfoIcon, RotateCcw } from "lucide-react";
 
@@ -24,15 +24,25 @@ import { logInfo } from "@/utils/logging";
 interface LanguageSelectorProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean; // Kept for compatibility but ignored in new design
+  supportedLanguages?: string[];
 }
 
 export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   descriptionMode = "tooltip",
+  supportedLanguages,
 }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, resetSetting, isUpdating } = useSettings();
 
   const selectedLanguage = getSetting("selected_language") || "auto";
+
+  const availableLanguages = useMemo(() => {
+    if (!supportedLanguages || supportedLanguages.length === 0)
+      return WHISPER_LANGUAGES;
+    return WHISPER_LANGUAGES.filter(
+      (lang) => supportedLanguages.includes(lang.code),
+    );
+  }, [supportedLanguages]);
 
   const handleSelect = async (currentValue: string) => {
     logInfo(`Language selected: ${currentValue}`, "fe");
@@ -77,7 +87,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
           <SelectContent position="popper" className="max-h-[300px]">
              {/* Explicitly add Auto option if not in the list (though it is) */}
              <SelectItem value="auto">{t("settings.general.language.auto")}</SelectItem>
-            {WHISPER_LANGUAGES.map((language) => (
+            {availableLanguages.map((language) => (
               <SelectItem key={language.code} value={language.code}>
                 {language.label}
               </SelectItem>

@@ -318,10 +318,11 @@ export const ModelsSettings: React.FC = () => {
       }
     }
 
-    // Sort downloaded models so the active model is always first
+    // Sort downloaded models: active first, then official, then custom
     downloaded.sort((a, b) => {
       if (a.id === currentModel) return -1;
       if (b.id === currentModel) return 1;
+      if (a.is_custom !== b.is_custom) return a.is_custom ? 1 : -1;
       return 0;
     });
 

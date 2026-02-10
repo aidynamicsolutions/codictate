@@ -945,7 +945,7 @@ export type BindingResponse = { success: boolean; binding: ShortcutBinding | nul
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 export type CustomWordEntry = { input: string; replacement: string; is_replacement: boolean }
-export type EngineType = "Whisper" | "Parakeet" | "Moonshine"
+export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "SenseVoice"
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; duration_ms: number; file_path: string }
 export type HistoryStats = { total_size_bytes: number; total_entries: number }
 export type HomeStats = { total_words: number; total_duration_minutes: number; wpm: number; time_saved_minutes: number; streak_days: number; faster_than_typing_percentage: number }
@@ -1023,7 +1023,7 @@ export type MlxModelStatus =
  * Model loading failed
  */
 "load_failed"
-export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[] }
+export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; is_custom: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_5"
 export type OverlayPosition = "none" | "top" | "bottom"
