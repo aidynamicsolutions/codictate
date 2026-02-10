@@ -53,7 +53,7 @@ export const KeyBadge: React.FC<{ keyName: string }> = ({ keyName }) => {
   const { symbol, text } = getKeyDisplay(keyName);
 
   return (
-    <span className="inline-flex items-center justify-center gap-1 px-2 py-1 text-sm font-medium bg-muted border border-border rounded min-w-[36px]">
+    <span className="inline-flex items-center justify-center gap-1 px-2 py-1 text-sm font-medium bg-secondary/80 dark:bg-secondary border border-border/60 dark:border-border rounded min-w-[36px]">
       {symbol && <span className="text-muted-foreground">{symbol}</span>}
       <span>{text}</span>
     </span>
@@ -135,19 +135,19 @@ export const ShortcutCard: React.FC<ShortcutCardProps> = ({
   }, [isRecording, displayKeys.length, error, clearError]);
 
   return (
-    <div className="flex items-center justify-between p-5 border border-border rounded-lg select-none cursor-default">
-      <div className="flex flex-col gap-1">
+    <div className="flex items-center justify-between gap-4 px-4 py-1 border border-border/50 dark:border-border dark:bg-card/50 rounded-lg select-none cursor-default">
+      <div className="flex flex-col gap-0.5 max-w-[300px]">
         <span className="text-base font-medium text-foreground">{title}</span>
         <span className="text-sm text-muted-foreground">{description}</span>
       </div>
-      <div className="flex flex-col items-end gap-1.5">
-        {/* Spacer to reserve space above the input */}
-        <div className="h-6" />
+      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+        {/* Spacer to vertically center the input with the title */}
+        <div className="h-5" />
         <button
           ref={containerRef}
           type="button"
           onClick={startRecording}
-          className="flex items-center justify-between gap-2 px-3 py-2 min-w-[280px] min-h-[44px] bg-muted/50 border border-border hover:bg-muted rounded cursor-pointer hover:border-primary/50 transition-colors"
+          className="flex items-center justify-between gap-2 px-3 py-1.5 min-w-[280px] min-h-[40px] bg-muted/50 dark:bg-muted/30 border border-border/60 dark:border-border hover:bg-muted dark:hover:bg-muted/50 rounded cursor-pointer hover:border-primary/50 transition-colors"
         >
           {isRecording ? (
             <>
@@ -222,7 +222,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
     try {
       // Use atomic reset that bypasses duplicate checking between the bindings
       // This handles any combination of conflicts (e.g., one set to the other's default)
-      await resetBindings(["transcribe", "transcribe_handsfree", "paste_last_transcript"]);
+      await resetBindings(["transcribe", "transcribe_handsfree", "paste_last_transcript", "refine_last_transcript"]);
     } catch (error) {
       logError(`Failed to reset bindings: ${error}`, "fe-shortcuts");
     }
@@ -230,7 +230,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] select-none cursor-default">
+      <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto select-none cursor-default border-border/60 shadow-2xl dark:border-border dark:shadow-black/50 dark:bg-card">
         <DialogHeader className="mb-4">
           <DialogTitle>
             {t("onboarding.hotkeySetup.modal.title")}
@@ -265,6 +265,14 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
             shortcutId="paste_last_transcript"
             title={t("settings.general.shortcut.bindings.paste_last_transcript.name")}
             description={t("settings.general.shortcut.bindings.paste_last_transcript.description")}
+          />
+
+          {/* Refine last transcript shortcut */}
+          <ShortcutCard
+            key={`refine_last_transcript-${resetKey}`}
+            shortcutId="refine_last_transcript"
+            title={t("settings.general.shortcut.bindings.refine_last_transcript.name")}
+            description={t("settings.general.shortcut.bindings.refine_last_transcript.description")}
           />
 
           {/* Divider */}

@@ -11,7 +11,7 @@
     "home": "Home",
     "settings": "Settings",
     "models": "Models",
-    "postProcessing": "Post Process",
+    "refine": "Refine",
     "history": "History",
     "dictionary": "Dictionary",
     "debug": "Debug",
@@ -554,8 +554,12 @@
             "description": "Cancels the current recording."
           },
           "transcribe_with_post_process": {
-            "name": "Post-Processing Hotkey",
-            "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
+            "name": "Transcribe + Refine",
+            "description": "Hold to transcribe and automatically apply AI refinement."
+          },
+          "refine_last_transcript": {
+            "name": "Refine Last Text",
+            "description": "Apply AI refinement to your last transcription and paste the improved version."
           }
         },
         "errors": {
@@ -706,13 +710,25 @@
         }
       }
     },
-    "postProcessing": {
-      "title": "Post Process",
+    "refine": {
+      "title": "Refine",
+      "disabled": {
+        "title": "Refine is currently disabled",
+        "description": "Enable AI-powered text refinement to improve your transcriptions with grammar, formatting, and polish.",
+        "enable": "Enable Refine"
+      },
       "hotkey": {
-        "title": "Hotkey"
+        "title": "Hotkeys"
+      },
+      "behavior": {
+        "title": "Settings",
+        "autoRefine": {
+          "title": "Auto-refine all transcriptions",
+          "description": "When enabled, every transcription is automatically refined. Adds 1-2 seconds delay."
+        }
       },
       "api": {
-        "title": "AI Model for Post Processing",
+        "title": "AI Model",
         "provider": {
           "title": "Provider",
           "description": "Select an OpenAI-compatible provider."
@@ -856,9 +872,9 @@
         "label": "Always-On Microphone",
         "description": "Keep microphone active for faster response"
       },
-      "postProcessingToggle": {
-        "label": "Post Processing",
-        "description": "Enable AI-powered text refinement after transcription"
+      "refineToggle": {
+        "label": "Refine",
+        "description": "Enable AI-powered text refinement"
       },
       "muteWhileRecording": {
         "label": "Mute While Recording",
@@ -994,5 +1010,10 @@
   },
   "pasteLastTranscript": {
     "noHistory": "No transcription history to paste"
+  },
+  "refineLastTranscript": {
+    "noHistory": "No transcription history to refine",
+    "disabled": "Refine is disabled. Enable it in Refine settings first.",
+    "failed": "Refinement failed. Check your AI model configuration."
   }
 }

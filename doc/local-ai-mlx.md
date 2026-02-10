@@ -1,6 +1,6 @@
 # Local AI with MLX
 
-Handy supports **on-device AI post-processing** using Apple's MLX framework on Apple Silicon Macs. This feature allows you to enhance transcriptions locally without sending data to external APIs.
+Handy supports **on-device AI refinement** using Apple's MLX framework on Apple Silicon Macs. This feature allows you to enhance transcriptions locally without sending data to external APIs.
 
 ## Overview
 
@@ -43,7 +43,7 @@ Handy supports **on-device AI post-processing** using Apple's MLX framework on A
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           POST-PROCESSING FLOW                               │
+│                             REFINE FLOW                                       │
 └─────────────────────────────────────────────────────────────────────────────┘
 
   Speech Input          Transcription         Post-Processing        Output
@@ -206,7 +206,7 @@ Handy/
 
 ## How It Works
 
-1. **Model Selection**: User selects a model in Settings → Post-Processing → Local (MLX)
+1. **Model Selection**: User selects a model in Settings → Refine → Local (MLX)
 2. **Disk Space Check**: System verifies sufficient space (model size + 100MB buffer)
 3. **Model Download**: Model files are downloaded from Hugging Face Hub (~1-5 GB)
 4. **Sidecar Startup**: On first use, `uv` spawns the Python sidecar on an available port (5000-5100)

@@ -46,8 +46,8 @@ const MicrophoneOption: React.FC<{
       onClick={onClick}
       className={`w-full p-4 text-left rounded-lg border transition-all ${
         isSelected
-          ? "border-primary bg-primary/5"
-          : "border-border hover:border-primary/50 hover:bg-accent/50"
+          ? "border-primary bg-primary/5 dark:bg-primary/10"
+          : "border-border/50 dark:border-border hover:border-primary/50 hover:bg-accent/50 dark:hover:bg-muted/50"
       }`}
     >
       <div className="flex items-center justify-between">
@@ -208,7 +208,7 @@ export const MicrophoneModal: React.FC<MicrophoneModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md border-border/60 shadow-2xl dark:border-border dark:shadow-black/50 dark:bg-card">
         <DialogHeader>
           <DialogTitle>
             {t("onboarding.microphoneCheck.dialog.title")}

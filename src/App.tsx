@@ -63,6 +63,11 @@ function App() {
     initializeRTL(i18n.language);
   }, [i18n.language]);
 
+  // Check onboarding status on mount and initialize shortcuts if complete
+  useEffect(() => {
+    checkOnboardingStatus();
+  }, []);
+
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

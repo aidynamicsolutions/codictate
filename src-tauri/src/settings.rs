@@ -1,4 +1,4 @@
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
@@ -289,6 +289,10 @@ pub struct AppSettings {
     pub post_process_prompts: Vec<LLMPrompt>,
     #[serde(default)]
     pub post_process_selected_prompt_id: Option<String>,
+    /// When true, all transcriptions are automatically refined (adds delay).
+    /// When false (default), user must manually trigger refinement with hotkey.
+    #[serde(default)]
+    pub auto_refine_enabled: bool,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default = "default_append_trailing_space")]
@@ -571,6 +575,9 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_shortcut.to_string(),
         },
     );
+    // TODO(deprecated): This shortcut may be removed in a future version when the "mode" feature
+    // is implemented. The new workflow is: transcribe fast → review → refine with refine_last_transcript.
+    // Keeping for backward compatibility with existing users.
     #[cfg(target_os = "windows")]
     let default_post_process_shortcut = "ctrl+shift+space";
     #[cfg(target_os = "macos")]
@@ -644,6 +651,28 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // Refine last transcript: polish the last transcription with AI and paste
+    // Uses Option+Cmd+V on macOS (parallels paste_last_transcript but with Option for AI action)
+    #[cfg(target_os = "macos")]
+    let refine_last_shortcut = "option+command+v";
+    #[cfg(target_os = "windows")]
+    let refine_last_shortcut = "ctrl+shift+alt+v";
+    #[cfg(target_os = "linux")]
+    let refine_last_shortcut = "ctrl+shift+alt+v";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let refine_last_shortcut = "ctrl+shift+alt+v";
+
+    bindings.insert(
+        "refine_last_transcript".to_string(),
+        ShortcutBinding {
+            id: "refine_last_transcript".to_string(),
+            name: "Refine last text".to_string(),
+            description: "Apply AI refinement to last transcription and paste.".to_string(),
+            default_binding: refine_last_shortcut.to_string(),
+            current_binding: refine_last_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         bindings,
 
@@ -679,6 +708,7 @@ pub fn get_default_settings() -> AppSettings {
         post_process_models: default_post_process_models(),
         post_process_prompts: default_post_process_prompts(),
         post_process_selected_prompt_id: None,
+        auto_refine_enabled: false,
         mute_while_recording: false,
         append_trailing_space: true,
         app_language: default_app_language(),
@@ -721,7 +751,7 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         // Parse the entire settings object
         match serde_json::from_value::<AppSettings>(settings_value) {
             Ok(mut settings) => {
-                debug!("Found existing settings: {:?}", settings);
+
                 let default_settings = get_default_settings();
                 let mut updated = false;
 
@@ -731,23 +761,37 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
                         // Update the default_binding if it changed in code
                         // This ensures "Reset to default" always uses the latest code default
                         if existing.default_binding != default_value.default_binding {
-                            debug!(
+                            info!(
                                 "Updating default_binding for '{}': '{}' -> '{}'",
                                 key, existing.default_binding, default_value.default_binding
                             );
+                            // If current_binding is empty or equals the old default, also update it
+                            // This ensures new hotkey defaults are applied to existing users
+                            if existing.current_binding.is_empty() 
+                                || existing.current_binding == existing.default_binding 
+                            {
+                                info!(
+                                    "Also updating current_binding for '{}': '{}' -> '{}'",
+                                    key, existing.current_binding, default_value.default_binding
+                                );
+                                existing.current_binding = default_value.default_binding.clone();
+                            }
                             existing.default_binding = default_value.default_binding;
                             updated = true;
                         }
                     } else {
-                        debug!("Adding missing binding: {}", key);
+                        info!("Adding missing binding: {}", key);
                         settings.bindings.insert(key, default_value);
                         updated = true;
                     }
                 }
 
                 if updated {
-                    debug!("Settings updated with new bindings");
+                    info!("Settings updated with new bindings");
                     store.set("settings", serde_json::to_value(&settings).unwrap());
+                    if let Err(e) = store.save() {
+                        warn!("Failed to save updated settings: {}", e);
+                    }
                 }
 
                 settings

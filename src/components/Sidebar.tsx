@@ -70,11 +70,11 @@ export const SECTIONS_CONFIG = {
     enabled: () => true,
   },
 
-  postprocessing: {
-    labelKey: "sidebar.postProcessing",
+  refine: {
+    labelKey: "sidebar.refine",
     icon: Sparkles,
     component: PostProcessingSettings,
-    enabled: (settings) => settings?.post_process_enabled ?? false,
+    enabled: () => true,
   },
   history: {
     labelKey: "sidebar.history",

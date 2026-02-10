@@ -513,9 +513,10 @@ impl ShortcutAction for TranscribeAction {
                                     return;
                                 }
 
-                                // Then apply regular post-processing if enabled
-                                // Uses final_text which may already have Chinese conversion applied
-                                let processed = if post_process || settings.post_process_enabled {
+                                // Then apply regular post-processing if:
+                                // 1. Explicitly requested via transcribe_with_post_process (post_process = true), OR
+                                // 2. Auto-refine is enabled (user opted into always refining)
+                                let processed = if post_process || settings.auto_refine_enabled {
                                     post_process_transcription(&ah, &settings, &final_text).await
                                 } else {
                                     None
@@ -729,6 +730,107 @@ impl ShortcutAction for PasteLastTranscriptAction {
     }
 }
 
+// Refine Last Transcript Action
+// Applies AI post-processing to the last transcription and pastes the refined text
+struct RefineLastTranscriptAction;
+
+impl ShortcutAction for RefineLastTranscriptAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        debug!("Refine last transcript triggered");
+        
+        // Check if recording is active - don't interfere with recording/transcription flow
+        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+        if audio_manager.is_recording() {
+            debug!("Refine last transcript skipped: recording is active");
+            return;
+        }
+        
+        let app_clone = app.clone();
+        
+        // Spawn async task to get the latest transcription, refine it, and paste
+        tauri::async_runtime::spawn(async move {
+            // Get the last raw transcription from history
+            let raw_text = if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
+                let manager = history_manager.inner().clone();
+                match manager.get_history_entries(1, 0, None).await {
+                    Ok(entries) => {
+                        if let Some(latest) = entries.first() {
+                            // Always use the RAW transcription, not post-processed
+                            Some(latest.transcription_text.clone())
+                        } else {
+                            info!("No history entries available for refine last transcript");
+                            crate::notification::show_info(&app_clone, "refineLastTranscript.noHistory");
+                            None
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to get history entries: {}", e);
+                        None
+                    }
+                }
+            } else {
+                error!("HistoryManager not available for refine last transcript");
+                None
+            };
+            
+            let Some(raw_text) = raw_text else {
+                return;
+            };
+            
+            if raw_text.is_empty() {
+                debug!("Refine last transcript skipped: transcription text is empty");
+                return;
+            }
+            
+            // Get settings and run post-processing
+            let settings = get_settings(&app_clone);
+            
+            // Check if post-processing is enabled and configured
+            if !settings.post_process_enabled {
+                info!("Refine is disabled. Enable it in settings first.");
+                crate::notification::show_info(&app_clone, "refineLastTranscript.disabled");
+                return;
+            }
+            
+            debug!(chars = raw_text.len(), "Starting refinement of last transcript");
+            
+            // Run post-processing
+            let refined_text = post_process_transcription(&app_clone, &settings, &raw_text).await;
+            
+            // Hide processing overlay
+            crate::utils::hide_overlay_after_transcription(&app_clone);
+            
+            let final_text = if let Some(refined) = refined_text {
+                debug!(chars = refined.len(), "Refinement completed");
+                refined
+            } else {
+                // Post-processing failed or returned nothing - show notification
+                info!("Refinement returned no result, using original text");
+                crate::notification::show_info(&app_clone, "refineLastTranscript.failed");
+                return;
+            };
+            
+            // Add a delay before pasting to allow the user to release the hotkey modifiers
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            
+            // Paste the refined text
+            let app_for_paste = app_clone.clone();
+            if let Err(e) = app_clone.run_on_main_thread(move || {
+                match crate::utils::paste(final_text, app_for_paste) {
+                    Ok(()) => info!("Pasted refined transcript successfully"),
+                    Err(e) => error!("Failed to paste refined transcript: {}", e),
+                }
+            }) {
+                error!("Failed to run paste on main thread: {:?}", e);
+            }
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Nothing to do on key release
+    }
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -760,5 +862,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "paste_last_transcript".to_string(),
         Arc::new(PasteLastTranscriptAction) as Arc<dyn ShortcutAction>,
     );
+    map.insert(
+        "refine_last_transcript".to_string(),
+        Arc::new(RefineLastTranscriptAction) as Arc<dyn ShortcutAction>,
+    );
     map
 });
+

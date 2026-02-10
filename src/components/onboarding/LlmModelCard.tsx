@@ -138,7 +138,7 @@ export const LlmModelCard: React.FC<LlmModelCardProps> = ({
             </h3>
             {model.is_default && (
               <Badge variant="default">
-                {t("settings.postProcessing.mlx.recommended")}
+                {t("settings.refine.mlx.recommended")}
               </Badge>
             )}
             {isSelected && (
@@ -159,12 +159,12 @@ export const LlmModelCard: React.FC<LlmModelCardProps> = ({
       {/* Bottom row: RAM, Size, and actions */}
       <div className="flex items-center gap-3 w-full -mb-0.5 mt-0.5 h-5">
         <span className="text-xs text-text/50">
-          {t("settings.postProcessing.mlx.ram")}: {model.parameters}
+          {t("settings.refine.mlx.ram")}: {model.parameters}
         </span>
         {/* For downloadable, only show size on right with icon */}
         {status !== "downloadable" && (
           <span className="text-xs text-text/50">
-            {t("settings.postProcessing.mlx.size")}: {formatBytes(model.size_bytes)}
+            {t("settings.refine.mlx.size")}: {formatBytes(model.size_bytes)}
           </span>
         )}
 
@@ -178,7 +178,7 @@ export const LlmModelCard: React.FC<LlmModelCardProps> = ({
             className="flex items-center gap-1 text-xs text-text/50 hover:text-text transition-colors"
           >
             <FolderOpen className="w-3.5 h-3.5" />
-            <span>{t("settings.postProcessing.mlx.showInFinder")}</span>
+            <span>{t("settings.refine.mlx.showInFinder")}</span>
           </button>
         )}
 
@@ -213,7 +213,7 @@ export const LlmModelCard: React.FC<LlmModelCardProps> = ({
               onClick={handleCancelDelete}
               className="text-xs"
             >
-              {t("settings.postProcessing.mlx.cancelDelete")}
+              {t("settings.refine.mlx.cancelDelete")}
             </Button>
             <Button
               variant="ghost"
@@ -221,7 +221,7 @@ export const LlmModelCard: React.FC<LlmModelCardProps> = ({
               onClick={handleDelete}
               className="text-destructive hover:text-destructive hover:bg-destructive/10 text-xs"
             >
-              {t("settings.postProcessing.mlx.confirmDelete")}
+              {t("settings.refine.mlx.confirmDelete")}
             </Button>
           </div>
         )}
@@ -238,7 +238,7 @@ export const LlmModelCard: React.FC<LlmModelCardProps> = ({
             className="flex items-center gap-1.5 ml-auto text-logo-primary hover:text-logo-primary hover:bg-logo-primary/10"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>{t("settings.postProcessing.mlx.retry")}</span>
+            <span>{t("settings.refine.mlx.retry")}</span>
           </Button>
         )}
       </div>
@@ -303,7 +303,7 @@ export const LlmModelCard: React.FC<LlmModelCardProps> = ({
       {status === "download_failed" && (
         <div className="w-full mt-2 p-2 bg-destructive/10 border border-destructive/30 rounded-md">
           <p className="text-xs text-destructive">
-            {t("settings.postProcessing.mlx.failed")}
+            {t("settings.refine.mlx.failed")}
           </p>
         </div>
       )}

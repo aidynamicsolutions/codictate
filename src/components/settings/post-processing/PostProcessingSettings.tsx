@@ -12,6 +12,7 @@ import {
 import { Textarea } from "@/components/shared/ui/textarea";
 import { Button } from "@/components/shared/ui/button";
 import { Input } from "@/components/shared/ui/input";
+import { Switch } from "@/components/shared/ui/switch";
 
 import { ProviderSelect } from "../PostProcessingSettingsApi/ProviderSelect";
 import { BaseUrlField } from "../PostProcessingSettingsApi/BaseUrlField";
@@ -39,8 +40,8 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
   return (
     <>
       <SettingContainer
-        title={t("settings.postProcessing.api.provider.title")}
-        description={t("settings.postProcessing.api.provider.description")}
+        title={t("settings.refine.api.provider.title")}
+        description={t("settings.refine.api.provider.description")}
         descriptionMode="tooltip"
         layout="horizontal"
         grouped={true}
@@ -57,13 +58,13 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
       {state.isAppleProvider ? (
         state.appleIntelligenceUnavailable ? (
           <Alert variant="error" contained>
-            {t("settings.postProcessing.api.appleIntelligence.unavailable")}
+            {t("settings.refine.api.appleIntelligence.unavailable")}
           </Alert>
         ) : null
       ) : state.isMlxProvider ? (
         <SettingContainer
-          title={t("settings.postProcessing.mlx.title")}
-          description={t("settings.postProcessing.mlx.description")}
+          title={t("settings.refine.mlx.title")}
+          description={t("settings.refine.mlx.description")}
           descriptionMode="tooltip"
           layout="horizontal"
           grouped={true}
@@ -93,7 +94,7 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
                   onNavigate?.("models");
                 }}
               >
-                {t("settings.postProcessing.mlx.downloadModel")}
+                {t("settings.refine.mlx.downloadModel")}
               </Button>
             )}
           </div>
@@ -102,8 +103,8 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
         <>
           {state.selectedProvider?.id === "custom" && (
             <SettingContainer
-              title={t("settings.postProcessing.api.baseUrl.title")}
-              description={t("settings.postProcessing.api.baseUrl.description")}
+              title={t("settings.refine.api.baseUrl.title")}
+              description={t("settings.refine.api.baseUrl.description")}
               descriptionMode="tooltip"
               layout="horizontal"
               grouped={true}
@@ -113,7 +114,7 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
                   value={state.baseUrl}
                   onBlur={state.handleBaseUrlChange}
                   placeholder={t(
-                    "settings.postProcessing.api.baseUrl.placeholder",
+                    "settings.refine.api.baseUrl.placeholder",
                   )}
                   disabled={state.isBaseUrlUpdating}
                   className="min-w-[380px]"
@@ -123,8 +124,8 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
           )}
 
           <SettingContainer
-            title={t("settings.postProcessing.api.apiKey.title")}
-            description={t("settings.postProcessing.api.apiKey.description")}
+            title={t("settings.refine.api.apiKey.title")}
+            description={t("settings.refine.api.apiKey.description")}
             descriptionMode="tooltip"
             layout="horizontal"
             grouped={true}
@@ -134,7 +135,7 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
                 value={state.apiKey}
                 onBlur={state.handleApiKeyChange}
                 placeholder={t(
-                  "settings.postProcessing.api.apiKey.placeholder",
+                  "settings.refine.api.apiKey.placeholder",
                 )}
                 disabled={state.isApiKeyUpdating}
                 className="min-w-[320px]"
@@ -147,11 +148,11 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
       {/* Hide model dropdown for Apple and MLX providers - MLX uses Models page */}
       {!state.isAppleProvider && !state.isMlxProvider && (
         <SettingContainer
-          title={t("settings.postProcessing.api.model.title")}
+          title={t("settings.refine.api.model.title")}
           description={
             state.isCustomProvider
-              ? t("settings.postProcessing.api.model.descriptionCustom")
-              : t("settings.postProcessing.api.model.descriptionDefault")
+              ? t("settings.refine.api.model.descriptionCustom")
+              : t("settings.refine.api.model.descriptionDefault")
           }
           descriptionMode="tooltip"
           layout="stacked"
@@ -166,9 +167,9 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
               placeholder={
                 state.modelOptions.length > 0
                   ? t(
-                      "settings.postProcessing.api.model.placeholderWithOptions",
+                      "settings.refine.api.model.placeholderWithOptions",
                     )
-                  : t("settings.postProcessing.api.model.placeholderNoOptions")
+                  : t("settings.refine.api.model.placeholderNoOptions")
               }
               onSelect={state.handleModelSelect}
               onCreate={state.handleModelCreate}
@@ -178,7 +179,7 @@ const PostProcessingSettingsApiComponent: React.FC<PostProcessingSettingsApiProp
             <Button
               onClick={state.handleRefreshModels}
               disabled={state.isFetchingModels}
-              title={t("settings.postProcessing.api.model.refreshModels")}
+              title={t("settings.refine.api.model.refreshModels")}
               variant="ghost"
               size="icon"
               className="h-10 w-10"
@@ -300,9 +301,9 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
 
   return (
     <SettingContainer
-      title={t("settings.postProcessing.prompts.selectedPrompt.title")}
+      title={t("settings.refine.prompts.selectedPrompt.title")}
       description={t(
-        "settings.postProcessing.prompts.selectedPrompt.description",
+        "settings.refine.prompts.selectedPrompt.description",
       )}
       descriptionMode="tooltip"
       layout="stacked"
@@ -319,8 +320,8 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
             onSelect={(value) => handlePromptSelect(value)}
             placeholder={
               prompts.length === 0
-                ? t("settings.postProcessing.prompts.noPrompts")
-                : t("settings.postProcessing.prompts.selectPrompt")
+                ? t("settings.refine.prompts.noPrompts")
+                : t("settings.refine.prompts.selectPrompt")
             }
             disabled={
               isUpdating("post_process_selected_prompt_id") || isCreating
@@ -333,7 +334,7 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
             
             disabled={isCreating}
           >
-            {t("settings.postProcessing.prompts.createNew")}
+            {t("settings.refine.prompts.createNew")}
           </Button>
         </div>
 
@@ -341,14 +342,14 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
           <div className="space-y-3">
             <div className="space-y-2 flex flex-col">
               <label className="text-sm font-semibold">
-                {t("settings.postProcessing.prompts.promptLabel")}
+                {t("settings.refine.prompts.promptLabel")}
               </label>
               <Input
                 type="text"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
                 placeholder={t(
-                  "settings.postProcessing.prompts.promptLabelPlaceholder",
+                  "settings.refine.prompts.promptLabelPlaceholder",
                 )}
                 
               />
@@ -356,19 +357,19 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
 
             <div className="space-y-2 flex flex-col">
               <label className="text-sm font-semibold">
-                {t("settings.postProcessing.prompts.promptInstructions")}
+                {t("settings.refine.prompts.promptInstructions")}
               </label>
               <Textarea
                 value={draftText}
                 onChange={(e) => setDraftText(e.target.value)}
                 placeholder={t(
-                  "settings.postProcessing.prompts.promptInstructionsPlaceholder",
+                  "settings.refine.prompts.promptInstructionsPlaceholder",
                 )}
               />
               <p
                 className="text-xs text-mid-gray/70"
                 dangerouslySetInnerHTML={{
-                  __html: t("settings.postProcessing.prompts.promptTip"),
+                  __html: t("settings.refine.prompts.promptTip"),
                 }}
               />
             </div>
@@ -380,7 +381,7 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
                 
                 disabled={!draftName.trim() || !draftText.trim() || !isDirty}
               >
-                {t("settings.postProcessing.prompts.updatePrompt")}
+                {t("settings.refine.prompts.updatePrompt")}
               </Button>
               <Button
                 onClick={() => handleDeletePrompt(selectedPromptId)}
@@ -388,7 +389,7 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
                 
                 disabled={!selectedPromptId || prompts.length <= 1}
               >
-                {t("settings.postProcessing.prompts.deletePrompt")}
+                {t("settings.refine.prompts.deletePrompt")}
               </Button>
             </div>
           </div>
@@ -398,8 +399,8 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
           <div className="p-3 bg-mid-gray/5 rounded-md border border-mid-gray/20">
             <p className="text-sm text-mid-gray">
               {hasPrompts
-                ? t("settings.postProcessing.prompts.selectToEdit")
-                : t("settings.postProcessing.prompts.createFirst")}
+                ? t("settings.refine.prompts.selectToEdit")
+                : t("settings.refine.prompts.createFirst")}
             </p>
           </div>
         )}
@@ -408,14 +409,14 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
           <div className="space-y-3">
             <div className="space-y-2 block flex flex-col">
               <label className="text-sm font-semibold text-text">
-                {t("settings.postProcessing.prompts.promptLabel")}
+                {t("settings.refine.prompts.promptLabel")}
               </label>
               <Input
                 type="text"
                 value={draftName}
                 onChange={(e) => setDraftName(e.target.value)}
                 placeholder={t(
-                  "settings.postProcessing.prompts.promptLabelPlaceholder",
+                  "settings.refine.prompts.promptLabelPlaceholder",
                 )}
                 
               />
@@ -423,19 +424,19 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
 
             <div className="space-y-2 flex flex-col">
               <label className="text-sm font-semibold">
-                {t("settings.postProcessing.prompts.promptInstructions")}
+                {t("settings.refine.prompts.promptInstructions")}
               </label>
               <Textarea
                 value={draftText}
                 onChange={(e) => setDraftText(e.target.value)}
                 placeholder={t(
-                  "settings.postProcessing.prompts.promptInstructionsPlaceholder",
+                  "settings.refine.prompts.promptInstructionsPlaceholder",
                 )}
               />
               <p
                 className="text-xs text-mid-gray/70"
                 dangerouslySetInnerHTML={{
-                  __html: t("settings.postProcessing.prompts.promptTip"),
+                  __html: t("settings.refine.prompts.promptTip"),
                 }}
               />
             </div>
@@ -447,14 +448,14 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
                 
                 disabled={!draftName.trim() || !draftText.trim()}
               >
-                {t("settings.postProcessing.prompts.createPrompt")}
+                {t("settings.refine.prompts.createPrompt")}
               </Button>
               <Button
                 onClick={handleCancelCreate}
                 variant="secondary"
                 
               >
-                {t("settings.postProcessing.prompts.cancel")}
+                {t("settings.refine.prompts.cancel")}
               </Button>
             </div>
           </div>
@@ -480,22 +481,55 @@ interface PostProcessingSettingsProps {
 
 export const PostProcessingSettings: React.FC<PostProcessingSettingsProps> = ({ onNavigate }) => {
   const { t } = useTranslation();
+  const { settings, updateSetting, isUpdating } = useSettings();
+  const isEnabled = settings?.post_process_enabled ?? false;
+  const autoRefineEnabled = settings?.auto_refine_enabled ?? false;
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
-      <SettingsGroup title={t("settings.postProcessing.hotkey.title")}>
-        <ShortcutInput
-          shortcutId="transcribe_with_post_process"
+      {/* Enable CTA when Refine is disabled */}
+      {!isEnabled && (
+        <Alert variant="info">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="font-medium">{t("settings.refine.disabled.title")}</p>
+              <p className="text-sm text-muted-foreground">
+                {t("settings.refine.disabled.description")}
+              </p>
+            </div>
+            <Button
+              onClick={() => updateSetting("post_process_enabled", true)}
+              disabled={isUpdating("post_process_enabled")}
+              size="sm"
+            >
+              {t("settings.refine.disabled.enable")}
+            </Button>
+          </div>
+        </Alert>
+      )}
+
+      {/* Settings section */}
+      <SettingsGroup title={t("settings.refine.behavior.title")}>
+        <SettingContainer
+          title={t("settings.refine.behavior.autoRefine.title")}
+          description={t("settings.refine.behavior.autoRefine.description")}
           descriptionMode="tooltip"
+          layout="horizontal"
           grouped={true}
-        />
+        >
+          <Switch
+            checked={autoRefineEnabled}
+            onCheckedChange={(checked) => updateSetting("auto_refine_enabled", checked)}
+            disabled={isUpdating("auto_refine_enabled")}
+          />
+        </SettingContainer>
       </SettingsGroup>
 
-      <SettingsGroup title={t("settings.postProcessing.api.title")}>
+      <SettingsGroup title={t("settings.refine.api.title")}>
         <PostProcessingSettingsApi onNavigate={onNavigate} />
       </SettingsGroup>
 
-      <SettingsGroup title={t("settings.postProcessing.prompts.title")}>
+      <SettingsGroup title={t("settings.refine.prompts.title")}>
         <PostProcessingSettingsPrompts />
       </SettingsGroup>
     </div>

@@ -47,7 +47,7 @@ const LanguageGridItem: React.FC<{
         ? "bg-primary/10 border-primary text-primary"
         : isDisabled
         ? "opacity-50 cursor-not-allowed bg-muted/30 border-transparent"
-        : "bg-background border-border hover:bg-muted hover:border-primary/50"
+        : "bg-background border-border/50 dark:border-border hover:bg-muted hover:border-primary/50"
     }`}
   >
     <span className="text-base">{flag}</span>
@@ -209,7 +209,7 @@ export const LanguageSelectorModal: React.FC<LanguageSelectorModalProps> = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="sm:max-w-[700px] h-[600px] flex flex-col"
+        className="sm:max-w-[700px] h-[600px] flex flex-col border-border/60 shadow-2xl dark:border-border dark:shadow-black/50 dark:bg-card"
         showCloseButton={false}
       >
         <DialogHeader>

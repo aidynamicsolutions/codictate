@@ -259,9 +259,32 @@ The overlay window is created at startup and kept `visible` but transparent (`op
 Shortcuts must be initialized after accessibility permissions are granted:
 
 - **During onboarding**: `initializeShortcuts()` is called in `AccessibilityOnboarding.tsx`
-- **On normal app restart**: `initializeShortcuts()` is called in `App.tsx` when `onboarding_completed` is true
+- **On normal app restart**: `checkOnboardingStatus()` in `App.tsx` calls `initializeShortcuts()` when `onboarding_completed` is true
 
-Without this, shortcuts won't work after app restart because `init_shortcuts()` in the backend never gets called.
+> **Critical**: The `checkOnboardingStatus()` function MUST be called on mount via useEffect. Without this, shortcuts won't register and new bindings won't migrate.
+
+### Binding Migration (Adding New Shortcuts)
+
+When adding a new shortcut binding to `get_default_settings()`, the migration in `load_or_create_app_settings()` automatically adds missing bindings to existing users:
+
+```
+App Start → checkOnboardingStatus() → initializeShortcuts() → load_or_create_app_settings()
+                                                                        ↓
+                                                   For each default binding not in stored settings:
+                                                   1. Log "Adding missing binding: {id}"
+                                                   2. Insert into settings.bindings
+                                                   3. store.set() + store.save()
+```
+
+**Key Files**:
+- [settings.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/settings.rs): Migration logic in `load_or_create_app_settings()` (lines 754-790)
+- [App.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/App.tsx): `checkOnboardingStatus()` must be called on mount
+
+**Debugging Migration Issues**:
+1. Check logs for "Adding missing binding" or "Shortcuts initialized successfully"
+2. If missing, verify `checkOnboardingStatus()` is called (look for `[init_shortcuts]` log entries)
+3. Check `settings_store.json` to confirm bindings are persisted
+
 
 ### Key State Variables
 
@@ -286,14 +309,44 @@ OVERLAY_READY         // True after React has registered event listeners
 
 ## Reserved Shortcuts (Blocked)
 
+The app blocks system-critical shortcuts to prevent conflicts. Validation is handled by [reserved.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/shortcut/reserved.rs).
+
 ### macOS
-- `fn+a`, `fn+c`, `fn+d`, `fn+e`, `fn+f`, `fn+h`, `fn+m`, `fn+n`, `fn+q`
-- Standard system shortcuts (Cmd+C, Cmd+V, etc.)
+
+| Category | Blocked Shortcuts |
+|----------|------------------|
+| **App Control** | `⌘Q`, `⌘H`, `⌘M`, `⌘W`, `⌘,` |
+| **Spotlight** | `⌘Space`, `⌥⌘Space` |
+| **App Switching** | `⌘Tab`, `⌘\`` |
+| **System UI** | `⌥⌘D` (Dock), `⌥⌘Esc` (Force Quit), `⌃⌘Q` (Lock) |
+| **Input Source** | `⌃Space`, `⌃⌥Space` |
+| **Mission Control** | `⌃↑`, `⌃↓`, `⌃←`, `⌃→`, `⌃1/2/3...` |
+| **Accessibility** | `⌥⌘8`, `⌘F5`, `⌥⌘F5` |
+| **Screenshots** | `⇧⌘3/4/5/6` |
+| **Editing** | `⌘C/V/X/Z/A` |
+| **File Ops** | `⌘S/N/O/P` |
+| **Fn System** | `fn+a/c/d/e/f/h/m/n/q`, `fn+arrows`, `fn+delete` |
+
+### Windows
+
+| Category | Blocked Shortcuts |
+|----------|------------------|
+| **System** | `Win+L/D/E/R/Tab`, `Alt+Tab`, `Alt+F4`, `Ctrl+Alt+Del` |
+| **Editing** | `Ctrl+C/V/X/Z/Y/A` |
+| **File Ops** | `Ctrl+S/N/O/P/W` |
+
+### Linux
+
+| Category | Blocked Shortcuts |
+|----------|------------------|
+| **System** | `Super+L/D`, `Alt+Tab`, `Alt+F4` |
+| **Editing** | `Ctrl+C/V/X/Z/Y/A` |
+| **File Ops** | `Ctrl+S/N/O/P` |
 
 ### Customization
 
 Users can change shortcuts in Settings → Shortcuts. The app validates:
-1. No conflicts with system shortcuts
+1. No conflicts with reserved shortcuts (see tables above)
 2. No duplicates between push-to-talk and hands-free
 3. Requires modifier key (except standalone Fn)
 
