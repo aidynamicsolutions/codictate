@@ -10,9 +10,11 @@ pub async fn get_history_entries(
     limit: usize,
     offset: usize,
     search_query: Option<String>,
+    starred_only: bool,
+    time_period_start: Option<i64>,
 ) -> Result<Vec<HistoryEntry>, String> {
     history_manager
-        .get_history_entries(limit, offset, search_query)
+        .get_history_entries(limit, offset, search_query, starred_only, time_period_start)
         .await
         .map_err(|e| e.to_string())
 }

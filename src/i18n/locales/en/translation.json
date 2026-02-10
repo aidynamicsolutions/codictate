@@ -841,6 +841,19 @@
         "30d": "30 days",
         "3m": "3 months",
         "1y": "1 year"
+      },
+      "filter": {
+        "starred": "Starred",
+        "allTime": "All Time",
+        "today": "Today",
+        "thisWeek": "This Week",
+        "thisMonth": "This Month",
+        "thisYear": "This Year",
+        "clearFilters": "Clear filters",
+        "noStarred": "No starred transcriptions",
+        "noStarredDescription": "Star important transcriptions to find them here.",
+        "noPeriod": "No transcriptions for this period",
+        "noPeriodDescription": "Try selecting a different time range."
       }
     },
     "debug": {

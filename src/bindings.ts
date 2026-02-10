@@ -646,9 +646,9 @@ async unloadModelManually() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
-async getHistoryEntries(limit: number, offset: number, searchQuery: string | null) : Promise<Result<HistoryEntry[], string>> {
+async getHistoryEntries(limit: number, offset: number, searchQuery: string | null, starredOnly: boolean, timePeriodStart: number | null) : Promise<Result<HistoryEntry[], string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("get_history_entries", { limit, offset, searchQuery }) };
+    return { status: "ok", data: await TAURI_INVOKE("get_history_entries", { limit, offset, searchQuery, starredOnly, timePeriodStart }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

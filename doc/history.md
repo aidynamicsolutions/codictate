@@ -23,6 +23,27 @@ To ensure a smooth user experience even with massive history logs, the feature i
 - **Organize:**
   - **Timeline:** Entries are grouped by date.
   - **Star:** Mark important recordings as "Saved" to prevent accidental deletion during pruning.
+- **Filter:** Narrow results via a dropdown integrated with the search bar (see below).
+
+## Filtering
+
+A unified dropdown sits inline with the search input, offering:
+
+| Option | Backend Behavior |
+|---|---|
+| All Time (default) | No filter applied |
+| ⭐ Starred | `WHERE saved = 1` |
+| Today | `WHERE timestamp >= <start of today>` |
+| This Week | `WHERE timestamp >= <Monday of current week>` |
+| This Month | `WHERE timestamp >= <1st of current month>` |
+| This Year | `WHERE timestamp >= <Jan 1 of current year>` |
+
+**Key details:**
+- **Server-side filtering:** Filters are SQL `WHERE` clauses, composing with search via `AND`. This ensures pagination stays correct regardless of filter.
+- **Type:** `HistoryFilter` — a single union type (`"all" | "starred" | "today" | "this_week" | "this_month" | "this_year"`) managed in `useHistory.ts`.
+- **Timezone:** Cutoff timestamps are computed client-side using local timezone (`new Date()`), then passed as Unix seconds to the backend.
+- **Optimistic unstar:** When a user unstars an entry while the "Starred" filter is active, the entry is immediately removed from the list.
+- **Clear filter:** An `X` button appears next to the dropdown when any filter is active.
 
 ## Storage Management
 To manage disk space, navigate to **Settings > History**:

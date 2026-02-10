@@ -29,8 +29,9 @@ import { Trash2, FolderOpen, Loader2, Search } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
 import { commands, type HistoryStats } from "@/bindings";
 import { logError } from "@/utils/logging";
-import { useHistory } from "@/hooks/useHistory";
+import { useHistory, getFilterEmptyState } from "@/hooks/useHistory";
 import { HistoryList } from "@/components/shared/HistoryList";
+import { HistoryFilterDropdown } from "@/components/shared/HistoryFilterDropdown";
 
 
 
@@ -265,6 +266,10 @@ export const HistorySettings: React.FC = () => {
     setSearchQuery,
     filteredEntries,
     debouncedSearchQuery,
+    filter,
+    setFilter,
+    hasActiveFilters,
+    clearFilters,
   } = useHistory();
 
   useEffect(() => {
@@ -313,14 +318,15 @@ export const HistorySettings: React.FC = () => {
          <Card className="w-full flex-1 min-h-0 flex flex-col bg-card/50 backdrop-blur-sm ring-0 border-x border-t border-border shadow-sm rounded-t-xl rounded-b-none overflow-hidden">
             <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
             <div className="p-4 border-b border-border/40 bg-muted/10 pb-3">
-                <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
+                <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 z-10" />
                 <Input
                     id="history-search-input"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={t("settings.history.searchPlaceholder")}
-                    className="pl-9 pr-24 h-9 bg-background/50 border-border/60 focus:bg-background transition-colors"
+                    className="pl-9 pr-16 h-9 bg-background/50 border-border/60 focus:bg-background transition-colors w-full"
                 />
                 <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none border border-border/60 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/30">
                     {searchQuery ? (
@@ -342,6 +348,13 @@ export const HistorySettings: React.FC = () => {
                     )}
                 </div>
                 </div>
+                <HistoryFilterDropdown
+                  filter={filter}
+                  onFilterChange={setFilter}
+                  hasActiveFilters={hasActiveFilters}
+                  onClearFilters={clearFilters}
+                />
+                </div>
             </div>
             <div className="flex-1 min-h-0 flex flex-col">
                 <HistoryList
@@ -354,6 +367,12 @@ export const HistorySettings: React.FC = () => {
                 searchQuery={debouncedSearchQuery}
                 loadMore={loadMore}
                 hasMore={hasMore}
+                emptyMessage={
+                  getFilterEmptyState(filter, hasActiveFilters, t).emptyMessage
+                }
+                emptyDescription={
+                  getFilterEmptyState(filter, hasActiveFilters, t).emptyDescription
+                }
                 />
             </div>
             </CardContent>

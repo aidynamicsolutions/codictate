@@ -546,6 +546,8 @@ impl HistoryManager {
         limit: usize,
         offset: usize,
         search_query: Option<String>,
+        starred_only: bool,
+        time_period_start: Option<i64>,
     ) -> Result<Vec<HistoryEntry>> {
         let conn = self.get_connection()?;
         let mut query = String::from(
@@ -555,6 +557,7 @@ impl HistoryManager {
 
         let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
         let mut param_index = 1;
+        let mut has_where = false;
 
         if let Some(query_str) = search_query {
             if !query_str.trim().is_empty() {
@@ -562,7 +565,31 @@ impl HistoryManager {
                 query.push_str(&param_index.to_string());
                 params.push(Box::new(format!("%{}%", query_str)));
                 param_index += 1;
+                has_where = true;
             }
+        }
+
+        if starred_only {
+            if has_where {
+                query.push_str(" AND");
+            } else {
+                query.push_str(" WHERE");
+                has_where = true;
+            }
+            query.push_str(" saved = 1");
+        }
+
+        if let Some(start_ts) = time_period_start {
+            if has_where {
+                query.push_str(" AND");
+            } else {
+                query.push_str(" WHERE");
+                #[allow(unused_assignments)]
+                { has_where = true; }
+            }
+            query.push_str(&format!(" timestamp >= ?{}", param_index));
+            params.push(Box::new(start_ts));
+            param_index += 1;
         }
 
         query.push_str(" ORDER BY timestamp DESC LIMIT ?");
@@ -731,7 +758,7 @@ impl HistoryManager {
         // Get all entries to delete their audio files
         // Use a large limit to get all entries. Since we are clearing everything, pagination isn't strictly needed here 
         // but the method signature changed.
-        let entries = self.get_history_entries(usize::MAX, 0, None).await?;
+        let entries = self.get_history_entries(usize::MAX, 0, None, false, None).await?;
         let total = entries.len();
         
         info!("Clearing all {} history entries", total);

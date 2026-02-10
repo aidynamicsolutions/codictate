@@ -10,7 +10,53 @@ import { formatDate } from "@/utils/dateFormat";
 
 const IS_LINUX = platform() === "linux";
 
+export type HistoryFilter = "all" | "starred" | "today" | "this_week" | "this_month" | "this_year";
+
+/** Compute a unix-seconds cutoff timestamp for the given time period in local timezone */
+function computeTimePeriodStart(filter: HistoryFilter): number | null {
+  if (filter === "all" || filter === "starred") return null;
+  const now = new Date();
+  let cutoff: Date;
+  switch (filter) {
+    case "today":
+      cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      break;
+    case "this_week": {
+      const day = now.getDay(); // 0=Sun
+      const diff = day === 0 ? 6 : day - 1; // Monday start (ISO 8601)
+      cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diff);
+      break;
+    }
+    case "this_month":
+      cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
+      break;
+    case "this_year":
+      cutoff = new Date(now.getFullYear(), 0, 1);
+      break;
+  }
+  return Math.floor(cutoff.getTime() / 1000);
+}
+
 import { useDebounce } from "./useDebounce";
+
+/** Returns filter-aware empty-state i18n keys (or undefined for default behavior) */
+export function getFilterEmptyState(
+  filter: HistoryFilter,
+  hasActiveFilters: boolean,
+  t: (key: string) => string
+): { emptyMessage?: string; emptyDescription?: string } {
+  if (!hasActiveFilters) return {};
+  if (filter === "starred") {
+    return {
+      emptyMessage: t("settings.history.filter.noStarred"),
+      emptyDescription: t("settings.history.filter.noStarredDescription"),
+    };
+  }
+  return {
+    emptyMessage: t("settings.history.filter.noPeriod"),
+    emptyDescription: t("settings.history.filter.noPeriodDescription"),
+  };
+}
 
 export interface UseHistoryReturn {
   historyEntries: HistoryEntry[];
@@ -29,6 +75,10 @@ export interface UseHistoryReturn {
   setSearchQuery: (query: string) => void;
   filteredEntries: HistoryEntry[];
   debouncedSearchQuery: string;
+  filter: HistoryFilter;
+  setFilter: (value: HistoryFilter) => void;
+  hasActiveFilters: boolean;
+  clearFilters: () => void;
 }
 
 export const useHistory = (): UseHistoryReturn => {
@@ -40,16 +90,21 @@ export const useHistory = (): UseHistoryReturn => {
   const [isClearing, setIsClearing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebounce(searchQuery, 300);
+  const [filter, setFilter] = useState<HistoryFilter>("all");
+
+
+  const hasActiveFilters = filter !== "all";
+  const clearFilters = useCallback(() => {
+    setFilter("all");
+  }, []);
 
   const LIMIT = 50;
 
-  // Reset offset and entries when search query changes
+  // Reset offset and entries when search query or filters change
   useEffect(() => {
     setOffset(0);
     setHasMore(true);
-    // We intentionally don't clear entries here to avoid flicker, the next load will replace them
-    // But for correct UX we should probably trigger a load immediately or rely on the effect below
-  }, [debouncedSearchQuery]);
+  }, [debouncedSearchQuery, filter]);
 
   const loadHistoryEntries = useCallback(async (isLoadMore = false) => {
     // If we receive a request to load more but we know there's no more, stop.
@@ -61,7 +116,9 @@ export const useHistory = (): UseHistoryReturn => {
       // Use current offset if loading more, otherwise 0
       const currentOffset = isLoadMore ? offset : 0;
       
-      const result = await commands.getHistoryEntries(LIMIT, currentOffset, debouncedSearchQuery || null);
+      const timePeriodStart = computeTimePeriodStart(filter);
+      const isStarred = filter === "starred";
+      const result = await commands.getHistoryEntries(LIMIT, currentOffset, debouncedSearchQuery || null, isStarred, timePeriodStart);
       
       if (result.status === "ok") {
         const newEntries = result.data;
@@ -85,13 +142,13 @@ export const useHistory = (): UseHistoryReturn => {
     } finally {
       setLoading(false);
     }
-  }, [offset, hasMore, debouncedSearchQuery]);
+  }, [offset, hasMore, debouncedSearchQuery, filter]);
 
   // Initial load and search reaction
   // We use a ref to track if it's the very first mount vs search update
   useEffect(() => {
     loadHistoryEntries(false);
-  }, [debouncedSearchQuery]); 
+  }, [debouncedSearchQuery, filter]); 
 
   // Reload on updates (e.g. deletion)
   // Logic: if an item is deleted, re-fetching whole list might be expensive.
@@ -120,15 +177,24 @@ export const useHistory = (): UseHistoryReturn => {
     };
   }, [loadHistoryEntries]);
 
-  const toggleSaved = async (id: number) => {
+  const toggleSaved = useCallback(async (id: number) => {
     try {
       await commands.toggleHistoryEntrySaved(id);
-      // Optimistic update
-      setHistoryEntries(prev => prev.map(e => e.id === id ? { ...e, saved: !e.saved } : e));
+      const isStarredFilter = filter === "starred";
+      // Optimistic update — if "starred only" filter is active and user
+      // unstars an entry, remove it from the list since it no longer matches
+      setHistoryEntries(prev => {
+        const entry = prev.find(e => e.id === id);
+        if (isStarredFilter && entry?.saved) {
+          // Entry is being unstarred while starred filter is active — remove it
+          return prev.filter(e => e.id !== id);
+        }
+        return prev.map(e => e.id === id ? { ...e, saved: !e.saved } : e);
+      });
     } catch (error) {
       logError(`Failed to toggle saved status: ${error}`, "fe-history");
     }
-  };
+  }, [filter]);
 
   const getAudioUrl = useCallback(async (fileName: string) => {
     try {
@@ -221,5 +287,9 @@ export const useHistory = (): UseHistoryReturn => {
     setSearchQuery,
     filteredEntries, // Kept for interface compatibility but same as historyEntries
     debouncedSearchQuery,
+    filter,
+    setFilter,
+    hasActiveFilters,
+    clearFilters,
   };
 };

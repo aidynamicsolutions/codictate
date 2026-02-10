@@ -6,8 +6,9 @@ import { listen } from "@tauri-apps/api/event";
 import { GettingStarted } from "./GettingStarted";
 import { WhatsNew } from "./WhatsNew";
 import { StatsOverview } from "./StatsOverview";
-import { useHistory } from "@/hooks/useHistory";
+import { useHistory, getFilterEmptyState } from "@/hooks/useHistory";
 import { HistoryList } from "@/components/shared/HistoryList";
+import { HistoryFilterDropdown } from "@/components/shared/HistoryFilterDropdown";
 
 interface Stats {
   total_words: number;
@@ -38,6 +39,10 @@ export default function Home({
     getAudioUrl,
     loadMore,
     hasMore,
+    filter,
+    setFilter,
+    hasActiveFilters,
+    clearFilters,
   } = useHistory();
 
   useEffect(() => {
@@ -129,9 +134,17 @@ export default function Home({
           <GettingStarted onNavigate={onNavigate} />
 
           <div className="flex flex-col gap-4">
-            <h2 className="text-xl font-semibold tracking-tight sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-4 -mt-4 border-b border-border/40">
-              {t("settings.history.title")}
-            </h2>
+            <div className="flex items-center justify-between sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 py-4 -mt-4 border-b border-border/40">
+              <h2 className="text-xl font-semibold tracking-tight">
+                {t("settings.history.title")}
+              </h2>
+              <HistoryFilterDropdown
+                filter={filter}
+                onFilterChange={setFilter}
+                hasActiveFilters={hasActiveFilters}
+                onClearFilters={clearFilters}
+              />
+            </div>
             <div className="bg-card/50 rounded-xl backdrop-blur-sm min-h-[300px] flex flex-col">
                  <HistoryList
                   loading={historyLoading}
@@ -140,8 +153,14 @@ export default function Home({
                   groupedEntries={groupedEntries}
                   onToggleSaved={toggleSaved}
                   onDelete={deleteAudioEntry}
-                  emptyMessage={t("settings.history.empty")}
-                  emptyDescription={t("settings.history.emptyDescription")}
+                  emptyMessage={
+                    getFilterEmptyState(filter, hasActiveFilters, t).emptyMessage
+                    || t("settings.history.empty")
+                  }
+                  emptyDescription={
+                    getFilterEmptyState(filter, hasActiveFilters, t).emptyDescription
+                    || t("settings.history.emptyDescription")
+                  }
                   scrollContainer={scrollElement}
                   stickyTopOffset={57}
                   loadMore={loadMore}

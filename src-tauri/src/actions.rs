@@ -672,7 +672,7 @@ impl ShortcutAction for PasteLastTranscriptAction {
         tauri::async_runtime::spawn(async move {
             let text = if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
                 let manager = history_manager.inner().clone();
-                match manager.get_history_entries(1, 0, None).await {
+                match manager.get_history_entries(1, 0, None, false, None).await {
                     Ok(entries) => {
                         if let Some(latest) = entries.first() {
                             // Prefer post-processed text if available, otherwise use raw transcription
@@ -752,7 +752,7 @@ impl ShortcutAction for RefineLastTranscriptAction {
             // Get the last raw transcription from history
             let raw_text = if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
                 let manager = history_manager.inner().clone();
-                match manager.get_history_entries(1, 0, None).await {
+                match manager.get_history_entries(1, 0, None, false, None).await {
                     Ok(entries) => {
                         if let Some(latest) = entries.first() {
                             // Always use the RAW transcription, not post-processed
