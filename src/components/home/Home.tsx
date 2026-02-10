@@ -106,7 +106,7 @@ export default function Home({
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden w-full animate-in fade-in slide-in-from-bottom-2 duration-500 relative">
+    <div className="flex flex-col h-full overflow-hidden w-full animate-in fade-in slide-in-from-bottom-2 duration-500 relative ">
       {/* Static Header & Stats Section */}
       <div className="flex-none p-8 pb-4 flex flex-col gap-6 max-w-5xl mx-auto w-full">
         <div className="flex flex-col gap-2">
@@ -154,7 +154,7 @@ export default function Home({
 
       
       {/* Bottom fade/blur effect */}
-      <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-background via-background/60 to-transparent pointer-events-none z-10 backdrop-blur-[1px]" />
+      <div className="absolute bottom-0 left-0 right-0 h-3 bg-linear-to-t from-background via-background/60 to-transparent pointer-events-none z-10 backdrop-blur-[1px]" />
     </div>
   );
 }

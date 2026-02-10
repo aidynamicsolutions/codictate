@@ -91,7 +91,7 @@ export const GeneralSettings: React.FC = () => {
   }, [shouldScroll, setShouldScroll]);
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-6">
+    <div className="max-w-3xl w-full mx-auto space-y-6 py-4">
       <SettingsGroup title={t("settings.general.title")}>
         {/* Keyboard shortcuts row */}
         <SettingsRow

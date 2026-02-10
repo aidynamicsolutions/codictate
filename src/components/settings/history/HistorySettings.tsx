@@ -296,7 +296,7 @@ export const HistorySettings: React.FC = () => {
   };
 
   return (
-    <div className="max-w-3xl w-full mx-auto space-y-8 flex flex-col flex-1 min-h-0 pb-0 -mb-4 relative">
+    <div className="max-w-3xl w-full mx-auto space-y-8 flex flex-col flex-1 min-h-0 pb-0 -mb-8 relative py-4">
       <HistoryStorage
         onPrune={loadHistoryEntries}
         onClearAll={() => setShowClearDialog(true)}
@@ -358,7 +358,7 @@ export const HistorySettings: React.FC = () => {
             </div>
             </CardContent>
         </Card>
-        <div className="absolute -bottom-6 left-0 right-0 h-20 bg-gradient-to-t from-background via-background/60 to-transparent pointer-events-none z-10 backdrop-blur-[1px]" />
+        <div className="absolute bottom-0 left-0 right-0 h-10 bg-linear-to-t from-background via-background/60 to-transparent pointer-events-none z-10 backdrop-blur-[1px]" />
       </div>
 
       {/* Clear All Confirmation Dialog */}

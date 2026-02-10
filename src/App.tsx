@@ -205,7 +205,7 @@ function App() {
               currentSection === "history" || currentSection === "dictionary" ? "overflow-hidden" : "overflow-y-auto"
             }`}
           >
-            <div className="flex-1 flex flex-col items-center p-4 gap-4 min-h-0 w-full">
+            <div className="flex-1 flex flex-col items-center gap-4 min-h-0 w-full">
               <AccessibilityPermissions />
               <MicrophonePermissions />
               {renderSettingsContent(currentSection, setCurrentSection)}
