@@ -1,0 +1,13 @@
+## 1. Implementation
+- [ ] 1.1 Add `tauri-plugin-aptabase` to `src-tauri/Cargo.toml`
+- [ ] 1.2 Initialize Aptabase in `src-tauri/src/lib.rs` with App Key (env var)
+- [ ] 1.3 Configure permissions in `src-tauri/capabilities/default.json` (allow `aptabase:default`)
+- [ ] 1.4 Create `src/utils/analytics.ts` wrapper
+    - [ ] Implement `trackEvent` function
+    - [ ] Implement offline queue using `tauri-plugin-store` (lazy flush)
+    - [ ] Handle network status changes to flush queue
+- [ ] 1.5 Instrument `App.tsx` for `app_started`
+- [ ] 1.6 Instrument `transcription.rs` (or frontend success handler) for `transcription_completed`
+- [ ] 1.7 Add `APTABASE_APP_KEY` handling (env var or config)
+- [ ] 1.8 Verify event reception in Aptabase dashboard
+- [ ] 1.9 Verify offline queue mechanism (simulate offline, generate event, go online, verify flush)
