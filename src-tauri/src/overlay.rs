@@ -185,7 +185,15 @@ fn calculate_overlay_position(app_handle: &AppHandle) -> Option<(f64, f64)> {
         let y = match settings.overlay_position {
             OverlayPosition::Top => work_area_y + OVERLAY_TOP_OFFSET,
             OverlayPosition::Bottom | OverlayPosition::None => {
-                work_area_y + work_area_height - OVERLAY_HEIGHT - OVERLAY_BOTTOM_OFFSET
+                #[cfg(target_os = "macos")]
+                {
+                    // don't subtract the overlay height it puts it too far up
+                    work_area_y + work_area_height - OVERLAY_BOTTOM_OFFSET
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    work_area_y + work_area_height - OVERLAY_HEIGHT - OVERLAY_BOTTOM_OFFSET
+                }
             }
         };
 

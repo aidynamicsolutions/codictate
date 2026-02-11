@@ -8,7 +8,7 @@
   opacity: 0;
   transition: opacity 150ms ease-out;
   box-sizing: border-box;
-  background: #000000cc;
+  background: #000000;
   overflow: hidden; /* Mask the entrance animation */
 }
 
