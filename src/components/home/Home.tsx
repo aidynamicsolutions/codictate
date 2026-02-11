@@ -17,6 +17,8 @@ interface Stats {
   time_saved_minutes: number;
   streak_days: number;
   faster_than_typing_percentage: number;
+  total_filler_words_removed: number;
+  filler_filter_active: boolean;
 }
 
 export default function Home({
@@ -98,6 +100,8 @@ export default function Home({
           time_saved_minutes: statsData.time_saved_minutes,
           streak_days: Number(statsData.streak_days),
           faster_than_typing_percentage: statsData.faster_than_typing_percentage,
+          total_filler_words_removed: Number(statsData.total_filler_words_removed),
+          filler_filter_active: statsData.filler_filter_active,
         };
         logInfo(
           `[Home] Setting stats: total_words=${newStats.total_words} (prev=${stats?.total_words ?? "null"})`,

@@ -43,6 +43,8 @@ static MIGRATIONS: &[M] = &[
             transcription_dates TEXT DEFAULT '[]'
         );",
     ),
+    // Migration 6: Add filler word tracking for smart tile stats
+    M::up("ALTER TABLE user_stats ADD COLUMN total_filler_words_removed INTEGER DEFAULT 0;"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -73,6 +75,8 @@ pub struct HomeStats {
     pub time_saved_minutes: f64,
     pub streak_days: i64,
     pub faster_than_typing_percentage: f64,
+    pub total_filler_words_removed: i64,
+    pub filler_filter_active: bool,
 }
 
 pub struct HistoryManager {
@@ -235,6 +239,7 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
         duration_ms: i64,
+        filler_words_removed: i64,
     ) -> Result<()> {
         let timestamp = Utc::now().timestamp();
         let file_name = format!("codictate-{}.wav", timestamp);
@@ -253,6 +258,7 @@ impl HistoryManager {
             post_processed_text,
             post_process_prompt,
             duration_ms,
+            filler_words_removed,
         )?;
 
         // Clean up old entries
@@ -278,6 +284,7 @@ impl HistoryManager {
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
         duration_ms: i64,
+        filler_words_removed: i64,
     ) -> Result<()> {
         let mut conn = self.get_connection()?;
         let tx = conn.transaction()?;
@@ -337,14 +344,15 @@ impl HistoryManager {
                 total_transcriptions = total_transcriptions + 1,
                 last_transcription_date = ?3,
                 transcription_dates = ?4,
-                first_transcription_date = COALESCE(first_transcription_date, ?3)
+                first_transcription_date = COALESCE(first_transcription_date, ?3),
+                total_filler_words_removed = total_filler_words_removed + ?5
              WHERE id = 1",
-            params![word_count, effective_duration_ms, timestamp, new_dates_json],
+            params![word_count, effective_duration_ms, timestamp, new_dates_json, filler_words_removed],
         )?;
 
         tx.commit()?;
 
-        debug!("Saved transcription to database and updated stats");
+        debug!("Saved transcription to database and updated stats (filler_words_removed: {})", filler_words_removed);
         Ok(())
     }
 
@@ -800,15 +808,19 @@ impl HistoryManager {
     pub fn get_home_stats(&self) -> Result<HomeStats> {
         let conn = self.get_connection()?;
         
-        let (total_words, total_duration_ms, transcription_dates_json): (i64, i64, String) = conn.query_row(
-            "SELECT total_words, total_duration_ms, transcription_dates FROM user_stats WHERE id = 1",
+        let (total_words, total_duration_ms, transcription_dates_json, total_filler_words_removed): (i64, i64, String, i64) = conn.query_row(
+            "SELECT total_words, total_duration_ms, transcription_dates, COALESCE(total_filler_words_removed, 0) FROM user_stats WHERE id = 1",
             [],
             |row| Ok((
                 row.get(0).unwrap_or(0),
                 row.get(1).unwrap_or(0),
-                row.get(2).unwrap_or_else(|_| "[]".to_string())
+                row.get(2).unwrap_or_else(|_| "[]".to_string()),
+                row.get(3).unwrap_or(0),
             )),
-        ).unwrap_or((0, 0, "[]".to_string()));
+        ).unwrap_or((0, 0, "[]".to_string(), 0));
+
+        // Read filler filter setting
+        let filler_filter_active = crate::settings::get_settings(&self.app_handle).enable_filler_word_filter;
 
         let total_duration_minutes = total_duration_ms as f64 / 60000.0;
         
@@ -828,7 +840,7 @@ impl HistoryManager {
         let time_to_type_minutes = total_words as f64 / 40.0;
         let time_saved_minutes = time_to_type_minutes - total_duration_minutes;
 
-        info!("Stats from DB: Words={}, Duration={}ms, WPM={:.2}", total_words, total_duration_ms, wpm);
+        info!("Stats from DB: Words={}, Duration={}ms, WPM={:.2}, FillerWordsRemoved={}, FillerFilterActive={}", total_words, total_duration_ms, wpm, total_filler_words_removed, filler_filter_active);
 
         // Streak calculation
         let dates: Vec<String> = serde_json::from_str(&transcription_dates_json).unwrap_or_default();
@@ -880,6 +892,8 @@ impl HistoryManager {
             time_saved_minutes,
             streak_days,
             faster_than_typing_percentage,
+            total_filler_words_removed,
+            filler_filter_active,
         })
     }
 }

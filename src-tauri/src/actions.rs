@@ -475,7 +475,7 @@ impl ShortcutAction for TranscribeAction {
                     let transcription_time = Instant::now();
                     let samples_clone = samples.clone(); // Clone for history saving
                     match tm.transcribe(samples) {
-                        Ok(transcription) => {
+                        Ok((transcription, filler_words_removed)) => {
                              // Check if the session was cancelled during transcription (from llm)
                             if !tm.is_session_active(&session_id_for_task) {
                                 debug!("Transcription for session {} was cancelled, discarding result", session_id_for_task);
@@ -487,9 +487,10 @@ impl ShortcutAction for TranscribeAction {
                             
 
                             debug!(
-                                "Transcription completed in {:?}: '{}'",
+                                "Transcription completed in {:?}: '{}' (filler_words_removed: {})",
                                 transcription_time.elapsed(),
-                                transcription
+                                transcription,
+                                filler_words_removed
                             );
                             if !transcription.is_empty() {
                                 let settings = get_settings(&ah);
@@ -542,6 +543,7 @@ impl ShortcutAction for TranscribeAction {
 
                                 let hm_clone = Arc::clone(&hm);
                                 let transcription_for_history = transcription.clone();
+                                let filler_count = filler_words_removed as i64;
                                 tauri::async_runtime::spawn(async move {
                                     // Calculate duration in milliseconds (sample rate is 16kHz)
                                     let duration_ms = (samples_clone.len() as f64 / 16000.0 * 1000.0) as i64;
@@ -552,6 +554,7 @@ impl ShortcutAction for TranscribeAction {
                                             post_processed_text,
                                             post_process_prompt,
                                             duration_ms,
+                                            filler_count,
                                         )
                                         .await
                                     {

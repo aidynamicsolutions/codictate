@@ -1,4 +1,4 @@
-use crate::audio_toolkit::{apply_custom_words, filter_hallucinations, filter_transcription_output};
+use crate::audio_toolkit::{apply_custom_words, filter_and_count_filler_words, filter_hallucinations};
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{get_settings, ModelUnloadTimeout};
 use anyhow::Result;
@@ -394,7 +394,7 @@ impl TranscriptionManager {
         active.is_some()
     }
 
-    pub fn transcribe(&self, audio: Vec<f32>) -> Result<String> {
+    pub fn transcribe(&self, audio: Vec<f32>) -> Result<(String, usize)> {
         // Update last activity timestamp
         self.last_activity.store(
             SystemTime::now()
@@ -411,7 +411,7 @@ impl TranscriptionManager {
         if audio.is_empty() {
             debug!("Empty audio vector");
             self.maybe_unload_immediately("empty audio");
-            return Ok(String::new());
+            return Ok((String::new(), 0));
         }
 
         // Calculate and log RMS (Root Mean Square) to detect if input is silent
@@ -531,9 +531,12 @@ impl TranscriptionManager {
         // Filter out repeated words / hallucinations, then filler words
         let pre_filter = corrected_result;
         let mut filtered_result = pre_filter.clone();
+        let mut filler_words_removed: usize = 0;
 
         if settings.enable_filler_word_filter {
-            filtered_result = filter_transcription_output(&filtered_result);
+            let (new_text, count) = filter_and_count_filler_words(&filtered_result);
+            filtered_result = new_text;
+            filler_words_removed = count;
         }
         if settings.enable_hallucination_filter {
             filtered_result = filter_hallucinations(&filtered_result);
@@ -565,7 +568,7 @@ impl TranscriptionManager {
 
         self.maybe_unload_immediately("transcription");
 
-        Ok(final_result)
+        Ok((final_result, filler_words_removed))
     }
 }
 

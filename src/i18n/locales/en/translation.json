@@ -125,7 +125,15 @@
         "streak": "Consecutive days with at least one transcription.",
         "wpm": "Words per minute (average dictation speed). Calculated as total words / total duration.",
         "words": "Total words dictated across all transcriptions.",
-        "timeSaved": "Estimated time saved vs. typing at 40 WPM. Formula: (Total Words / 40) - Total Duration."
+        "timeSaved": "Estimated time saved vs. typing at 40 WPM. Formula: (Total Words / 40) - Total Duration.",
+        "fillerWords": "Total filler words (uh, um, etc.) automatically removed from your transcriptions."
+      },
+      "fillerWords": {
+        "label": "Filler words",
+        "subtext_one": "{{count}} cleaner word",
+        "subtext_other": "{{count}} cleaner words",
+        "zero": "Start speaking to see fillers caught!",
+        "encouragement": "Your speech, polished ✨"
       }
     },
     "getStarted": {

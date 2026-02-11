@@ -972,7 +972,7 @@ export type CustomWordEntry = { input: string; replacement: string; is_replaceme
 export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "SenseVoice"
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; duration_ms: number; file_path: string }
 export type HistoryStats = { total_size_bytes: number; total_entries: number }
-export type HomeStats = { total_words: number; total_duration_minutes: number; wpm: number; time_saved_minutes: number; streak_days: number; faster_than_typing_percentage: number }
+export type HomeStats = { total_words: number; total_duration_minutes: number; wpm: number; time_saved_minutes: number; streak_days: number; faster_than_typing_percentage: number; total_filler_words_removed: number; filler_filter_active: boolean }
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**

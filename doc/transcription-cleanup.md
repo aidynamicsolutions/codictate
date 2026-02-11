@@ -52,11 +52,19 @@ Detects when a speaker makes multiple short attempts before landing on the inten
 > [!IMPORTANT]
 > **Filter Order:** When both filters are enabled, **Remove Filler Words** runs first. This ensures that filler words don't interrupt stutter patterns, allowing the **Remove Repeated Words** filter to catch stutters like "I uh I uh I want" (which becomes "I I I want" → "I want").
 
+## Filler Word Counting
+
+The function `filter_and_count_filler_words()` counts and removes all filler words in a single pass, returning `(filtered_text, count)`. The count is accumulated by iterating through each filler pattern sequentially: counting matches first, then removing them before moving to the next pattern.
+
+> [!NOTE]
+> **Counting edge case:** Because patterns are applied sequentially on a progressively mutated string, removing one filler word could theoretically create a new match for a subsequent pattern (e.g., if removing `"uh"` from between characters created a new word boundary match). In practice, word-boundary anchored patterns (`\buh\b`) make this extremely unlikely—removing a standalone filler word leaves spaces, which cannot form new word-boundary matches for other filler words. No action is needed, but this is documented for future maintainers.
+
 ## Known Limitations
 
 - **Filler word list** is English-only. Non-English filler words are not removed.
 - Both filters operate on the final text output; they cannot distinguish between actual speech and ASR artifacts at the audio level.
 - Self-correction detection requires fragments to be ≤ 2 characters; longer false starts (e.g., "fuz fuzzy") are not detected.
+- **ASR model artifacts:** The ASR model may transcribe filler sounds as real words (e.g., "uh" → "in R"). These are not catchable by regex-based filler filters. Use **Refine** (AI post-processing) to correct these artifacts via the homophone correction prompt.
 
 ## Settings
 

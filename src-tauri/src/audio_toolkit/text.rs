@@ -432,13 +432,16 @@ static FILLER_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
         .collect()
 });
 
-/// Filters transcription output by removing filler words only.
-/// Stutter/repetition handling is in `filter_hallucinations()`.
-pub fn filter_transcription_output(text: &str) -> String {
+/// Filters filler words and returns (filtered_text, removed_count).
+/// This is the core implementation used by both `filter_transcription_output`
+/// and callers that need the removal count (e.g., stats tracking).
+pub fn filter_and_count_filler_words(text: &str) -> (String, usize) {
     let mut filtered = text.to_string();
+    let mut count = 0;
 
-    // Remove filler words
+    // Count and remove filler words
     for pattern in FILLER_PATTERNS.iter() {
+        count += pattern.find_iter(&filtered).count();
         filtered = pattern.replace_all(&filtered, "").to_string();
     }
 
@@ -446,7 +449,13 @@ pub fn filter_transcription_output(text: &str) -> String {
     filtered = MULTI_SPACE_PATTERN.replace_all(&filtered, " ").to_string();
 
     // Trim leading/trailing whitespace
-    filtered.trim().to_string()
+    (filtered.trim().to_string(), count)
+}
+
+/// Filters transcription output by removing filler words only.
+/// Stutter/repetition handling is in `filter_hallucinations()`.
+pub fn filter_transcription_output(text: &str) -> String {
+    filter_and_count_filler_words(text).0
 }
 
 /// Collapse progressive self-correction patterns where consecutive short fragments
@@ -750,6 +759,34 @@ mod tests {
     fn test_filter_transcription_output() {
         assert_eq!(filter_transcription_output("hello uh world"), "hello world");
         assert_eq!(filter_transcription_output("um hello"), "hello");
+    }
+
+    #[test]
+    fn test_filter_and_count_single_filler() {
+        let (text, count) = filter_and_count_filler_words("hello uh world");
+        assert_eq!(text, "hello world");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_filter_and_count_multiple_fillers() {
+        let (text, count) = filter_and_count_filler_words("um like uh hello umm world");
+        assert_eq!(text, "like hello world");
+        assert_eq!(count, 3); // um, uh, umm
+    }
+
+    #[test]
+    fn test_filter_and_count_no_fillers() {
+        let (text, count) = filter_and_count_filler_words("clean text here");
+        assert_eq!(text, "clean text here");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_filter_and_count_empty_input() {
+        let (text, count) = filter_and_count_filler_words("");
+        assert_eq!(text, "");
+        assert_eq!(count, 0);
     }
 
     #[test]

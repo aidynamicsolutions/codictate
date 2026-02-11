@@ -11,19 +11,31 @@ The Home page displays aggregated statistics about the user's transcription acti
 | **Total Words** | Total words dictated across all transcriptions | Sum of word counts |
 | **Time Saved** | Estimated time saved vs. typing | `(total_words / 40) - total_duration_minutes` |
 | **Faster Than Typing %** | How much faster than average typing speed | `((wpm - 40) / 40) × 100` |
+| **Filler Words Removed** | Total filler words (uh, um, etc.) automatically removed | Count of matched filler patterns |
 
 ## Display Formats
 
-### Daily Streak Card
+### Smart Stats Tile (Rotating)
+This dynamic tile alternates between **Daily Streak** and **Filler Words Removed** to provide more insights in less space.
+
+**Behavior:**
+1. **Initial Load:** Shows Streak for ~2.5s, then animates to Filler Stats (if applicable).
+2. **On Focus:** Re-triggers rotation sequence.
+3. **Smart Locking:** Locks to **Streak face** (no rotation) if:
+    - Filler word filter is disabled.
+    - No filler words have been removed yet.
+    - Streak is broken (0 days) — prioritizes encouragement.
+    - Streak milestone reached (≥ 3 days) — prioritizes celebration.
+
+**Streak Face:**
 - **Value**: `X days 🔥` (singular "day" for 1)
-- **Subtext**: Tiered encouragement messages:
-  | Streak Days | Message |
-  |-------------|---------|
-  | 0 | "Let's start a new streak!" |
-  | 1-3 | "You're off to a great start!" |
-  | 4-7 | "Keep the momentum going!" |
-  | 8+ | "You're on fire!" |
+- **Subtext**: Tiered encouragement messages (same as before).
 - **Tooltip**: "Consecutive days with at least one transcription."
+
+**Filler Words Face:**
+- **Value**: `X ✨`
+- **Subtext**: "X cleaner words" or "Your speech, polished <U+2728>"
+- **Tooltip**: "Total filler words (uh, um, etc.) automatically removed from your transcriptions."
 
 ### WPM Card
 - **Value**: `X 🏆`
@@ -95,6 +107,11 @@ The Home page displays aggregated statistics about the user's transcription acti
 - Only calculated when WPM > 40
 - Shows percentage improvement over average typing speed
 
+### Filler Words
+- Counts words matching filler patterns (e.g., "um", "uh", "like", "you know")
+- Count matches exactly what is removed from the text output
+- Only counts fillers when the **Filler Word Filter** is enabled
+
 ## Data Flow
 
 ```
@@ -147,7 +164,8 @@ CREATE TABLE user_stats (
     total_transcriptions INTEGER DEFAULT 0,
     first_transcription_date INTEGER,
     last_transcription_date INTEGER,
-    transcription_dates TEXT -- JSON array of active dates for streak calc
+    transcription_dates TEXT, -- JSON array of active dates for streak calc
+    total_filler_words_removed INTEGER DEFAULT 0
 );
 ```
 
@@ -157,5 +175,5 @@ CREATE TABLE user_stats (
 |-------|------|----------|
 | Backend | `src-tauri/src/managers/history.rs` | `get_home_stats()`, `save_transcription()` |
 | Command | `src-tauri/src/commands/history.rs` | `get_home_stats`, `clear_all_history` |
-| Frontend | `src/components/Home.tsx` | `loadData()`, helper functions |
-| Translations | `src/i18n/locales/en/translation.json` | `home.stats.*`, `settings.history.*` |
+| Frontend | `src/components/home/StatsOverview.tsx`, `SmartStatTile` | `renderSmartTile()` |
+| Translations | `src/i18n/locales/en/translation.json` | `home.stats.*` (updated) |
