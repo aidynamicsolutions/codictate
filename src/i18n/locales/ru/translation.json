@@ -3,7 +3,8 @@
   "tray": {
     "settings": "Настройки...",
     "checkUpdates": "Проверить обновления...",
-    "copyLastTranscript": "Копировать последнюю запись",
+    "copyLastTranscript": "Скопировать последнюю транскрипцию",
+    "unloadModel": "Выгрузить модель",
     "quit": "Выход",
     "cancel": "Отмена"
   },
@@ -445,6 +446,10 @@
         "label": "Запуск при запуске",
         "description": "Автоматически запускать {{appName}} при входе в систему."
       },
+      "showTrayIcon": {
+        "label": "Показать значок в трее",
+        "description": "Отображать значок Handy в системном трее."
+      },
       "overlay": {
         "title": "Позиция наложения",
         "description": "Отображение наложения визуальной обратной связи во время записи и транскрипции. В Linux рекомендуется выбрать «Нет».",
@@ -471,6 +476,17 @@
         "options": {
           "dontModify": "Не изменять буфер обмена",
           "copyToClipboard": "Копировать в буфер обмена"
+        }
+      },
+      "autoSubmit": {
+        "title": "Автоматическая отправка",
+        "description": "Автоматически отправляет выбранную комбинацию клавиш после вставки текста. Cmd+Enter применяется на macOS, а Windows/Linux используют Super+Enter.",
+        "options": {
+          "off": "Выкл.",
+          "enter": "Enter",
+          "cmdEnter": "Cmd+Enter",
+          "superEnter": "Super+Enter",
+          "ctrlEnter": "Ctrl+Enter"
         }
       },
       "translateToEnglish": {

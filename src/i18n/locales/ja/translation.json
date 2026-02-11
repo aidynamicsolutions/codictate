@@ -3,7 +3,8 @@
   "tray": {
     "settings": "設定...",
     "checkUpdates": "アップデートを確認...",
-    "copyLastTranscript": "最後の録音をコピー",
+    "copyLastTranscript": "最新の文字起こしをコピー",
+    "unloadModel": "モデルをアンロード",
     "quit": "終了",
     "cancel": "キャンセル"
   },
@@ -445,6 +446,10 @@
         "label": "起動時に実行",
         "description": "コンピューターにログインしたときに{{appName}}を自動的に起動。"
       },
+      "showTrayIcon": {
+        "label": "トレイアイコンを表示",
+        "description": "システムトレイにHandyのアイコンを表示します。"
+      },
       "overlay": {
         "title": "オーバーレイ位置",
         "description": "録音と文字起こし中に視覚的なフィードバックオーバーレイを表示。Linuxでは「なし」を推奨。",
@@ -471,6 +476,17 @@
         "options": {
           "dontModify": "クリップボードを変更しない",
           "copyToClipboard": "クリップボードにコピー"
+        }
+      },
+      "autoSubmit": {
+        "title": "自動送信",
+        "description": "テキスト挿入後に選択したキーの組み合わせを自動的に送信します。macOSではCmd+Enter、Windows/LinuxではSuper+Enterが適用されます。",
+        "options": {
+          "off": "オフ",
+          "enter": "Enter",
+          "cmdEnter": "Cmd+Enter",
+          "superEnter": "Super+Enter",
+          "ctrlEnter": "Ctrl+Enter"
         }
       },
       "translateToEnglish": {

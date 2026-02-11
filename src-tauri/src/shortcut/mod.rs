@@ -10,7 +10,7 @@ use crate::actions::ACTION_MAP;
 
 use crate::settings::ShortcutBinding;
 use crate::settings::{
-    self, get_settings, ClipboardHandling, CustomWordEntry, LLMPrompt, OverlayPosition, PasteMethod,
+    self, get_settings, AutoSubmitKey, ClipboardHandling, CustomWordEntry, LLMPrompt, OverlayPosition, PasteMethod,
     SoundTheme, APPLE_INTELLIGENCE_DEFAULT_MODEL_ID, APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
@@ -543,6 +543,33 @@ pub fn change_clipboard_handling_setting(app: AppHandle, handling: String) -> Re
         }
     };
     settings.clipboard_handling = parsed;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_auto_submit_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.auto_submit = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_auto_submit_key_setting(app: AppHandle, key: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    let parsed = match key.as_str() {
+        "enter" => AutoSubmitKey::Enter,
+        "ctrl_enter" => AutoSubmitKey::CtrlEnter,
+        "cmd_enter" => AutoSubmitKey::CmdEnter,
+        other => {
+            warn!("Invalid auto submit key '{}', defaulting to enter", other);
+            AutoSubmitKey::Enter
+        }
+    };
+    settings.auto_submit_key = parsed;
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -1155,6 +1182,32 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
         error!("_unregister_shortcut error: {}", error_msg);
         error_msg
     })?;
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_show_tray_icon_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.show_tray_icon = enabled;
+    settings::write_settings(&app, settings);
+
+    // Apply change immediately
+    tray::set_tray_visibility(&app, enabled);
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_show_unload_model_in_tray_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.show_unload_model_in_tray = enabled;
+    settings::write_settings(&app, settings);
+
+    // Refresh tray menu to show/hide the unload model item
+    tray::update_tray_menu_sync(&app, &tray::TrayIconState::Idle, None);
 
     Ok(())
 }

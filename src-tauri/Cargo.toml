@@ -1,7 +1,8 @@
 [package]
 name = "codictate"
-version = "0.7.2"
+version = "0.7.4"
 description = "Codictate"
+
 authors = ["cjpais"]
 edition = "2021"
 license = "MIT"
@@ -30,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 
 [dependencies]
 once_cell = "1"
-tauri = { version = "2.9.1", features = [
+tauri = { version = "2.10.1", features = [
   "protocol-asset",
   "macos-private-api",
   "tray-icon",
@@ -69,7 +70,7 @@ rusqlite = { version = "0.37", features = ["bundled"] }
 tar = "0.4.44"
 flate2 = "1.0"
 transcribe-rs = { version = "0.2.3", features = ["whisper", "parakeet", "moonshine", "sense_voice"] }
-handy-keys = "0.1.4"
+handy-keys = "0.2.0"
 ferrous-opencc = "0.2.3"
 specta = "=2.0.0-rc.22"
 specta-typescript = "0.0.9"
@@ -80,7 +81,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 uuid = { version = "1.0", features = ["v4"] }
-tauri-plugin-dialog = "2"
+tauri-plugin-dialog = "2.6.0"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
@@ -89,7 +90,7 @@ signal-hook = "0.3"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-single-instance = "2.3.2"
-tauri-plugin-updater = "2.9.0"
+tauri-plugin-updater = "2.10.0"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61.3", features = [

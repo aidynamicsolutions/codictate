@@ -20,6 +20,7 @@ import { useUpdateStore } from "../../../stores/updateStore";
 import { ShowOverlay } from "../ShowOverlay";
 import { TranslateToEnglish } from "../TranslateToEnglish";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
+import { ShowUnloadModelInTray } from "../ShowUnloadModelInTray";
 
 import { StartHidden } from "../StartHidden";
 import { AutostartToggle } from "../AutostartToggle";
@@ -146,6 +147,7 @@ export const GeneralSettings: React.FC = () => {
         <ClipboardHandlingSetting descriptionMode="tooltip" grouped={true} />
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
+        <ShowUnloadModelInTray descriptionMode="tooltip" grouped={true} />
         <FillerWordFilter descriptionMode="tooltip" grouped={true} />
         <HallucinationFilter descriptionMode="tooltip" grouped={true} />
         <PostProcessingToggle descriptionMode="tooltip" grouped={true} />

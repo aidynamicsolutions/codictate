@@ -4,6 +4,7 @@
     "settings": "Settings...",
     "checkUpdates": "Check for Updates...",
     "copyLastTranscript": "Copy Last Transcript",
+    "unloadModel": "Unload Model",
     "quit": "Quit",
     "cancel": "Cancel"
   },
@@ -682,6 +683,14 @@
         "label": "Launch on Startup",
         "description": "Automatically start {{appName}} when you log in to your computer."
       },
+      "showTrayIcon": {
+        "label": "Show Tray Icon",
+        "description": "Display the Handy icon in the system tray."
+      },
+      "showUnloadModelInTray": {
+        "label": "Show \"Unload Model\" in Tray",
+        "description": "Show the \"Unload Model\" option in the system tray menu."
+      },
       "overlay": {
         "title": "Overlay Position",
         "description": "Display visual feedback overlay during recording and transcription. On Linux 'None' is recommended.",
@@ -708,6 +717,17 @@
         "options": {
           "dontModify": "Don't Modify Clipboard",
           "copyToClipboard": "Copy to Clipboard"
+        }
+      },
+      "autoSubmit": {
+        "title": "Auto Submit",
+        "description": "Automatically send the selected key combination after text insertion. Cmd+Enter applies on macOS, while Windows/Linux use Super+Enter.",
+        "options": {
+          "off": "Off",
+          "enter": "Enter",
+          "cmdEnter": "Cmd+Enter",
+          "superEnter": "Super+Enter",
+          "ctrlEnter": "Ctrl+Enter"
         }
       },
       "translateToEnglish": {

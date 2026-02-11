@@ -42,8 +42,7 @@ use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 
 use tauri::tray::TrayIconBuilder;
-use tauri::Emitter;
-use tauri::{AppHandle, Listener, Manager};
+use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use crate::settings::get_settings;
@@ -197,6 +196,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     let _ = app.emit("check-for-updates", ());
                 }
             }
+            "unload_model" => {
+                let transcription_manager = app.state::<Arc<TranscriptionManager>>();
+                if !transcription_manager.is_model_loaded() {
+                    tracing::warn!("No model is currently loaded.");
+                    return;
+                }
+                match transcription_manager.unload_model() {
+                    Ok(()) => tracing::info!("Model unloaded via tray."),
+                    Err(e) => tracing::error!("Failed to unload model via tray: {}", e),
+                }
+            }
             "cancel" => {
                 use crate::utils::cancel_current_operation;
 
@@ -219,6 +229,18 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let app_clone = app_handle.clone();
     tauri::async_runtime::spawn(async move {
         utils::update_tray_menu_async(&app_clone, &utils::TrayIconState::Idle, None).await;
+    });
+
+    // Apply show_tray_icon setting
+    let settings = settings::get_settings(app_handle);
+    if !settings.show_tray_icon {
+        tray::set_tray_visibility(app_handle, false);
+    }
+
+    // Refresh tray menu when model state changes
+    let app_handle_for_listener = app_handle.clone();
+    app_handle.listen("model-state-changed", move |_| {
+        tray::update_tray_menu_sync(&app_handle_for_listener, &tray::TrayIconState::Idle, None);
     });
 
     // Get the autostart manager and configure based on user setting
@@ -279,6 +301,8 @@ pub fn run() {
         shortcut::change_word_correction_threshold_setting,
         shortcut::change_paste_method_setting,
         shortcut::change_clipboard_handling_setting,
+        shortcut::change_auto_submit_setting,
+        shortcut::change_auto_submit_key_setting,
         shortcut::change_post_process_enabled_setting,
         shortcut::change_post_process_base_url_setting,
         shortcut::change_post_process_api_key_setting,
@@ -298,6 +322,9 @@ pub fn run() {
         shortcut::change_hallucination_filter_setting,
         shortcut::change_app_language_setting,
         shortcut::change_update_checks_setting,
+        shortcut::change_show_tray_icon_setting,
+        shortcut::change_show_unload_model_in_tray_setting,
+
         user_profile::get_user_profile_command,
         user_profile::update_user_profile_setting,
         trigger_update_check,
@@ -418,6 +445,10 @@ pub fn run() {
         shortcut::change_hallucination_filter_setting,
         shortcut::change_app_language_setting,
         shortcut::change_update_checks_setting,
+        shortcut::change_show_tray_icon_setting,
+        shortcut::change_show_unload_model_in_tray_setting,
+        shortcut::change_auto_submit_setting,
+        shortcut::change_auto_submit_key_setting,
         user_profile::get_user_profile_command,
         user_profile::update_user_profile_setting,
         trigger_update_check,
@@ -556,6 +587,12 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
+                let settings = get_settings(&window.app_handle());
+                // If tray icon is hidden, quit the app
+                if !settings.show_tray_icon {
+                    window.app_handle().exit(0);
+                    return;
+                }
                 api.prevent_close();
                 let _res = window.hide();
                 #[cfg(target_os = "macos")]

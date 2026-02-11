@@ -1,4 +1,5 @@
 use crate::managers::history::{HistoryEntry, HistoryManager};
+use crate::managers::transcription::TranscriptionManager;
 use crate::settings;
 use crate::tray_i18n::get_tray_translations;
 use std::sync::Arc;
@@ -169,6 +170,15 @@ fn build_and_set_tray_menu(
         None::<&str>,
     )
     .expect("failed to create copy last transcript item");
+    let model_loaded = app.state::<Arc<TranscriptionManager>>().is_model_loaded();
+    let unload_model_i = MenuItem::with_id(
+        app,
+        "unload_model",
+        &strings.unload_model,
+        model_loaded,
+        None::<&str>,
+    )
+    .expect("failed to create unload model item");
     let quit_i = MenuItem::with_id(app, "quit", &strings.quit, true, quit_accelerator)
         .expect("failed to create quit item");
     let separator = || PredefinedMenuItem::separator(app).expect("failed to create separator");
@@ -195,35 +205,29 @@ fn build_and_set_tray_menu(
             .expect("failed to create menu")
         }
         TrayIconState::Idle => {
+            let sep1 = separator();
+            let sep2 = separator();
+            let sep3 = separator();
+
+            let mut items: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> = vec![
+                &version_i,
+                &sep1,
+            ];
             if has_history {
-                Menu::with_items(
-                    app,
-                    &[
-                        &version_i,
-                        &separator(),
-                        &copy_last_transcript_i,
-                        &separator(),
-                        &settings_i,
-                        &check_updates_i,
-                        &separator(),
-                        &quit_i,
-                    ],
-                )
-                .expect("failed to create menu")
-            } else {
-                Menu::with_items(
-                    app,
-                    &[
-                        &version_i,
-                        &separator(),
-                        &settings_i,
-                        &check_updates_i,
-                        &separator(),
-                        &quit_i,
-                    ],
-                )
-                .expect("failed to create menu")
+                items.push(&copy_last_transcript_i);
             }
+            if settings.show_unload_model_in_tray {
+                items.push(&unload_model_i);
+            }
+            if has_history || settings.show_unload_model_in_tray {
+                items.push(&sep2);
+            }
+            items.push(&settings_i);
+            items.push(&check_updates_i);
+            items.push(&sep3);
+            items.push(&quit_i);
+
+            Menu::with_items(app, &items).expect("failed to create menu")
         }
     };
 
@@ -257,6 +261,15 @@ fn last_transcript_text(entry: &HistoryEntry) -> &str {
 }
 
 /// Copy the latest transcription to clipboard (from main, uses sync get_latest_entry)
+pub fn set_tray_visibility(app: &AppHandle, visible: bool) {
+    let tray = app.state::<TrayIcon>();
+    if let Err(e) = tray.set_visible(visible) {
+        tracing::error!("Failed to set tray visibility: {}", e);
+    } else {
+        tracing::info!("Tray visibility set to: {}", visible);
+    }
+}
+
 pub fn copy_last_transcript(app: &AppHandle) {
     let history_manager = app.state::<Arc<HistoryManager>>();
     let entry = match history_manager.get_latest_entry() {

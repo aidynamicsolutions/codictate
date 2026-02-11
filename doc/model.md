@@ -38,6 +38,14 @@ These use local Large Language Models (LLMs) to perform post-processing tasks on
 -   **Integration**: This section is linked directly from the **Post Processing** settings page. If you select "Local (MLX)" as your provider but don't have a model, you'll be redirected here to download one.
 -   **Finder Integration**: Downloaded models can be revealed in Finder for manual inspection.
 
+## Tray Menu
+
+The tray menu can optionally include an "Unload Model" item for quick access to free GPU/CPU memory without opening Settings.
+
+-   **Opt-in**: This item is hidden by default. Enable it via **Settings → Advanced → Show Unload Model in Tray**.
+-   **State-aware**: The menu item is only enabled when a model is currently loaded. When no model is loaded, the item is greyed out.
+-   **Behavior**: Clicking "Unload Model" in the tray immediately unloads the active transcription model, freeing GPU/CPU resources.
+
 ## Technical Details
 
 -   **Storage**: Models are stored in the application's data directory (e.g., `~/Library/Application Support/com.pais.codictate/models/` on macOS).

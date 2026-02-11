@@ -118,6 +118,9 @@ const settingUpdaters: {
   paste_method: (value) => commands.changePasteMethodSetting(value as string),
   clipboard_handling: (value) =>
     commands.changeClipboardHandlingSetting(value as string),
+  auto_submit: (value) => commands.changeAutoSubmitSetting(value as boolean),
+  auto_submit_key: (value) =>
+    commands.changeAutoSubmitKeySetting(value as string),
   history_limit: (value) => commands.updateHistoryLimit(value as number),
   post_process_enabled: (value) =>
     commands.changePostProcessEnabledSetting(value as boolean),
@@ -133,6 +136,11 @@ const settingUpdaters: {
     commands.changeHallucinationFilterSetting(value as boolean),
   log_level: (value) => commands.setLogLevel(value as any),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
+  show_tray_icon: (value) =>
+    commands.changeShowTrayIconSetting(value as boolean),
+  show_unload_model_in_tray: (value) =>
+    commands.changeShowUnloadModelInTraySetting(value as boolean),
+
 };
 
 export const useSettingsStore = create<SettingsStore>()(
