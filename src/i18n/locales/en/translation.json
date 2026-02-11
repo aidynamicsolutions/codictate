@@ -909,6 +909,14 @@
         "label": "Append Trailing Space",
         "description": "Add a space after pasted transcription"
       },
+      "fillerWordFilter": {
+        "label": "Remove Filler Words",
+        "description": "Automatically removes filler words (um, uh, hmm, etc.) from transcriptions."
+      },
+      "hallucinationFilter": {
+        "label": "Remove Repeated Words",
+        "description": "Removes repeated words and speech fragments caused by recognition errors.\n\nRepeated words:\nBefore: \"I want to cont cont cont cont continue\"\nAfter: \"I want to continue\"\n\nSelf-corrections:\nBefore: \"the correction is dr f fu fuzzy matching\"\nAfter: \"the correction is fuzzy matching\""
+      },
       "pasteDelay": {
         "title": "Paste Delay",
         "description": "Delay before sending paste keystroke (in milliseconds). Increase if wrong text is being pasted."

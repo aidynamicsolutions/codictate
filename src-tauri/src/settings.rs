@@ -300,11 +300,21 @@ pub struct AppSettings {
     #[serde(default = "default_app_language")]
     pub app_language: String,
 
+    /// When true, removes filler words (um, uh, hmm, etc.) from transcriptions.
+    #[serde(default = "default_true")]
+    pub enable_filler_word_filter: bool,
+    /// When true, collapses repeated/stuttered words caused by ASR hallucinations.
+    #[serde(default = "default_true")]
+    pub enable_hallucination_filter: bool,
 
     #[serde(default = "default_paste_delay_ms")]
     pub paste_delay_ms: u64,
     #[serde(default = "default_paste_restore_delay_ms")]
     pub paste_restore_delay_ms: u64,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 fn default_model() -> String {
@@ -712,6 +722,8 @@ pub fn get_default_settings() -> AppSettings {
         mute_while_recording: false,
         append_trailing_space: true,
         app_language: default_app_language(),
+        enable_filler_word_filter: true,
+        enable_hallucination_filter: true,
 
         paste_delay_ms: default_paste_delay_ms(),
         paste_restore_delay_ms: default_paste_restore_delay_ms(),

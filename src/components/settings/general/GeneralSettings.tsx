@@ -26,6 +26,8 @@ import { AutostartToggle } from "../AutostartToggle";
 import { PasteMethodSetting } from "../PasteMethod";
 import { ClipboardHandlingSetting } from "../ClipboardHandling";
 import { PostProcessingToggle } from "../PostProcessingToggle";
+import { FillerWordFilter } from "../FillerWordFilter";
+import { HallucinationFilter } from "../HallucinationFilter";
 import { ResetAllSettings } from "../ResetAllSettings";
 import { UpdateChecksToggle } from "../UpdateChecksToggle";
 import { CheckForUpdates } from "../CheckForUpdates";
@@ -144,6 +146,8 @@ export const GeneralSettings: React.FC = () => {
         <ClipboardHandlingSetting descriptionMode="tooltip" grouped={true} />
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
+        <FillerWordFilter descriptionMode="tooltip" grouped={true} />
+        <HallucinationFilter descriptionMode="tooltip" grouped={true} />
         <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
 
         <ResetAllSettings />

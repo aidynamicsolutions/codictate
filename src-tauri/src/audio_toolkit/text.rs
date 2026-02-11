@@ -364,12 +364,20 @@ const FILLER_WORDS: &[&str] = &[
 
 static MULTI_SPACE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s{2,}").unwrap());
 
-/// Collapses repeated 1-2 letter words (3+ repetitions) to a single instance.
-/// E.g., "wh wh wh wh" -> "wh", "I I I I" -> "I"
+/// Strips leading and trailing punctuation from a word, returning only the
+/// alphanumeric core. Used so that "call," compares equal to "call".
+fn strip_punctuation(word: &str) -> &str {
+    word.trim_matches(|c: char| !c.is_alphanumeric())
+}
+
+/// Collapse 3+ consecutive identical words (case-insensitive).
+/// If the next word starts with the repeated word (e.g. "cont" → "continue"),
+/// all copies are dropped since the next word is the completed form.
+/// Otherwise, one copy is kept.
 fn collapse_stutters(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
     if words.is_empty() {
-        return text.to_string();
+        return String::new();
     }
 
     let mut result: Vec<&str> = Vec::new();
@@ -377,24 +385,33 @@ fn collapse_stutters(text: &str) -> String {
 
     while i < words.len() {
         let word = words[i];
-        let word_lower = word.to_lowercase();
+        let word_lower = strip_punctuation(word).to_lowercase();
 
-        // Only process 1-2 letter words
-        if word_lower.len() <= 2 && word_lower.chars().all(|c| c.is_alphabetic()) {
-            // Count consecutive repetitions (case-insensitive)
-            let mut count = 1;
-            while i + count < words.len() && words[i + count].to_lowercase() == word_lower {
-                count += 1;
-            }
+        // Count consecutive repetitions (case-insensitive, ignoring punctuation)
+        let mut count = 1;
+        while i + count < words.len()
+            && strip_punctuation(words[i + count]).to_lowercase() == word_lower
+        {
+            count += 1;
+        }
 
-            // If 3+ repetitions, collapse to single instance
-            if count >= 3 {
-                result.push(word);
-                i += count;
+        if count >= 3 {
+            // Check if the next word after the repeated sequence starts with the
+            // repeated word — if so, it's the "completed" form and we drop all copies
+            let next_idx = i + count;
+            if next_idx < words.len() {
+                let next_lower = strip_punctuation(words[next_idx]).to_lowercase();
+                if next_lower.starts_with(&word_lower) && next_lower != word_lower {
+                    // Drop all copies; the next word is the completed form
+                } else {
+                    // Keep one copy
+                    result.push(word);
+                }
             } else {
+                // Keep one copy
                 result.push(word);
-                i += 1;
             }
+            i += count;
         } else {
             result.push(word);
             i += 1;
@@ -415,7 +432,8 @@ static FILLER_PATTERNS: Lazy<Vec<Regex>> = Lazy::new(|| {
         .collect()
 });
 
-/// Filters transcription output by removing filler words and stutter artifacts.
+/// Filters transcription output by removing filler words only.
+/// Stutter/repetition handling is in `filter_hallucinations()`.
 pub fn filter_transcription_output(text: &str) -> String {
     let mut filtered = text.to_string();
 
@@ -424,8 +442,92 @@ pub fn filter_transcription_output(text: &str) -> String {
         filtered = pattern.replace_all(&filtered, "").to_string();
     }
 
-    // Collapse repeated 1-2 letter words (stutter artifacts like "wh wh wh wh")
-    filtered = collapse_stutters(&filtered);
+    // Clean up multiple spaces to single space
+    filtered = MULTI_SPACE_PATTERN.replace_all(&filtered, " ").to_string();
+
+    // Trim leading/trailing whitespace
+    filtered.trim().to_string()
+}
+
+/// Collapse progressive self-correction patterns where consecutive short fragments
+/// build up to a longer target word.
+/// e.g., "dr f fu fuzzy" → "fuzzy" (speaker's multiple attempts at saying a word)
+///
+/// Algorithm: for each long word (≥ 4 chars), look backwards for consecutive short
+/// words (≤ 2 chars). If 2+ of those short words are prefixes of the long word,
+/// drop the entire fragment run. This avoids capturing unrelated short words that
+/// aren't adjacent to the target.
+fn collapse_self_corrections(text: &str) -> String {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.len() < 3 {
+        return text.to_string();
+    }
+
+    const MAX_FRAGMENT_LEN: usize = 2;
+    const MIN_TARGET_LEN: usize = 4;
+    const MIN_PREFIX_MATCHES: usize = 2;
+    // We scan backwards for contiguous prefix matches. 
+    // This replaces MAX_LOOKBACK with a dynamic window that only includes valid fragments.
+
+    // Mark which words should be dropped
+    let mut drop = vec![false; words.len()];
+
+    for j in 0..words.len() {
+        // Only consider long words as potential targets (strip punctuation for length check)
+        let target_stripped = strip_punctuation(words[j]);
+        if target_stripped.len() < MIN_TARGET_LEN {
+            continue;
+        }
+
+        let target_lower = target_stripped.to_lowercase();
+        
+        // Walk backwards looking for contiguous prefix matches
+        let mut k = j;
+        let mut matches = Vec::new();
+        
+        while k > 0 {
+            let prev_idx = k - 1;
+            let fragment = strip_punctuation(words[prev_idx]);
+            
+            // Check constraints:
+            // 1. Must be short
+            if fragment.len() > MAX_FRAGMENT_LEN {
+                break; 
+            }
+            // 2. Must be a prefix
+            if !target_lower.starts_with(&fragment.to_lowercase()) {
+                break;
+            }
+            // 3. Must be a "fresh" word (not already dropped by a previous target catch)
+            // Although scanning strict contiguous blocks usually avoids overlap issues.
+            
+            matches.push(prev_idx);
+            k -= 1;
+        }
+
+        if matches.len() >= MIN_PREFIX_MATCHES {
+            for match_idx in matches {
+                drop[match_idx] = true;
+            }
+        }
+    }
+
+    let result: Vec<&str> = words
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !drop[*i])
+        .map(|(_, w)| *w)
+        .collect();
+
+    result.join(" ")
+}
+
+/// Filters hallucination artifacts:
+/// 1. Collapses 3+ consecutive identical repeated words
+/// 2. Collapses progressive self-correction fragments (e.g., "dr f fu fuzzy" → "fuzzy")
+pub fn filter_hallucinations(text: &str) -> String {
+    let mut filtered = collapse_stutters(text);
+    filtered = collapse_self_corrections(&filtered);
 
     // Clean up multiple spaces to single space
     filtered = MULTI_SPACE_PATTERN.replace_all(&filtered, " ").to_string();
@@ -648,7 +750,145 @@ mod tests {
     fn test_filter_transcription_output() {
         assert_eq!(filter_transcription_output("hello uh world"), "hello world");
         assert_eq!(filter_transcription_output("um hello"), "hello");
-        assert_eq!(filter_transcription_output("wh wh wh wh what"), "wh what");
+    }
+
+    #[test]
+    fn test_filter_hallucinations_example1() {
+        // "cont cont cont ... continue" → "continue" (prefix match: all copies dropped)
+        assert_eq!(
+            filter_hallucinations("so I can cont cont cont cont cont cont cont cont cont continue debugging"),
+            "so I can continue debugging"
+        );
+    }
+
+    #[test]
+    fn test_filter_hallucinations_example2() {
+        // "dr f fu fuzzy" → "dr fuzzy" (progressive self-correction: matching fragments collapse)
+        // "dr" is NOT a prefix of "fuzzy", so it is preserved.
+        assert_eq!(
+            filter_hallucinations("the correction is dr f fu fuzzy matching"),
+            "the correction is dr fuzzy matching"
+        );
+    }
+
+    #[test]
+    fn test_filter_hallucinations_example3() {
+        // "sim sim sim ... similar" → "similar" (prefix match: all copies dropped)
+        assert_eq!(
+            filter_hallucinations("similar sim sim sim sim sim sim sim sim sim similar to how"),
+            "similar similar to how"
+        );
+    }
+
+    #[test]
+    fn test_filter_hallucinations_example4() {
+        // "call call call call call call call call call call call it" -> "call it"
+        assert_eq!(
+            filter_hallucinations("sidebar, call call call call call call call call call call call it dictionary?"),
+            "sidebar, call it dictionary?"
+        );
+    }
+
+    #[test]
+    fn test_filter_hallucinations_example5() {
+        // "three three three three three three three three three three three" -> "three"
+        assert_eq!(
+            filter_hallucinations("one three three three three three three three three three three three"),
+            "one three"
+        );
+    }
+
+    #[test]
+    fn test_filter_hallucinations_short_stutter() {
+        // "wh wh wh wh what" → "what" (prefix match: "wh" starts "what")
+        assert_eq!(
+            filter_hallucinations("wh wh wh wh what"),
+            "what"
+        );
+    }
+
+    #[test]
+    fn test_filter_hallucinations_no_repeats() {
+        // No repeated words - text should remain unchanged
+        assert_eq!(
+            filter_hallucinations("hello world how are you"),
+            "hello world how are you"
+        );
+    }
+
+    #[test]
+    fn test_filter_hallucinations_exactly_two_repeats() {
+        // Only 2 repeats - should NOT collapse (threshold is 3)
+        assert_eq!(
+            filter_hallucinations("the the cat"),
+            "the the cat"
+        );
+    }
+
+    #[test]
+    fn test_filter_hallucinations_case_insensitive() {
+        // Mixed case, next word "thing" does NOT start with "the" → keep one
+        assert_eq!(
+            filter_hallucinations("The the THE the thing"),
+            "The thing"
+        );
+    }
+
+    #[test]
+    fn test_self_correction_normal_short_words_preserved() {
+        // "I am" before "amazing" — only 1 prefix match ("am"), threshold is 2
+        assert_eq!(
+            filter_hallucinations("I am amazing"),
+            "I am amazing"
+        );
+    }
+
+    #[test]
+    fn test_self_correction_single_fragment_no_collapse() {
+        // Only 1 short word before target — need at least 2
+        assert_eq!(
+            filter_hallucinations("to tomorrow"),
+            "to tomorrow"
+        );
+    }
+
+    #[test]
+    fn test_self_correction_progressive_prefix() {
+        // "b bu buzz" — both short words are prefixes of "buzz"
+        assert_eq!(
+            filter_hallucinations("say b bu buzz"),
+            "say buzz"
+        );
+    }
+
+    #[test]
+    fn test_self_correction_mixed_with_repetition() {
+        // Identical repetition + self-correction in same text
+        assert_eq!(
+            filter_hallucinations("I cont cont cont continue and dr f fu fuzzy works"),
+            "I continue and dr fuzzy works"
+        );
+    }
+
+    #[test]
+    fn test_bug_fix_unrelated_short_words() {
+        // "I am a f fu fuzzy" -> "I am a fuzzy"
+        // "a" is a short word but NOT a prefix of "fuzzy", so it must be preserved.
+        // The old buggy implementation deleted "a".
+        // Also verify contiguous prefix logic: "f fu" are dropped, "a" breaks the chain.
+        assert_eq!(
+            filter_hallucinations("I am a f fu fuzzy bear"),
+            "I am a fuzzy bear"
+        );
+    }
+
+    #[test]
+    fn test_self_correction_target_too_short() {
+        // Target word "and" is only 3 chars (< 4 minimum) — no collapse
+        assert_eq!(
+            filter_hallucinations("a an and"),
+            "a an and"
+        );
     }
 
     #[test]

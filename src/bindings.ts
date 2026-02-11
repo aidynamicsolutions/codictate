@@ -258,6 +258,22 @@ async changeAppendTrailingSpaceSetting(enabled: boolean) : Promise<Result<null, 
     else return { status: "error", error: e  as any };
 }
 },
+async changeFillerWordFilterSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_filler_word_filter_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeHallucinationFilterSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_hallucination_filter_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeAppLanguageSetting(language: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_app_language_setting", { language }) };
@@ -939,7 +955,15 @@ export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding
  * When true, all transcriptions are automatically refined (adds delay).
  * When false (default), user must manually trigger refinement with hotkey.
  */
-auto_refine_enabled?: boolean; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; paste_delay_ms?: number; paste_restore_delay_ms?: number }
+auto_refine_enabled?: boolean; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; 
+/**
+ * When true, removes filler words (um, uh, hmm, etc.) from transcriptions.
+ */
+enable_filler_word_filter?: boolean; 
+/**
+ * When true, collapses repeated/stuttered words caused by ASR hallucinations.
+ */
+enable_hallucination_filter?: boolean; paste_delay_ms?: number; paste_restore_delay_ms?: number }
 export type AudioDevice = { index: string; name: string; is_default: boolean; is_bluetooth: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"

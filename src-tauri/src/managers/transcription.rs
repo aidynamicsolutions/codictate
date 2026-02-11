@@ -1,4 +1,4 @@
-use crate::audio_toolkit::{apply_custom_words, filter_transcription_output};
+use crate::audio_toolkit::{apply_custom_words, filter_hallucinations, filter_transcription_output};
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{get_settings, ModelUnloadTimeout};
 use anyhow::Result;
@@ -528,10 +528,18 @@ impl TranscriptionManager {
             result.text
         };
 
-        // Filter out filler words and hallucinations
-        let filtered_result = filter_transcription_output(&corrected_result);
+        // Filter out repeated words / hallucinations, then filler words
+        let pre_filter = corrected_result;
+        let mut filtered_result = pre_filter.clone();
 
-        if filtered_result != corrected_result {
+        if settings.enable_filler_word_filter {
+            filtered_result = filter_transcription_output(&filtered_result);
+        }
+        if settings.enable_hallucination_filter {
+            filtered_result = filter_hallucinations(&filtered_result);
+        }
+
+        if filtered_result != pre_filter {
             info!("After filtering: '{}'", filtered_result);
         }
 

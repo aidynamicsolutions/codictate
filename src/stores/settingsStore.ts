@@ -127,6 +127,10 @@ const settingUpdaters: {
     commands.changeMuteWhileRecordingSetting(value as boolean),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
+  enable_filler_word_filter: (value) =>
+    commands.changeFillerWordFilterSetting(value as boolean),
+  enable_hallucination_filter: (value) =>
+    commands.changeHallucinationFilterSetting(value as boolean),
   log_level: (value) => commands.setLogLevel(value as any),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
 };
