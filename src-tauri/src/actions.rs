@@ -13,6 +13,7 @@ use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{self, show_recording_overlay, show_transcribing_overlay};
 use crate::ManagedToggleState;
+use tauri::Emitter;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -20,7 +21,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tauri::AppHandle;
 use tauri::Manager;
-use tracing::{debug, error, info, info_span};
+use tracing::{debug, error, info, info_span, warn};
 
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
@@ -834,6 +835,83 @@ impl ShortcutAction for RefineLastTranscriptAction {
     }
 }
 
+// Correct Text Action
+// Single-press action that captures context from the focused app and sends to AI for correction.
+struct CorrectAction;
+
+impl ShortcutAction for CorrectAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        debug!("Correct text action triggered");
+
+        // Check if recording is active - don't interfere
+        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+        if audio_manager.is_recording() {
+            debug!("Correct text skipped: recording is active");
+            return;
+        }
+
+        let app_clone = app.clone();
+
+        tauri::async_runtime::spawn(async move {
+            use crate::managers::correction::CorrectionManager;
+
+            let correction_manager = app_clone.state::<Arc<CorrectionManager>>();
+
+            // Show processing overlay while correction is running
+            utils::show_processing_overlay(&app_clone);
+
+            match correction_manager.run_correction().await {
+                Ok(result) => {
+                    if result.has_changes {
+                        info!(
+                            original = result.original,
+                            corrected = result.corrected,
+                            "Correction has changes, showing overlay"
+                        );
+                        // Show correction overlay (emits correction-result + state change internally)
+                        crate::overlay::show_correction_overlay(&app_clone, &result);
+                    } else {
+                        info!("No changes detected by AI correction");
+                        // Brief notification, then hide
+                        let _ = app_clone.emit("correction-no-changes", ());
+                        // Auto-dismiss after 1.5 seconds
+                        tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                        utils::hide_recording_overlay(&app_clone);
+                    }
+                }
+                Err(e) if e == "correction_in_progress" => {
+                    // Another correction is already running — hide the processing overlay
+                    // we showed at the start, since the first correction will manage its own.
+                    debug!("Correction already in progress, ignoring duplicate trigger");
+                    utils::hide_recording_overlay(&app_clone);
+                }
+                Err(e) if e == "no_text" => {
+                    info!("No text to correct");
+                    let _ = app_clone.emit("correction-no-text", ());
+                    // Auto-dismiss after 2 seconds
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    utils::hide_recording_overlay(&app_clone);
+                }
+                Err(e) if e == "Accessibility permission required" => {
+                    warn!("Accessibility permission needed for correction");
+                    // Show the main window so the permission dialog can be seen
+                    crate::show_main_window(&app_clone);
+                    let _ = app_clone.emit("accessibility-permission-needed", ());
+                }
+                Err(e) => {
+                    error!("Correction failed: {}", e);
+                    crate::notification::show_error(&app_clone, "errors.correctionFailed");
+                    utils::hide_recording_overlay(&app_clone);
+                }
+            }
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Nothing to do on key release for single-press correction
+    }
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -869,6 +947,11 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "refine_last_transcript".to_string(),
         Arc::new(RefineLastTranscriptAction) as Arc<dyn ShortcutAction>,
     );
+    map.insert(
+        "correct_text".to_string(),
+        Arc::new(CorrectAction) as Arc<dyn ShortcutAction>,
+    );
     map
 });
+
 

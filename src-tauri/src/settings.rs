@@ -715,6 +715,29 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // Correct text: AI-powered correction of text in the focused application
+    // Uses Fn+Z on macOS (Fn key handled natively by fn_key_monitor.rs)
+    // Note: option+c produces "ç" on macOS, so we use fn+z instead
+    #[cfg(target_os = "macos")]
+    let correct_text_shortcut = "fn+z";
+    #[cfg(target_os = "windows")]
+    let correct_text_shortcut = "ctrl+shift+c";
+    #[cfg(target_os = "linux")]
+    let correct_text_shortcut = "ctrl+shift+c";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let correct_text_shortcut = "ctrl+shift+c";
+
+    bindings.insert(
+        "correct_text".to_string(),
+        ShortcutBinding {
+            id: "correct_text".to_string(),
+            name: "AI Correct text".to_string(),
+            description: "Fix homophones and errors in focused text using AI.".to_string(),
+            default_binding: correct_text_shortcut.to_string(),
+            current_binding: correct_text_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         bindings,
 

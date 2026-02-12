@@ -214,6 +214,7 @@ enum OverlayState {
     Processing,
     Connecting,
     Cancelling,
+    Correcting,
 }
 
 static OVERLAY_STATE: Lazy<Mutex<OverlayState>> = Lazy::new(|| Mutex::new(OverlayState::Hidden));
@@ -224,6 +225,29 @@ pub fn is_overlay_active() -> bool {
         !matches!(*state, OverlayState::Hidden)
     } else {
         false
+    }
+}
+
+/// Check if the overlay is currently in the Correcting state.
+/// Used by fn_key_monitor to intercept Tab/Esc for accept/dismiss.
+pub fn is_correcting() -> bool {
+    if let Ok(state) = OVERLAY_STATE.lock() {
+        matches!(*state, OverlayState::Correcting)
+    } else {
+        false
+    }
+}
+
+/// Atomically clear the Correcting state to Hidden.
+///
+/// Called by fn_key_monitor immediately after detecting Tab/Esc to prevent
+/// duplicate triggering and minimize the race window for keystroke swallowing.
+/// The visual hiding (emit + window ops) happens later in the spawned thread.
+pub fn clear_correcting_state() {
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        if matches!(*state, OverlayState::Correcting) {
+            *state = OverlayState::Hidden;
+        }
     }
 }
 
@@ -282,7 +306,13 @@ pub fn mark_overlay_ready(app_handle: &AppHandle) {
                 if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
                     tracing::debug!("mark_overlay_ready: State is Cancelling, re-emitting show-overlay");
                     let _ = overlay.emit("show-overlay", "cancelling");
-                    // Keep interaction enabled or disabled based on preference, though usually cancelling is brief
+                    let _ = overlay.set_ignore_cursor_events(false);
+                }
+            },
+            OverlayState::Correcting => {
+                if let Some(overlay) = app_handle.get_webview_window("recording_overlay") {
+                    tracing::debug!("mark_overlay_ready: State is Correcting, re-emitting show-overlay");
+                    let _ = overlay.emit("show-overlay", "correcting");
                     let _ = overlay.set_ignore_cursor_events(false);
                 }
             },
@@ -568,6 +598,50 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// Shows the correction overlay (ghost text) near the text cursor.
+/// Positions the overlay at the cursor position from the accessibility module.
+pub fn show_correction_overlay(app_handle: &AppHandle, correction: &crate::accessibility::CorrectionResult) {
+    use tracing::{debug, info, warn};
+
+    info!("show_correction_overlay: entry");
+
+    // Update state to Correcting
+    if let Ok(mut state) = OVERLAY_STATE.lock() {
+        *state = OverlayState::Correcting;
+    }
+
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Enable interaction so user can see and interact with the overlay
+        let _ = overlay_window.set_ignore_cursor_events(false);
+
+        // Position the overlay — try to use the correction data's screen position
+        // For now, we reuse the standard position. In a future iteration,
+        // we could position it near the text cursor.
+        if let Some((x, y)) = calculate_overlay_position(app_handle) {
+            let _ = overlay_window
+                .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
+        }
+
+        let is_visible_before = overlay_window.is_visible().unwrap_or(false);
+        if !is_visible_before {
+            let _ = overlay_window.show();
+        }
+
+        // Emit the correction data FIRST so the frontend has it before the state change
+        let data_result = overlay_window.emit("correction-result", correction);
+        debug!("show_correction_overlay: emit('correction-result') result={:?}", data_result);
+
+        // Then emit the state change — the UI will render correction data immediately
+        let emit_result = overlay_window.emit("show-overlay", "correcting");
+        debug!("show_correction_overlay: emit('show-overlay', 'correcting') result={:?}", emit_result);
+
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
+    } else {
+        warn!("show_correction_overlay: overlay window NOT FOUND!");
+    }
+}
+
 /// Shows the processing overlay window (during post-processing phase)
 pub fn show_processing_overlay(app_handle: &AppHandle) {
     use tracing::{debug, warn};
@@ -654,7 +728,7 @@ pub fn hide_overlay_if_recording(app_handle: &AppHandle) {
     // Check state - bail if we are Transcribing, Processing, or Connecting
     if let Ok(mut state) = OVERLAY_STATE.lock() {
         match *state {
-            OverlayState::Transcribing | OverlayState::Processing | OverlayState::Connecting | OverlayState::Cancelling => {
+            OverlayState::Transcribing | OverlayState::Processing | OverlayState::Connecting | OverlayState::Cancelling | OverlayState::Correcting => {
                 debug!("hide_overlay_if_recording: Ignoring hide because state is {:?}", *state);
                 return;
             }

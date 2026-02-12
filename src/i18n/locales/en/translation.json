@@ -576,6 +576,10 @@
           "refine_last_transcript": {
             "name": "Refine Last Text",
             "description": "Apply AI refinement to your last transcription and paste the improved version."
+          },
+          "correct_text": {
+            "name": "AI Correct Text",
+            "description": "Fix homophones and errors in focused text using AI."
           }
         },
         "errors": {
@@ -1029,7 +1033,9 @@
   },
   "errors": {
     "loadDirectory": "Error loading directory: {{error}}",
-    "postProcessFailed": "Post-processing failed. Using original transcription."
+    "postProcessFailed": "Post-processing failed. Using original transcription.",
+    "correctionFailed": "Correction failed. Check your AI model configuration.",
+    "correctionReplaceFailed": "Failed to replace text. Check accessibility permissions."
   },
   "appLanguage": {
     "title": "Application Language",
@@ -1039,7 +1045,9 @@
     "transcribing": "Transcribing...",
     "processing": "Processing Transcription...",
     "cancelling": "Cancelling...",
-    "starting": "Starting microphone..."
+    "starting": "Starting microphone...",
+    "correcting": "Correcting...",
+    "correctionHint": "Tab ✓  Esc ✗"
   },
   "recording": {
     "limitWarning": "Recording ends in 30 seconds"

@@ -13,7 +13,13 @@ import { AudioAGC } from "@/utils/audioAGC";
 import { getLanguageDirection } from "@/lib/utils/rtl";
 
 
-type OverlayState = "recording" | "transcribing" | "processing" | "connecting" | "cancelling";
+type OverlayState = "recording" | "transcribing" | "processing" | "connecting" | "cancelling" | "correcting";
+
+interface CorrectionResult {
+  original: string;
+  corrected: string;
+  has_changes: boolean;
+}
 
 // SVG dimensions and border radius (constants)
 const SVG_WIDTH = 234;
@@ -40,6 +46,7 @@ const RecordingOverlay: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [state, setState] = useState<OverlayState>("recording");
   const [levels, setLevels] = useState<number[]>(Array(16).fill(0));
+  const [correctionData, setCorrectionData] = useState<CorrectionResult | null>(null);
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   const agcRef = useRef(new AudioAGC());
   const direction = getLanguageDirection(i18n.language);
@@ -115,6 +122,7 @@ const RecordingOverlay: React.FC = () => {
         logInfo("RecordingOverlay: Received hide-overlay event", "fe-overlay");
         setIsVisible(false);
         setElapsedSecs(0);
+        setCorrectionData(null);
         
         // Wait for fade-out animation (300ms) to complete before resetting state
         // This prevents the overlay from switching back to "recording" (audio bars)
@@ -171,6 +179,19 @@ const RecordingOverlay: React.FC = () => {
       }
       cleanupFns.push(unlistenTime);
 
+      // Listen for correction result
+      const unlistenCorrection = await listen<CorrectionResult>("correction-result", (event) => {
+        if (ignore) return;
+        logInfo("RecordingOverlay: Received correction result", "fe-overlay");
+        setCorrectionData(event.payload);
+      });
+      
+      if (ignore) {
+        unlistenCorrection();
+        return;
+      }
+      cleanupFns.push(unlistenCorrection);
+
       logInfo("RecordingOverlay: All event listeners registered successfully", "fe-overlay");
       
       // Signal to Rust that the overlay is ready to receive events
@@ -189,6 +210,10 @@ const RecordingOverlay: React.FC = () => {
     };
   }, []);
 
+  // NOTE: Tab/Esc keyboard handling for correction accept/dismiss is done
+  // in Rust (fn_key_monitor.rs CGEventTap) because the overlay panel is
+  // no_activate and cannot receive keyboard events directly.
+
   const getIcon = () => {
     if (state === "recording") {
       // User reported never seeing the mic icon (or it's redundant). 
@@ -196,8 +221,7 @@ const RecordingOverlay: React.FC = () => {
       return <div style={{ width: 24 }} />;
     } 
     
-    // For connecting, transcribing, processing, and cancelling, we return null (no icon)
-    // to allow the text to be perfectly centered in the overlay.
+    // For connecting, transcribing, processing, cancelling, correcting we return null
     return null;
   };
 
@@ -271,6 +295,23 @@ const RecordingOverlay: React.FC = () => {
               </div>
             </div>
           )}
+          {state === "correcting" && correctionData && (
+            <div className="correction-container">
+              <div className="correction-text">
+                <span className="correction-original">{correctionData.original}</span>
+                <span className="correction-arrow">→</span>
+                <span className="correction-corrected">{correctionData.corrected}</span>
+              </div>
+              <div className="correction-hint">
+                {t("overlay.correctionHint")}
+              </div>
+            </div>
+          )}
+          {state === "correcting" && !correctionData && (
+            <div className="connecting-container">
+              <div className="connecting-text">{t("overlay.correcting")}</div>
+            </div>
+          )}
         </div>
 
         <div className="overlay-right">
@@ -285,6 +326,9 @@ const RecordingOverlay: React.FC = () => {
             >
               {state !== "cancelling" && <CancelIcon />}
             </div>
+          )}
+          {state === "correcting" && (
+             <div style={{ width: 24 }} /> 
           )}
         </div>
       </div>

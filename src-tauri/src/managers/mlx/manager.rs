@@ -1125,6 +1125,8 @@ impl MlxModelManager {
             prompt: String,
             max_tokens: i32,
             temperature: f32,
+            top_p: f32,
+            min_p: f32,
             system_ram_gb: u64,
         }
 
@@ -1133,13 +1135,23 @@ impl MlxModelManager {
             response: String,
         }
 
+        info!(
+            temperature = 0.5,
+            top_p = 0.9,
+            min_p = 0.05,
+            prompt_len = prompt.len(),
+            "Sending correction to MLX sidecar"
+        );
+
         let response = self
             .http_client
             .post(format!("{}/generate", self.get_base_url()))
             .json(&GenerateRequest {
                 prompt: prompt.to_string(),
                 max_tokens: -1,  // Sentinel: Python calculates dynamically based on input + RAM
-                temperature: 0.7,
+                temperature: 0.5,
+                top_p: 0.9,
+                min_p: 0.05,
                 system_ram_gb: Self::get_system_memory_gb(),
             })
             .timeout(Duration::from_secs(60))  // 60s timeout for local LLM inference
@@ -1156,6 +1168,8 @@ impl MlxModelManager {
             .json()
             .await
             .map_err(|e| anyhow!("Failed to parse sidecar response: {}", e))?;
+
+        debug!(raw_response = %result.response, "Sidecar /generate response");
 
         Ok(result.response)
     }

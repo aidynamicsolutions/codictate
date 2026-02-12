@@ -167,7 +167,9 @@ class GenerateRequest(BaseModel):
     """Request to generate text from a prompt."""
     prompt: str
     max_tokens: int = -1  # Sentinel: -1 means auto-calculate
-    temperature: float = 0.7
+    temperature: float = 0.5
+    top_p: float = 0.9
+    min_p: float = 0.05
     system_ram_gb: int = 16  # Default to 16GB if not provided
 
 
@@ -321,11 +323,11 @@ async def generate_text(
         logger.info(f"=== FORMATTED PROMPT ===\n{formatted_prompt}\n=== END FORMATTED ===", extra=extra)
         
         # Create sampler with recommended settings for Qwen3 non-thinking mode
-        # min_p=0.05 dynamically filters low-probability tokens, reducing hallucination
+        # min_p dynamically filters low-probability tokens, reducing hallucination
         sampler = make_sampler(
             temp=request.temperature,
-            top_p=0.8,
-            min_p=0.05,
+            top_p=request.top_p,
+            min_p=request.min_p,
             min_tokens_to_keep=1,
         )
         

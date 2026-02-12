@@ -154,3 +154,50 @@
   justify-content: center;
   width: 100%;
 }
+
+/* Ghost text correction overlay */
+.correction-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  gap: 2px;
+}
+
+.correction-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.correction-original {
+  color: rgba(255, 130, 130, 0.8);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 130, 130, 0.5);
+}
+
+.correction-arrow {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.correction-corrected {
+  color: rgba(130, 255, 160, 0.95);
+  font-weight: 600;
+}
+
+.correction-hint {
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.4);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0.5px;
+}
+

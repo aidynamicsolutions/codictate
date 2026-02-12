@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+mod accessibility;
 mod actions;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
@@ -28,6 +30,7 @@ mod utils;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
 use managers::audio::AudioRecordingManager;
+use managers::correction::CorrectionManager;
 use managers::history::HistoryManager;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use managers::mlx::MlxModelManager;
@@ -124,6 +127,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     app_handle.manage(mlx_manager.clone());
+
+    // Initialize CorrectionManager for AI voice correction
+    let correction_manager = Arc::new(CorrectionManager::new(app_handle.clone()));
+    app_handle.manage(correction_manager);
     
     // Pre-warm Bluetooth microphone if selected
     // (triggers A2DP→HFP switch if needed)
@@ -404,6 +411,8 @@ pub fn run() {
         permissions::open_microphone_settings,
         commands::window::show_main_window,
         commands::menu::set_update_menu_text,
+        commands::correction::accept_correction,
+        commands::correction::dismiss_correction,
     ]);
 
     // On other platforms, exclude MLX commands
@@ -512,6 +521,8 @@ pub fn run() {
         permissions::open_microphone_settings,
         commands::window::show_main_window,
         commands::menu::set_update_menu_text,
+        commands::correction::accept_correction,
+        commands::correction::dismiss_correction,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

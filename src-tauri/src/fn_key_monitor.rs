@@ -261,6 +261,84 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                                 return CallbackResult::Keep;
                             }
                         }
+
+                        // Intercept Tab/Esc when correction overlay is active
+                        // The overlay panel is no_activate so keyboard events go to the
+                        // focused app, not the overlay. Handle accept/dismiss here instead.
+                        if crate::overlay::is_correcting() {
+                            const TAB_KEYCODE: i64 = 48;
+                            const ESCAPE_KEYCODE: i64 = 53;
+                            if keycode == TAB_KEYCODE {
+                                debug!("Correction overlay active: Tab pressed, accepting correction");
+                                // Clear correcting state immediately to prevent duplicate
+                                // triggering and minimize keystroke swallowing window
+                                crate::overlay::clear_correcting_state();
+                                if let Some(app) = get_app_handle() {
+                                    std::thread::spawn(move || {
+                                        use crate::managers::correction::CorrectionManager;
+                                        let cm = app.state::<Arc<CorrectionManager>>();
+                                        if let Some(result) = cm.get_last_result() {
+                                            cm.accept_correction(&result);
+                                        }
+                                        crate::overlay::hide_recording_overlay(&app);
+                                    });
+                                }
+                                return CallbackResult::Drop;
+                            }
+                            if keycode == ESCAPE_KEYCODE {
+                                debug!("Correction overlay active: Esc pressed, dismissing correction");
+                                // Clear correcting state immediately
+                                crate::overlay::clear_correcting_state();
+                                if let Some(app) = get_app_handle() {
+                                    std::thread::spawn(move || {
+                                        crate::overlay::hide_recording_overlay(&app);
+                                    });
+                                }
+                                return CallbackResult::Drop;
+                            }
+                        }
+
+                        // Generic fn+key dispatch: check if any binding matches fn+<key>
+                        if fn_pressed {
+                            if let Some(key_name) = keycode_to_name(keycode) {
+                                let fn_combo = format!("fn+{}", key_name);
+                                if let Some(app) = get_app_handle() {
+                                    let settings = settings::get_settings(&app);
+                                    for (id, binding) in &settings.bindings {
+                                        let b = binding.current_binding.to_lowercase();
+                                        if b == fn_combo {
+                                            // Only drop autorepeats for keys that match a binding
+                                            // (not ALL keys while Fn is held — that breaks normal key repeat)
+                                            let is_autorepeat = event.get_integer_value_field(
+                                                core_graphics::event::EventField::KEYBOARD_EVENT_AUTOREPEAT
+                                            ) != 0;
+                                            if is_autorepeat {
+                                                return CallbackResult::Drop;
+                                            }
+
+                                            debug!("fn+key dispatch: '{}' matched binding '{}'", fn_combo, id);
+                                            
+                                            // Cancel PTT if it was started by the Fn press.
+                                            // PTT_STARTED=false prevents the release handler from
+                                            // double-stopping. cancel_recording() is fast (mutex
+                                            // locks + rec.stop) and MUST complete before action.start()
+                                            // so that is_recording() returns false.
+                                            if PTT_STARTED.swap(false, Ordering::SeqCst) {
+                                                debug!("Canceling PTT because fn+key shortcut was triggered");
+                                                let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+                                                audio_manager.cancel_recording();
+                                                shortcut::unregister_cancel_shortcut(&app);
+                                            }
+
+                                            if let Some(action) = ACTION_MAP.get(id.as_str()) {
+                                                action.start(&app, id, &fn_combo);
+                                            }
+                                            return CallbackResult::Drop;
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         return CallbackResult::Keep;
                     }
                     
@@ -714,6 +792,24 @@ fn check_ptt_release(app: &AppHandle, event: &CGEvent) {
         if let Some(action) = ACTION_MAP.get("transcribe") {
             action.stop(app, "transcribe", "monitor_release");
         }
+    }
+}
+
+/// Map macOS virtual keycodes to key name strings for fn+key dispatch
+fn keycode_to_name(keycode: i64) -> Option<&'static str> {
+    match keycode {
+        0 => Some("a"),   1 => Some("s"),   2 => Some("d"),   3 => Some("f"),
+        4 => Some("h"),   5 => Some("g"),   6 => Some("z"),   7 => Some("x"),
+        8 => Some("c"),   9 => Some("v"),  11 => Some("b"),  12 => Some("q"),
+       13 => Some("w"),  14 => Some("e"),  15 => Some("r"),  16 => Some("y"),
+       17 => Some("t"),  18 => Some("1"),  19 => Some("2"),  20 => Some("3"),
+       21 => Some("4"),  22 => Some("6"),  23 => Some("5"),  24 => Some("="),
+       25 => Some("9"),  26 => Some("7"),  27 => Some("-"),  28 => Some("8"),
+       29 => Some("0"),  31 => Some("o"),  32 => Some("u"),  34 => Some("i"),
+       35 => Some("p"),  37 => Some("l"),  38 => Some("j"),  40 => Some("k"),
+       45 => Some("n"),  46 => Some("m"),
+       49 => Some("space"),
+       _ => None,
     }
 }
 

@@ -222,7 +222,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
     try {
       // Use atomic reset that bypasses duplicate checking between the bindings
       // This handles any combination of conflicts (e.g., one set to the other's default)
-      await resetBindings(["transcribe", "transcribe_handsfree", "paste_last_transcript", "refine_last_transcript"]);
+      await resetBindings(["transcribe", "transcribe_handsfree", "paste_last_transcript", "refine_last_transcript", "correct_text"]);
     } catch (error) {
       logError(`Failed to reset bindings: ${error}`, "fe-shortcuts");
     }
@@ -273,6 +273,14 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
             shortcutId="refine_last_transcript"
             title={t("settings.general.shortcut.bindings.refine_last_transcript.name")}
             description={t("settings.general.shortcut.bindings.refine_last_transcript.description")}
+          />
+
+          {/* AI Correct Text shortcut */}
+          <ShortcutCard
+            key={`correct_text-${resetKey}`}
+            shortcutId="correct_text"
+            title={t("settings.general.shortcut.bindings.correct_text.name")}
+            description={t("settings.general.shortcut.bindings.correct_text.description")}
           />
 
           {/* Divider */}
