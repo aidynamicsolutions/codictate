@@ -67,11 +67,15 @@ graph TD
     E -- Yes --> F[Replace with Custom Word]
     E -- No --> G{is_replacement?}
     G -- Yes --> H[Next Entry]
-    G -- No --> I{Word Count Match?}
+    G -- No --> S{Stop Word?}
+    S -- Yes --> H
+    S -- No --> M{Len ≤ 3?}
+    M -- Yes --> H
+    M -- No --> I{Word Count Match?}
     I -- No --> H
-    I -- Yes --> J[Phonetic Match?]
-    J -- Yes --> F
-    J -- No --> K{Fuzzy Score < Threshold?}
+    I -- Yes --> R{Len Ratio ≥ 60%?}
+    R -- No --> H
+    R -- Yes --> K{Fuzzy Score < Threshold?}
     K -- Yes --> F
     K -- No --> H
     F --> L[Advance Iterator past N-gram]
@@ -132,7 +136,7 @@ Key log messages:
 |------------|--------|
 | **N-gram size** | Max 3 words per phrase. Longer phrases need exact match. |
 | **Performance** | O(N*M) where M is window size (3). Negligible for typical transcriptions. |
-| **False positives** | Aggressive phonetic matching can over-correct. Adjust `threshold` if needed. |
+| **False positives** | Mitigated by stop word filter, min-length (≤3 chars), and length ratio (≥60%) guards. |
 
 ## UI Features
 

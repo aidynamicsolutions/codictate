@@ -10,6 +10,31 @@ use crate::settings::CustomWordEntry;
 /// Jaro-Winkler is better for short strings due to prefix emphasis
 const SHORT_WORD_THRESHOLD: usize = 6;
 
+/// Minimum input length for fuzzy matching (inclusive).
+/// Inputs with ≤ this many characters require exact match.
+/// Mirrors Elasticsearch's `fuzziness: "AUTO"` which requires exact match for 0-2 char terms.
+const MIN_FUZZY_LENGTH: usize = 3;
+
+/// Minimum length ratio (shorter/longer) for fuzzy matching.
+/// Reject candidates where the shorter string is less than this fraction of the longer.
+/// Value 0.60 means shorter must be ≥ 60% of longer (≈1.67x max ratio).
+/// Aligned with FuzzyWuzzy/RapidFuzz which auto-switch at 1.5x.
+const MIN_LENGTH_RATIO: f64 = 0.60;
+
+/// Common English stop words that should never be fuzzy-matched.
+/// These words are too common and too short to reliably fuzzy-match against
+/// dictionary entries. They can still be *exact*-matched (e.g. "The" → "The").
+const STOP_WORDS: &[&str] = &[
+    "a", "an", "the", "is", "am", "are", "was", "were", "be",
+    "in", "on", "at", "to", "of", "it", "we", "he", "she",
+    "or", "so", "if", "do", "no", "my", "me", "us",
+    "and", "but", "for", "not", "you", "has", "had", "his",
+    "her", "its", "our", "who", "how", "all", "can",
+    "they", "them", "this", "that", "with", "from",
+    "have", "been", "will", "what", "when", "where", "which",
+    "there", "their", "these", "those",
+];
+
 /// Phonetic codes for a word (primary and alternate Double Metaphone codes)
 #[derive(Debug, Clone)]
 struct PhoneticCodes {
@@ -174,6 +199,18 @@ pub fn apply_custom_words(text: &str, custom_words: &[CustomWordEntry], threshol
                     continue;
                 }
 
+                // Guard: skip fuzzy for stop words (too common to reliably fuzzy-match)
+                if STOP_WORDS.contains(&ngram_text.as_str()) {
+                    debug!("[CustomWords] Skipping fuzzy: '{}' is a stop word", ngram_text);
+                    continue;
+                }
+
+                // Guard: skip fuzzy for very short inputs (Elasticsearch AUTO style)
+                if ngram_text.len() <= MIN_FUZZY_LENGTH {
+                    debug!("[CustomWords] Skipping fuzzy: input '{}' too short (len={})", ngram_text, ngram_text.len());
+                    continue;
+                }
+
                 // Allow fuzzy matching for multi-word n-grams ONLY if the entry itself
                 // is also multi-word (and word counts match). This prevents single-word
                 // entries like "ChatGPT" from incorrectly matching multi-word phrases
@@ -184,10 +221,13 @@ pub fn apply_custom_words(text: &str, custom_words: &[CustomWordEntry], threshol
                     continue;
                 }
                 
-                // Skip if lengths are too different (optimization + prevents over-matching)
-                let len_diff = (ngram_text.len() as i32 - phrase.concatenated_input.len() as i32).abs();
-                if len_diff > 5 {
-                     continue;
+                // Guard: proportional length ratio check
+                // Reject when shorter string < 60% of longer (replaces fixed len_diff > 5)
+                let shorter = ngram_text.len().min(phrase.concatenated_input.len());
+                let longer = ngram_text.len().max(phrase.concatenated_input.len());
+                if (shorter as f64) < (longer as f64) * MIN_LENGTH_RATIO {
+                    debug!("[CustomWords] Skipping fuzzy: length ratio {}/{} too different", shorter, longer);
+                    continue;
                 }
 
                 // Calculate string similarity score
@@ -700,15 +740,16 @@ mod tests {
     #[test]
     fn test_apply_custom_words_ngram_three_words() {
         // "ChatGPT" is a single-word entry, so fuzzy matching only works for 1-word n-grams.
-        // "Chat" is close enough to "ChatGPT" for a fuzzy match, but "G", "P", "T" are not.
-        // Multi-word n-gram fuzzy matching is blocked because word counts don't match (3 != 1).
+        // "Chat" (4 chars) vs "ChatGPT" (7 chars): length ratio 4/7 = 0.57 < 0.60 threshold,
+        // so fuzzy matching is blocked by the length ratio guard. This is correct:
+        // a 4-char word shouldn't silently become a 7-char word.
         let text = "use Chat G P T for this";
         let custom_words = vec![
             vocabulary("ChatGPT", "ChatGPT"),
         ];
         let result = apply_custom_words(text, &custom_words, 0.5);
-        // Only "Chat" gets matched to "ChatGPT", "G P T" remain unchanged
-        assert_eq!(result, "use ChatGPT G P T for this");
+        // No fuzzy match: "Chat" is too short relative to "ChatGPT"
+        assert_eq!(result, "use Chat G P T for this");
     }
 
     #[test]
@@ -721,13 +762,14 @@ mod tests {
 
     #[test]
     fn test_phonetic_matching() {
-        // "kat" sounds like "cat" - phonetic match
-        let text = "I have a kat";
+        // "phoen" sounds like "phone" - phonetic match with 5-char input
+        // Note: 3-char inputs like "kat" are blocked by MIN_FUZZY_LENGTH guard
+        let text = "I need a phoen";
         let custom_words = vec![
-            vocabulary("cat", "cat"),
+            vocabulary("phone", "phone"),
         ];
         let result = apply_custom_words(text, &custom_words, 0.5);
-        assert_eq!(result, "I have a cat");
+        assert_eq!(result, "I need a phone");
     }
 
     #[test]
@@ -753,6 +795,65 @@ mod tests {
         // "use" must be preserved, only "chat gpt" should become "ChatGPT"
         assert!(result.contains("use"));
         assert!(result.contains("ChatGPT"));
+    }
+
+    // ── False positive regression tests ─────────────────────────────
+
+    #[test]
+    fn test_no_false_positive_the_to_theyre() {
+        // "the" must NOT be fuzzy-matched to "they're" — blocked by stop word + min-length guards
+        let text = "the app should work";
+        let custom_words = vec![vocabulary("they're", "they're")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "the app should work");
+    }
+
+    #[test]
+    fn test_no_false_positive_where_to_theyre() {
+        // "where" must NOT be fuzzy-matched to "they're" — blocked by stop word guard
+        let text = "go where we want";
+        let custom_words = vec![vocabulary("they're", "they're")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "go where we want");
+    }
+
+    #[test]
+    fn test_no_false_positive_they_to_theyre() {
+        // "they" must NOT be fuzzy-matched to "they're" — blocked by stop word guard
+        let text = "they said hello";
+        let custom_words = vec![vocabulary("they're", "they're")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "they said hello");
+    }
+
+    #[test]
+    fn test_no_false_positive_common_short_words() {
+        // Common short words must never be fuzzy-matched
+        let text = "we in to it is";
+        let custom_words = vec![
+            vocabulary("they're", "they're"),
+            vocabulary("shadcn", "shadcn"),
+        ];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "we in to it is");
+    }
+
+    #[test]
+    fn test_short_exact_match_still_works() {
+        // Short words can still be exact-matched (e.g. abbreviation replacement)
+        let text = "btw I am busy";
+        let custom_words = vec![exact_replacement("btw", "by the way")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "by the way I am busy");
+    }
+
+    #[test]
+    fn test_legitimate_fuzzy_still_works() {
+        // Longer words should still be fuzzy-matched correctly
+        let text = "I use Anthrapik daily";
+        let custom_words = vec![vocabulary("Anthropic", "Anthropic")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I use Anthropic daily");
     }
 
     #[test]
