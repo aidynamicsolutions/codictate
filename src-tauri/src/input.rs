@@ -95,6 +95,34 @@ pub fn send_paste_ctrl_v(enigo: &mut Enigo) -> Result<(), String> {
     Ok(())
 }
 
+/// Sends a Cmd+C (macOS) or Ctrl+C (Windows/Linux) copy command using raw keycodes.
+/// Uses Key::Other to avoid TSMGetInputSourceProperty which crashes on non-main threads.
+/// See: https://github.com/enigo-rs/enigo/issues — Key::Unicode triggers layout-dependent
+/// keycode lookup via TSM, which requires the main dispatch queue on macOS.
+pub fn send_copy_cmd_c(enigo: &mut Enigo) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let (modifier_key, c_key_code) = (Key::Meta, Key::Other(8)); // macOS virtual keycode 8 = 'C'
+    #[cfg(target_os = "windows")]
+    let (modifier_key, c_key_code) = (Key::Control, Key::Other(0x43)); // VK_C
+    #[cfg(target_os = "linux")]
+    let (modifier_key, c_key_code) = (Key::Control, Key::Unicode('c'));
+
+    enigo
+        .key(modifier_key, enigo::Direction::Press)
+        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
+    enigo
+        .key(c_key_code, enigo::Direction::Click)
+        .map_err(|e| format!("Failed to click C key: {}", e))?;
+
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    enigo
+        .key(modifier_key, enigo::Direction::Release)
+        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+
+    Ok(())
+}
+
 /// Sends a Ctrl+Shift+V paste command.
 /// This is commonly used in terminal applications on Linux to paste without formatting.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.

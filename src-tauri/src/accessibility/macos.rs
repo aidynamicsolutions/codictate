@@ -4,8 +4,8 @@
 //! the focused application. Falls back to clipboard simulation when
 //! the AX API doesn't return usable data.
 
-use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
-use core_foundation::string::{CFString, CFStringRef};
+use core_foundation::base::{CFGetTypeID, CFRelease, CFTypeRef, TCFType};
+use core_foundation::string::{CFString, CFStringGetTypeID, CFStringRef};
 use tracing::{debug, error, info, warn};
 
 use super::CapturedContext;
@@ -151,6 +151,17 @@ fn get_selected_text(element: AXUIElementRef) -> Option<String> {
             debug!("No selected text via AX (AXError: {})", err);
             return None;
         }
+        // Guard: verify the returned value is actually a CFString before casting.
+        // Some apps return AXValue or CFNumber here, which would segfault.
+        if CFGetTypeID(value) != CFStringGetTypeID() {
+            warn!(
+                type_id = CFGetTypeID(value),
+                expected = CFStringGetTypeID(),
+                "AXSelectedText returned non-CFString type, skipping"
+            );
+            CFRelease(value);
+            return None;
+        }
         let cf_string = CFString::wrap_under_create_rule(value as CFStringRef);
         let s = cf_string.to_string();
         if s.is_empty() {
@@ -174,6 +185,17 @@ fn get_full_text(element: AXUIElementRef) -> Option<String> {
         );
         if err != K_AX_ERROR_SUCCESS || value.is_null() {
             debug!("Failed to get AXValue (full text) (AXError: {})", err);
+            return None;
+        }
+        // Guard: verify the returned value is actually a CFString before casting.
+        // Some apps return AXValue or other CF types here, which would segfault.
+        if CFGetTypeID(value) != CFStringGetTypeID() {
+            warn!(
+                type_id = CFGetTypeID(value),
+                expected = CFStringGetTypeID(),
+                "AXValue returned non-CFString type, skipping"
+            );
+            CFRelease(value);
             return None;
         }
         let cf_string = CFString::wrap_under_create_rule(value as CFStringRef);
@@ -424,10 +446,10 @@ fn capture_via_clipboard(app_handle: &tauri::AppHandle) -> Option<String> {
     if let Some(enigo_state) = enigo_state {
         let mut guard = enigo_state.0.lock().unwrap();
         if let Some(ref mut enigo) = *guard {
-            use enigo::{Key, Keyboard};
-            let _ = enigo.key(Key::Meta, enigo::Direction::Press);
-            let _ = enigo.key(Key::Unicode('c'), enigo::Direction::Click);
-            let _ = enigo.key(Key::Meta, enigo::Direction::Release);
+            if let Err(e) = crate::input::send_copy_cmd_c(enigo) {
+                warn!("Failed to simulate Cmd+C: {}", e);
+                return None;
+            }
         } else {
             warn!("Enigo not initialized, clipboard fallback failed");
             return None;
