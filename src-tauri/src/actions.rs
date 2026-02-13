@@ -143,7 +143,7 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
 
         // Get the MLX manager from app state
         let mlx_manager = app.state::<Arc<MlxModelManager>>();
-        return match mlx_manager.process_text(&processed_prompt).await {
+        return match mlx_manager.process_text(&processed_prompt, None, None, None).await {
             Ok(result) => {
                 let result: String = result;
                 if result.trim().is_empty() {

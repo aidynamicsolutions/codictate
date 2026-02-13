@@ -5,16 +5,29 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 use tracing::{debug, error, info, warn};
 
 use crate::accessibility::{CapturedContext, CorrectionResult};
 use crate::settings::{get_settings, AppSettings};
+use regex::Regex;
+
+use once_cell::sync::Lazy;
+use std::collections::HashSet;
 
 /// Hardcoded correction prompt — always used for the Fn+Z correction shortcut.
 /// Embedded at compile time via `include_str!`. Build fails if file is missing.
 /// Decoupled from user-configurable refine prompts.
-const CORRECTION_PROMPT_TEMPLATE: &str = include_str!("../../../prompts/correct-text-v3.md");
+const CORRECTION_PROMPT_TEMPLATE: &str = include_str!("../../../prompts/correct-text-v8.md");
+
+static HOMOPHONES_MAP: Lazy<HashMap<String, Vec<String>>> = Lazy::new(|| {
+    serde_json::from_str(include_str!("../../resources/homophones.json")).unwrap_or_default()
+});
+
+static PHONETIC_SLIPS_MAP: Lazy<HashMap<String, Vec<String>>> = Lazy::new(|| {
+    serde_json::from_str(include_str!("../../resources/phonetic_slips.json")).unwrap_or_default()
+});
 
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::managers::mlx::MlxModelManager;
@@ -114,9 +127,41 @@ impl CorrectionManager {
         // 3. Send to LLM
         let corrected_full = self.send_to_llm(&settings, &prompt).await?;
         let corrected_full = corrected_full.trim().to_string();
+        
+        // Parse JSON response if possible
+        let corrected_text = match serde_json::from_str::<serde_json::Value>(&corrected_full) {
+            Ok(json) => {
+                if let Some(correction) = json.get("correction").and_then(|v| v.as_str()) {
+                    debug!(thought = ?json.get("thought"), correction = %correction, "Parsed JSON correction");
+                    correction.to_string()
+                } else {
+                    warn!("JSON response missing 'correction' field, using raw output");
+                    corrected_full.clone()
+                }
+            }
+            Err(_) => {
+                // Try to clean markdown code blocks often returned by LLMs (```json ... ```)
+                let cleaned = clean_json_md(&corrected_full);
+                match serde_json::from_str::<serde_json::Value>(&cleaned) {
+                    Ok(json) => {
+                        if let Some(correction) = json.get("correction").and_then(|v| v.as_str()) {
+                            debug!(thought = ?json.get("thought"), correction = %correction, "Parsed JSON correction (after cleanup)");
+                            correction.to_string()
+                        } else {
+                             corrected_full.clone()
+                        }
+                    },
+                    Err(_) => {
+                        warn!("Failed to parse JSON response, falling back to raw output");
+                        corrected_full.clone()
+                    }
+                }
+            }
+        };
+
         debug!(
             original = %text_for_llm,
-            corrected = %corrected_full,
+            corrected = %corrected_text,
             "LLM returned correction"
         );
 
@@ -124,9 +169,9 @@ impl CorrectionManager {
         let (original_for_compare, mut corrected_for_result) = if use_full_context {
             // Find where the selected text appears in the original context,
             // then extract the corresponding region from the corrected output.
-            extract_selected_correction(context_str, &selected_text, &corrected_full)
+            extract_selected_correction(context_str, &selected_text, &corrected_text)
         } else {
-            (selected_text.clone(), corrected_full.clone())
+            (selected_text.clone(), corrected_text.clone())
         };
 
         // 5. Strip trailing period that LLMs often add to mid-sentence corrections
@@ -165,7 +210,7 @@ impl CorrectionManager {
 
     /// Build the correction prompt by interpolating variables.
     ///
-    /// Uses the hardcoded `CORRECTION_PROMPT_TEMPLATE` (v3), not the user-configurable
+    /// Uses the hardcoded `CORRECTION_PROMPT_TEMPLATE` (v8), not the user-configurable
     /// refine prompts. This ensures the Fn+Z correction always uses the tested prompt.
     fn build_correction_prompt(
         &self,
@@ -178,31 +223,35 @@ impl CorrectionManager {
         let dict_total = settings.dictionary.len();
         let dict_used = dict_total.min(50);
 
-        // Format dictionary hints
-        let hints = settings
-            .dictionary
-            .iter()
-            .take(50) // Cap dictionary injection to prevent token overflow
-            .map(|entry| {
-                // If it's a replacement (is_replacement=true), it's a strict fix.
-                // If it's vocabulary (is_replacement=false), it's a biasing term.
-                // For the LLM, we can treat them similarly as "hints".
-                if entry.is_replacement {
-                     format!("- Use '{}' instead of '{}'", entry.replacement, entry.input)
-                } else {
-                     // For vocabulary entries (e.g. "Kubernetes"), we might not have a specific wrong input,
-                     // but the entry struct has 'input' and 'replacement'.
-                     // Usually for vocabulary: input="Kubernetes", replacement="Kubernetes".
-                     // In that case: "- Vocabulary: Kubernetes"
-                     if entry.input.eq_ignore_ascii_case(&entry.replacement) {
-                         format!("- Vocabulary: '{}'", entry.replacement)
-                     } else {
-                         format!("- Use '{}' contextually for '{}'", entry.replacement, entry.input)
-                     }
+        let mut hints_lines = Vec::new();
+        for entry in settings.dictionary.iter().take(50) {
+            // If it's a replacement (is_replacement=true), it's a strict fix.
+            // If it's vocabulary (is_replacement=false), it's a biasing term.
+            if entry.is_replacement {
+                hints_lines.push(format!(
+                    "Use '{}' instead of '{}'.",
+                    entry.replacement, entry.input
+                ));
+            } else {
+                // For vocabulary entries (e.g. "Kubernetes"), we might not have a specific wrong input.
+                // If input matches replacement (case-insensitive), it's a general vocabulary hint.
+                // We skip these for correction prompts to reduce noise, unless explicitly defined as input!=replacement.
+                if !entry.input.eq_ignore_ascii_case(&entry.replacement) {
+                    hints_lines.push(format!(
+                        "Use '{}' contextually for '{}'.",
+                        entry.replacement, entry.input
+                    ));
                 }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+            }
+        }
+
+        // Inject deterministic homophone hints & phonetic slip-ups
+        if let Some(selection) = context.selected_text.as_deref() {
+            let hints_vec = generate_hints(selection);
+            hints_lines.extend(hints_vec);
+        }
+
+        let hints = hints_lines.join("\n");
 
         debug!(
             dictionary_total = dict_total,
@@ -211,12 +260,17 @@ impl CorrectionManager {
             "Dictionary hints for correction"
         );
 
-        // Interpolate variables
+        // Interpolate variables - JSON SAFE
+        // We use serde_json::to_string to ensure strings are properly escaped for JSON prompts
+        let safe_target = serde_json::to_string(target_text).unwrap_or(format!("\"{}\"", target_text));
+        let safe_context = serde_json::to_string(&context.context).unwrap_or(format!("\"{}\"", context.context));
+        let safe_selection = serde_json::to_string(context.selected_text.as_deref().unwrap_or("")).unwrap_or("\"\"".to_string());
+        
         let prompt = interpolate_prompt(
             &prompt_template,
-            target_text,
-            &context.context,
-            context.selected_text.as_deref().unwrap_or(""),
+            &unquote_string(&safe_target),
+            &unquote_string(&safe_context),
+            &unquote_string(&safe_selection),
             &hints,
         );
 
@@ -254,7 +308,9 @@ impl CorrectionManager {
         if provider.id == LOCAL_MLX_PROVIDER_ID {
             let mlx_manager = self.app_handle.state::<Arc<MlxModelManager>>();
             return mlx_manager
-                .process_text(prompt)
+                // Use greedy decoding (temp=0) for correction to ensure stability and deterministic output
+                // v8 prompt is optimized for this.
+                .process_text(prompt, Some(0.0), Some(1.0), Some(0.0))
                 .await
                 .map_err(|e| {
                     error!("MLX correction failed: {}", e);
@@ -326,6 +382,27 @@ impl CorrectionManager {
     }
 }
 
+/// Helper to clean markdown code blocks from JSON response
+fn clean_json_md(text: &str) -> String {
+    let text = text.trim();
+    if let Some(stripped) = text.strip_prefix("```json") {
+        stripped.trim_end_matches("```").trim().to_string()
+    } else if let Some(stripped) = text.strip_prefix("```") {
+        stripped.trim_end_matches("```").trim().to_string()
+    } else {
+        text.to_string()
+    }
+}
+
+/// Helper to safely unquote JSON strings (removes surrounding quotes but keeps internal escapes)
+fn unquote_string(s: &str) -> String {
+    if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') {
+        s[1..s.len() - 1].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
 /// Interpolate prompt variables: ${output}, ${context}, ${selection}, ${hints}/${dictionary}.
 pub fn interpolate_prompt(
     template: &str,
@@ -377,6 +454,44 @@ fn extract_selected_correction(
     let corrected_words: Vec<&str> = corrected_context.split_whitespace().collect();
 
     // Extract the corresponding words from the corrected output
+    // Strategy: Prioritize matching the surrounding context (suffix/prefix) in the corrected output.
+    // relying on word counting is fragile when the LLM expands or contracts the selection length.
+
+    let prefix_char_end = find_byte_after_n_words(corrected_context, prefix_word_count);
+
+    // 1. Try Suffix Matching
+    if !suffix.trim().is_empty() {
+        if let Some(suffix_pos) = corrected_context.find(suffix.trim()) {
+            // Check if suffix appears *after* prefix end
+            if prefix_char_end <= suffix_pos {
+                let corrected_selected = corrected_context
+                    [prefix_char_end..suffix_pos]
+                    .trim()
+                    .to_string();
+                debug!(
+                    corrected_selected = %corrected_selected,
+                    suffix_match = true,
+                    "Extracted correction via suffix matching"
+                );
+                return (selected_text.to_string(), corrected_selected);
+            }
+        }
+    } else {
+        // 2. Suffix is empty (end of sentence)
+        // Take everything after the prefix end
+        if prefix_char_end <= corrected_context.len() {
+             let corrected_selected = corrected_context[prefix_char_end..].trim().to_string();
+             debug!(
+                corrected_selected = %corrected_selected,
+                end_of_sentence = true,
+                "Extracted correction via end-of-sentence logic"
+            );
+            return (selected_text.to_string(), corrected_selected);
+        }
+    }
+
+    // 3. Fallback to Word Count Matching
+    // Only if suffix matching fails (e.g., LLM changed the suffix text too)
     if prefix_word_count + selected_word_count <= corrected_words.len() {
         let corrected_selected: String = corrected_words
             [prefix_word_count..prefix_word_count + selected_word_count]
@@ -386,32 +501,11 @@ fn extract_selected_correction(
             prefix_words = prefix_word_count,
             selected_words = selected_word_count,
             corrected_selected = %corrected_selected,
-            "Extracted correction for selected region"
+            "Extracted correction via word count fallback"
         );
 
         (selected_text.to_string(), corrected_selected)
     } else {
-        // Word count mismatch — LLM changed sentence structure.
-        // Try to extract by matching the suffix in the corrected output.
-        if !suffix.trim().is_empty() {
-            if let Some(suffix_pos) = corrected_context.find(suffix.trim()) {
-                // Use word-count-based offset instead of byte offset from the
-                // original prefix. The LLM may have changed the prefix length,
-                // so using `prefix.len()` would produce wrong byte boundaries.
-                let prefix_char_end = find_byte_after_n_words(corrected_context, prefix_word_count);
-                if prefix_char_end <= suffix_pos {
-                    let corrected_selected = corrected_context
-                        [prefix_char_end..suffix_pos]
-                        .trim()
-                        .to_string();
-                    debug!(
-                        corrected_selected = %corrected_selected,
-                        "Extracted correction via suffix matching"
-                    );
-                    return (selected_text.to_string(), corrected_selected);
-                }
-            }
-        }
         // Last resort: return the full corrected context
         debug!("Could not extract selected region, using full corrected output");
         (selected_text.to_string(), corrected_context.to_string())
@@ -468,9 +562,118 @@ fn strip_trailing_period(original: &str, corrected: &str, has_suffix: bool) -> S
     }
 }
 
+/// Generate hints by scanning the selection for known homophones and slips.
+fn generate_hints(selection: &str) -> Vec<String> {
+    let selection_lower = selection.trim().to_lowercase();
+    let mut unique_hints = std::collections::HashSet::new();
+    let mut hints_list = Vec::new();
+
+    // Stopwords to ignore for high-frequency homophones to reduce prompt noise
+    let stopwords: HashSet<&str> = ["i", "a", "the", "is", "it", "in", "to", "for", "of", "on", "at", "be", "do", "we", "he", "by", "or", "an", "no", "so"].into();
+
+    // 1. Phonetic Slip-ups
+    for (pattern, candidates) in PHONETIC_SLIPS_MAP.iter() {
+        if selection_lower.contains(pattern) {
+            let pattern_escaped = regex::escape(pattern);
+            let re_str = format!(r"\b{}\b", pattern_escaped);
+            if let Ok(re) = Regex::new(&re_str) {
+                if re.is_match(&selection_lower) {
+                    let candidates_str = candidates.join("', '");
+                    // Simplified format: "'pattern' is likely supposed to be 'candidate'."
+                    let hint = format!("'{}' is likely supposed to be '{}'.", pattern, candidates_str);
+                    if unique_hints.insert(hint.clone()) {
+                        hints_list.push(hint);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Homophones
+    // Use regex to split by non-word characters to get tokens
+    let re_words = Regex::new(r"\w+").unwrap();
+    for cap in re_words.captures_iter(&selection_lower) {
+        let word = &cap[0];
+        // Skip common stopwords to avoid noise (e.g. "to" -> "too", "two")
+        if stopwords.contains(word) {
+            continue;
+        }
+
+        if let Some(candidates) = HOMOPHONES_MAP.get(word) {
+            let candidates_str = candidates.join("', '");
+            // Simplified format: "'word' might be meant as 'candidate'."
+            let hint = format!("'{}' might be meant as '{}'.", word, candidates_str);
+            if unique_hints.insert(hint.clone()) {
+                hints_list.push(hint);
+            }
+        }
+    }
+    
+    hints_list
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_generate_hints_sentence() {
+        // Test case from user report
+        let selection = "He read the book allowed to the class";
+        let hints = generate_hints(selection);
+        
+        // Should contain hint for "allowed" -> "aloud"
+        let found = hints.iter().any(|h| h.contains("'allowed' might be meant as 'aloud'"));
+        assert!(found, "Expected hint for 'allowed' in sentence: {:?}", hints);
+    }
+    
+    #[test]
+    fn test_generate_hints_multi_word_slip() {
+        // "ten to" was removed from phonetic_slips.json as it was a valid phrase.
+        // Let's use "could of" -> "could have", which is a definitive error.
+        
+        let selection = "I could of gone";
+        let hints = generate_hints(selection);
+        
+        // Expected format: 'could of' is likely supposed to be 'could have'.
+        let found_slip = hints.iter().any(|h| h.contains("'could of' is likely supposed to be 'could have'"));
+        assert!(found_slip, "Expected hint for 'could of'. Hints: {:?}", hints);
+    }
+
+    #[test]
+    fn test_generate_hints_stopwords() {
+        // "to" is a stopword, should not generate hint for "too"/"two"
+        // "allowed" is NOT a stopword, should generate hint
+        let selection = "I allowed him to go";
+        let hints = generate_hints(selection);
+        
+        let has_allowed = hints.iter().any(|h| h.contains("'allowed' might be meant as 'aloud'"));
+        let has_to = hints.iter().any(|h| h.contains("'to' might be meant as"));
+        
+        assert!(has_allowed, "Should contain hint for 'allowed'");
+        assert!(!has_to, "Should NOT contain hint for stopword 'to'. Hints: {:?}", hints);
+    }
+    
+    #[test]
+    fn test_unquote_string() {
+        assert_eq!(unquote_string(r#""hello""#), "hello");
+        // Escaped quotes inside should be preserved
+        assert_eq!(unquote_string(r#""he said \"hello\"""#), r#"he said \"hello\""#);
+        // No quotes
+        assert_eq!(unquote_string("hello"), "hello");
+        // Empty quotes
+        assert_eq!(unquote_string(r#""""#), "");
+    }
+    
+    #[test]
+    fn test_clean_json_md_edge_cases() {
+        // Nested backticks logic using strip_prefix
+        assert_eq!(clean_json_md("```json\n{\"a\":1}\n```"), "{\"a\":1}");
+        // Malformed backticks - strip_prefix handles exact matches
+        assert_eq!(clean_json_md("``json\n{\"a\":1}\n``"), "``json\n{\"a\":1}\n``");
+        // Extra whitespace
+        assert_eq!(clean_json_md("   ```json   \n  {\"a\": 1}  \n   ```   "), "{\"a\": 1}");
+    }
 
     #[test]
     fn test_interpolate_prompt_all_vars() {
@@ -570,16 +773,8 @@ mod tests {
             "cant",
             "I can not believe it happened",
         );
-        // Word count: prefix=1 ("I"), selected=1 ("cant"), but corrected has 6 words
-        // prefix_word_count(1) + selected_word_count(1) = 2 <= 6, so word-aligned path
-        // But corrected_words[1..2] = "can" which is wrong — it should be "can not"
-        // Actually, the word-aligned path would give us "can" (just 1 word at position 1).
-        // The suffix fallback is needed for this case.
         assert_eq!(orig, "cant");
-        // With word count mismatch, the suffix fallback finds "believe it happened"
-        // and extracts between the prefix end and suffix start
-        // Actually 1+1=2 <= 6, so it takes the word-aligned path: corrected_words[1..2] = ["can"]
-        assert_eq!(corrected, "can");
+        assert_eq!(corrected, "can not");
     }
 
     #[test]
@@ -590,12 +785,10 @@ mod tests {
             "brown fox",
             "the fast fox jumps",
         );
-        // prefix words: 2 ("the quick"), selected words: 2 ("brown fox")
-        // corrected words: 4. 2+2=4 <= 4, so word-aligned: corrected_words[2..4] = ["fox", "jumps"]
-        // That's wrong! The suffix "jumps" is preserved, so suffix fallback would be better.
-        // But the word-aligned path is taken first. This is a known limitation.
+        // Correct behavior: "brown fox" -> "fox"
+        // Incorrect (old) behavior: "brown fox" -> "fox jumps"
         assert_eq!(orig, "brown fox");
-        assert_eq!(corrected, "fox jumps");
+        assert_eq!(corrected, "fox");
     }
 
     #[test]
@@ -676,5 +869,55 @@ mod tests {
     fn test_strip_period_with_trailing_whitespace() {
         let result = strip_trailing_period("their", "they're.  ", true);
         assert_eq!(result, "they're");
+    }
+
+    // ── clean_json_md tests ────────────────────────────────────────
+
+    #[test]
+    fn test_clean_json_md_no_md() {
+        let input = r#"{"correction": "test"}"#;
+        assert_eq!(clean_json_md(input), input);
+    }
+
+    #[test]
+    fn test_clean_json_md_with_json_block() {
+        let input = r#"```json
+{"correction": "test"}
+```"#;
+        assert_eq!(clean_json_md(input), r#"{"correction": "test"}"#);
+    }
+
+    #[test]
+    fn test_clean_json_md_with_generic_block() {
+        let input = r#"```
+{"correction": "test"}
+```"#;
+        assert_eq!(clean_json_md(input), r#"{"correction": "test"}"#);
+    }
+
+    #[test]
+    fn test_extract_correction_expansion() {
+        // "firstable" (1 word) -> "first of all" (3 words)
+        // Original: "This is firstable wrong"
+        // Corrected: "This is first of all wrong"
+        let (orig, corrected) = extract_selected_correction(
+            "This is firstable wrong",
+            "firstable",
+            "This is first of all wrong",
+        );
+        assert_eq!(orig, "firstable");
+        assert_eq!(corrected, "first of all");
+    }
+
+    #[test]
+    fn test_extract_correction_compression() {
+        // "old timers disease" (3 words) -> "Alzheimer's disease" (2 words)
+        let (orig, corrected) = extract_selected_correction(
+            "He has old timers disease now",
+            "old timers disease",
+            "He has Alzheimer's disease now",
+        );
+        assert_eq!(orig, "old timers disease");
+        assert_eq!(corrected, "Alzheimer's disease");
     }
 }

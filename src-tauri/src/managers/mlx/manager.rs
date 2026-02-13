@@ -1033,7 +1033,13 @@ impl MlxModelManager {
     }
 
     /// Process text using the loaded model via Python sidecar
-    pub async fn process_text(&self, prompt: &str) -> Result<String> {
+    pub async fn process_text(
+        &self,
+        prompt: &str,
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+        min_p: Option<f32>,
+    ) -> Result<String> {
         // Check if a model is loaded, determine which model to load if needed
         let model_to_load: Option<String> = {
             let loaded = self.loaded_model.read().unwrap();
@@ -1048,9 +1054,7 @@ impl MlxModelManager {
                 // Check if model is downloaded
                 let model_info = self.get_model_status(&selected);
                 match model_info {
-                    Some(info) if info.status == MlxModelStatus::Downloaded => {
-                        Some(selected)
-                    }
+                    Some(info) if info.status == MlxModelStatus::Downloaded => Some(selected),
                     Some(info) if info.status == MlxModelStatus::Ready => {
                         None // Already ready
                     }
@@ -1086,7 +1090,10 @@ impl MlxModelManager {
         }
 
         // Generate text using the Python sidecar
-        match self.generate_with_sidecar(prompt).await {
+        match self
+            .generate_with_sidecar(prompt, temperature, top_p, min_p)
+            .await
+        {
             Ok(response) => {
                 // Reset unload timer on success
                 self.reset_unload_timer();
@@ -1102,7 +1109,9 @@ impl MlxModelManager {
                         return Err(anyhow!("Post-processing unavailable: model reload failed"));
                     }
                     // Retry once - if this also fails, error bubbles up
-                    let result = self.generate_with_sidecar(prompt).await?;
+                    let result = self
+                        .generate_with_sidecar(prompt, temperature, top_p, min_p)
+                        .await?;
                     self.reset_unload_timer();
                     return Ok(result);
                 }
@@ -1112,7 +1121,13 @@ impl MlxModelManager {
     }
 
     /// Internal method to generate text via sidecar HTTP call
-    async fn generate_with_sidecar(&self, prompt: &str) -> Result<String> {
+    async fn generate_with_sidecar(
+        &self,
+        prompt: &str,
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+        min_p: Option<f32>,
+    ) -> Result<String> {
         let model_id = {
             let loaded = self.loaded_model.read().unwrap();
             loaded.as_ref().map(|s| s.model_id.clone())
@@ -1135,10 +1150,14 @@ impl MlxModelManager {
             response: String,
         }
 
+        let temp = temperature.unwrap_or(0.5);
+        let tp = top_p.unwrap_or(0.9);
+        let mp = min_p.unwrap_or(0.05);
+
         info!(
-            temperature = 0.5,
-            top_p = 0.9,
-            min_p = 0.05,
+            temperature = temp,
+            top_p = tp,
+            min_p = mp,
             prompt_len = prompt.len(),
             "Sending correction to MLX sidecar"
         );
@@ -1148,13 +1167,13 @@ impl MlxModelManager {
             .post(format!("{}/generate", self.get_base_url()))
             .json(&GenerateRequest {
                 prompt: prompt.to_string(),
-                max_tokens: -1,  // Sentinel: Python calculates dynamically based on input + RAM
-                temperature: 0.5,
-                top_p: 0.9,
-                min_p: 0.05,
+                max_tokens: -1, // Sentinel: Python calculates dynamically based on input + RAM
+                temperature: temp,
+                top_p: tp,
+                min_p: mp,
                 system_ram_gb: Self::get_system_memory_gb(),
             })
-            .timeout(Duration::from_secs(60))  // 60s timeout for local LLM inference
+            .timeout(Duration::from_secs(60)) // 60s timeout for local LLM inference
             .send()
             .await
             .map_err(|e| anyhow!("Failed to call sidecar: {}", e))?;
@@ -1169,7 +1188,10 @@ impl MlxModelManager {
             .await
             .map_err(|e| anyhow!("Failed to parse sidecar response: {}", e))?;
 
-        debug!(raw_response = %result.response, "Sidecar /generate response");
+        debug!(
+            raw_response = %result.response,
+            "Sidecar /generate response"
+        );
 
         Ok(result.response)
     }

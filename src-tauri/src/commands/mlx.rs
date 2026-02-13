@@ -82,7 +82,7 @@ pub async fn mlx_process_text(
     prompt: String,
 ) -> Result<String, String> {
     mlx_manager
-        .process_text(&prompt)
+        .process_text(&prompt, None, None, None)
         .await
         .map_err(|e| e.to_string())
 }

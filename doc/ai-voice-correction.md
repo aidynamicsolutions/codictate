@@ -43,7 +43,7 @@ After the LLM returns the corrected sentence, the pipeline extracts only the cor
 | `src-tauri/src/fn_key_monitor.rs` | Handles Fn+Z shortcut (Fn key requires native CGEventTap) |
 | `src-tauri/src/accessibility/mod.rs` | Context capture via macOS Accessibility API |
 | `src/overlay/RecordingOverlay.tsx` | Overlay UI (shows correction ghost text) |
-| `prompts/correct-text-v3.md` | Hardcoded correction prompt (embedded via `include_str!`) |
+| `prompts/correct-text-v8.md` | Hardcoded correction prompt (embedded via `include_str!`) |
 
 ### Pipeline Flow
 
@@ -52,8 +52,9 @@ After the LLM returns the corrected sentence, the pipeline extracts only the cor
 3. **`CorrectionManager::run_correction()`** runs the async pipeline:
    - Captures context via Accessibility API (`selected_text` + `context`)
    - Determines whether to send full context or just selection to LLM
-   - Builds prompt using hardcoded v3 template + `interpolate_prompt()` with `${output}`, `${context}`, `${selection}`, `${dictionary}` variables
-   - Injects dictionary entries as hints (capped at 50 items) for contextual biasing
+   - Builds prompt using hardcoded v8 template + `interpolate_prompt()`
+   - **Scans selection** for known homophones (tokens) and phonetic slips (phrases) to inject specific hints
+   - Injects strict dictionary replacements (capped at 50 items)
    - Sends to configured LLM provider (local MLX, Apple Intelligence, or remote API)
    - Calls `extract_selected_correction()` to map corrected words back to selected region
 4. **Result handling**:
@@ -79,15 +80,24 @@ Extraction: prefix_words=0, selected_words=1 → "They're"
 
 ## Prompt Engineering
 
-The correction prompt is **hardcoded** in `correction.rs` via `include_str!("prompts/correct-text-v3.md")`. It is **not** user-configurable — the Fn+Z shortcut always uses this tested prompt, fully decoupled from the refine prompt system.
+The correction prompt is **hardcoded** in `correction.rs` via `include_str!("prompts/correct-text-v8.md")`. It is **not** user-configurable — the Fn+Z shortcut always uses this tested prompt, fully decoupled from the refine prompt system.
 
-The v3 prompt uses an XML-tag structure (`<instructions>`, `<hints>`, `<input>`, `<correction>`) optimized for small models:
+The v8 prompt uses a **Strict JSON** structure optimized for reliability and speed:
 
 ```
-<instructions>  — Rules for correction (hint adherence, homophones, no rewriting)
-<hints>         — Dictionary entries injected at runtime via ${dictionary}
-<input>         — The text to correct via ${context}
-<correction>    — Model writes corrected text here
+System: Correction Engine. Return JSON ONLY.
+
+Task: Correct "selection" using "context".
+- Apply [Slip] aggressively.
+- Apply [Hint] ONLY if selection doesn't fit context.
+- Output thought & correction.
+- If correct, return original.
+
+Examples:
+Input: {"context": "I think their coming", "selection": "their"}
+Hints: - [Hint] 'their' might be meant as 'they're'
+Output: {"thought": "Context 'coming' -> 'they are'.", "correction": "they're"}
+...
 ```
 
 ### Template Variables
@@ -97,21 +107,29 @@ The v3 prompt uses an XML-tag structure (`<instructions>`, `<hints>`, `<input>`,
 | `${output}` | Full context sentence (or selected text if context unavailable) |
 | `${context}` | Surrounding text for additional reference |
 | `${selection}` | The user's original selection |
-| `${dictionary}` / `${hints}` | Formatted dictionary entries for contextual biasing (max 50) |
+| `${hints}` | List of injected hints (Slips, Homophones, Replacements) |
 
-### Dictionary Injection (Contextual Biasing)
+### Advanced Strategy: Counter-Intuitive Examples
 
-The user's Dictionary entries are automatically injected into the `<hints>` section of the prompt. This teaches the LLM about user-specific terminology:
+We deliberately include "technically correct but contextually wrong" examples to break the model's bias towards high-frequency words.
 
-- **Replacement entries** (`is_replacement=true`): `- Use 'GUI' instead of 'Gooey'`
-- **Vocabulary entries**: `- Vocabulary: 'Kubernetes'`
-- **Contextual entries**: `- Use 'React' contextually for 'reeked'`
+- **Example**: `Input: "I know one is left"` -> `Output: "no one"`
+- **Why**: "I know one is left" is a valid sentence. However, in rapid dictation, "know one" is almost always a misinterpretation of "no one".
+- **Effect**: By forcing this correction, we teach the model to prioritize **contextual probability** (quantity "one" implies negation "no") over **literal validity**. Without this, the model fails to correct "know one" 100% of the time.
 
-Injection is capped at **50 entries** to prevent token overflow.
+### Dictionary Injection & Scanned Hints
+
+The prompt acts on specific hints derived from the user's dictionary and internal resources:
+
+- **Phonetic Slips** (`phonetic_slips.json`): scanned phrase matches (e.g. "ten to" -> "tend to").
+- **Visual Hints** (`homophones.json`): scanned token matches (e.g. "allowed" -> "might be meant as 'aloud'").
+- **Replacement entries** (Settings): strict replacements defined by the user.
+
+**Note**: Global vocabulary injection (`- Vocabulary: 'Kubernetes'`) has been **removed** to reduce prompt noise and prevent hallucinations. The model relies on its internal knowledge for general vocabulary unless a specific replacement is defined.
 
 ### Model Considerations
 
-- **Qwen3 Base 4B** (local MLX): Optimized sampling — temperature=0.5, top_p=0.9, min_p=0.05. Handles 1-3 errors per sentence well.
+- **Qwen 2.5 3B** (local MLX): Optimized sampling — temperature=0.0 (greedy), top_p=1.0. Prioritizes deterministic, safe corrections.
 - **Larger models** (8B+): Better at catching all homophones in complex sentences.
 - **Apple Intelligence**: Alternative provider, uses system-level model.
 
