@@ -55,7 +55,7 @@ export default function Home({
     const unlistenHistory = listen("history-updated", () => {
       logInfo(
         "[Home] Received history-updated event, reloading data...",
-        "fe-home"
+        "fe-home",
       );
       loadData();
     });
@@ -78,7 +78,7 @@ export default function Home({
       const profileResult = await commands.getUserProfileCommand();
       logInfo(
         `[Home] Profile result: ${JSON.stringify(profileResult)}`,
-        "fe-home"
+        "fe-home",
       );
       if (profileResult.status === "ok" && profileResult.data.user_name) {
         setUsername(profileResult.data.user_name);
@@ -88,7 +88,7 @@ export default function Home({
       const homeStats = await commands.getHomeStats();
       logInfo(
         `[Home] Raw stats from backend: total_words=${homeStats.status === "ok" ? homeStats.data.total_words : "error"}, wpm=${homeStats.status === "ok" ? homeStats.data.wpm : "error"}`,
-        "fe-home"
+        "fe-home",
       );
 
       if (homeStats && homeStats.status === "ok") {
@@ -99,13 +99,16 @@ export default function Home({
           wpm: statsData.wpm,
           time_saved_minutes: statsData.time_saved_minutes,
           streak_days: Number(statsData.streak_days),
-          faster_than_typing_percentage: statsData.faster_than_typing_percentage,
-          total_filler_words_removed: Number(statsData.total_filler_words_removed),
+          faster_than_typing_percentage:
+            statsData.faster_than_typing_percentage,
+          total_filler_words_removed: Number(
+            statsData.total_filler_words_removed,
+          ),
           filler_filter_active: statsData.filler_filter_active,
         };
         logInfo(
           `[Home] Setting stats: total_words=${newStats.total_words} (prev=${stats?.total_words ?? "null"})`,
-          "fe-home"
+          "fe-home",
         );
         setStats(newStats);
       }
@@ -128,13 +131,13 @@ export default function Home({
       </div>
 
       {/* Scrollable Content (WhatsNew, History, GettingStarted) */}
-      <div 
+      <div
         ref={setScrollElement}
         className="flex-1 overflow-y-auto pb-20 w-full scrollbar-thin scrollbar-thumb-muted/50 scrollbar-track-transparent bg-background/50 h-full"
       >
         <div className="max-w-5xl mx-auto w-full flex flex-col gap-8 px-8">
           <WhatsNew />
-          
+
           <GettingStarted onNavigate={onNavigate} />
 
           <div className="flex flex-col gap-4">
@@ -150,32 +153,32 @@ export default function Home({
               />
             </div>
             <div className="bg-card/50 rounded-xl backdrop-blur-sm min-h-[300px] flex flex-col">
-                 <HistoryList
-                  loading={historyLoading}
-                  historyEntries={historyEntries}
-                  sortedDates={sortedDates}
-                  groupedEntries={groupedEntries}
-                  onToggleSaved={toggleSaved}
-                  onDelete={deleteAudioEntry}
-                  emptyMessage={
-                    getFilterEmptyState(filter, hasActiveFilters, t).emptyMessage
-                    || t("settings.history.empty")
-                  }
-                  emptyDescription={
-                    getFilterEmptyState(filter, hasActiveFilters, t).emptyDescription
-                    || t("settings.history.emptyDescription")
-                  }
-                  scrollContainer={scrollElement}
-                  stickyTopOffset={57}
-                  loadMore={loadMore}
-                  hasMore={hasMore}
-                />
+              <HistoryList
+                loading={historyLoading}
+                historyEntries={historyEntries}
+                sortedDates={sortedDates}
+                groupedEntries={groupedEntries}
+                onToggleSaved={toggleSaved}
+                onDelete={deleteAudioEntry}
+                emptyMessage={
+                  getFilterEmptyState(filter, hasActiveFilters, t)
+                    .emptyMessage || t("settings.history.empty")
+                }
+                emptyDescription={
+                  getFilterEmptyState(filter, hasActiveFilters, t)
+                    .emptyDescription || t("settings.history.emptyDescription")
+                }
+                scrollContainer={scrollElement}
+                stickyTopOffset={57}
+                loadMore={loadMore}
+                hasMore={hasMore}
+                onNavigate={onNavigate}
+              />
             </div>
           </div>
         </div>
       </div>
 
-      
       {/* Bottom fade/blur effect */}
       <div className="absolute bottom-0 left-0 right-0 h-3 bg-linear-to-t from-background via-background/60 to-transparent pointer-events-none z-10 backdrop-blur-[1px]" />
     </div>

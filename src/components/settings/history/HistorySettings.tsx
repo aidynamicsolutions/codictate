@@ -33,8 +33,6 @@ import { useHistory, getFilterEmptyState } from "@/hooks/useHistory";
 import { HistoryList } from "@/components/shared/HistoryList";
 import { HistoryFilterDropdown } from "@/components/shared/HistoryFilterDropdown";
 
-
-
 const HistoryStorage: React.FC<{
   onPrune: () => void;
   onClearAll: () => void;
@@ -90,7 +88,7 @@ const HistoryStorage: React.FC<{
               count,
               days: pruneDays,
             }),
-          }
+          },
         );
       }
     } catch (error) {
@@ -98,7 +96,7 @@ const HistoryStorage: React.FC<{
       toast.error(t("common.error"), {
         description: t(
           "settings.history.pruneError",
-          "Failed to prune history"
+          "Failed to prune history",
         ),
       });
     } finally {
@@ -120,81 +118,92 @@ const HistoryStorage: React.FC<{
   return (
     <>
       <div className="w-full">
-         <div className="px-1 mb-3">
-            <h3 className="text-sm font-medium text-muted-foreground tracking-wide pl-1">
-                {t("settings.history.managementTitle", "Storage & Management")}
-            </h3>
-         </div>
+        <div className="px-1 mb-3">
+          <h3 className="text-sm font-medium text-muted-foreground tracking-wide pl-1">
+            {t("settings.history.managementTitle", "Storage & Management")}
+          </h3>
+        </div>
         <Card className="bg-card border-border shadow-sm rounded-xl overflow-hidden">
-            <CardContent className="p-0">
+          <CardContent className="p-0">
             <div className="flex items-center justify-between p-4">
-                <div className="flex flex-col gap-1.5 mr-6">
-                    <div className="flex items-center gap-2">
-                        <h4 className="text-sm font-medium text-foreground/90">
-                            {t("settings.history.storageTitle", "History Storage")}
-                        </h4>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => commands.openRecordingsFolder()}
-                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                            title={t("settings.history.openFolder")}
-                        >
-                            <FolderOpen className="w-4 h-4" />
-                        </Button>
-                    </div>
-                    <p className="text-[13px] text-muted-foreground/80 leading-relaxed font-normal">
-                        {stats ? (
-                        t("settings.history.storageDescription", {
-                            size: formatBytes(stats.total_size_bytes),
-                            count: stats.total_entries,
-                        })
-                        ) : (
-                        "..."
-                        )}
-                    </p>
+              <div className="flex flex-col gap-1.5 mr-6">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-medium text-foreground/90">
+                    {t("settings.history.storageTitle", "History Storage")}
+                  </h4>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => commands.openRecordingsFolder()}
+                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    title={t("settings.history.openFolder")}
+                  >
+                    <FolderOpen className="w-4 h-4" />
+                  </Button>
                 </div>
-                <div className="flex gap-3 items-center shrink-0">
-                    <Select
-                        disabled={pruning}
-                        onValueChange={(val) => setPruneDays(parseInt(val))}
-                        value="" 
-                    >
-                        <SelectTrigger className="w-[180px] h-9 text-sm font-medium shadow-sm bg-secondary border-none text-secondary-foreground">
-                            <SelectValue
-                                placeholder={t(
-                                "settings.history.prunePlaceholder",
-                                "Prune history..."
-                                )}
-                            />
-                        </SelectTrigger>
-                        <SelectContent position="popper">
-                        {[
-                            { days: 3, label: t("settings.history.pruneOptions.3d") },
-                            { days: 7, label: t("settings.history.pruneOptions.7d") },
-                            { days: 30, label: t("settings.history.pruneOptions.30d") },
-                            { days: 90, label: t("settings.history.pruneOptions.3m") },
-                            { days: 365, label: t("settings.history.pruneOptions.1y") },
-                        ].map(({ days, label }) => (
-                            <SelectItem key={days} value={days.toString()} className="text-xs">
-                            {t("settings.history.pruneLabel", { label })}
-                            </SelectItem>
-                        ))}
-                        </SelectContent>
-                    </Select>
+                <p className="text-[13px] text-muted-foreground/80 leading-relaxed font-normal">
+                  {stats
+                    ? t("settings.history.storageDescription", {
+                        size: formatBytes(stats.total_size_bytes),
+                        count: stats.total_entries,
+                      })
+                    : "..."}
+                </p>
+              </div>
+              <div className="flex gap-3 items-center shrink-0">
+                <Select
+                  disabled={pruning}
+                  onValueChange={(val) => setPruneDays(parseInt(val))}
+                  value=""
+                >
+                  <SelectTrigger className="w-[180px] h-9 text-sm font-medium shadow-sm bg-secondary border-none text-secondary-foreground">
+                    <SelectValue
+                      placeholder={t(
+                        "settings.history.prunePlaceholder",
+                        "Prune history...",
+                      )}
+                    />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {[
+                      { days: 3, label: t("settings.history.pruneOptions.3d") },
+                      { days: 7, label: t("settings.history.pruneOptions.7d") },
+                      {
+                        days: 30,
+                        label: t("settings.history.pruneOptions.30d"),
+                      },
+                      {
+                        days: 90,
+                        label: t("settings.history.pruneOptions.3m"),
+                      },
+                      {
+                        days: 365,
+                        label: t("settings.history.pruneOptions.1y"),
+                      },
+                    ].map(({ days, label }) => (
+                      <SelectItem
+                        key={days}
+                        value={days.toString()}
+                        className="text-xs"
+                      >
+                        {t("settings.history.pruneLabel", { label })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-                    <Button
-                        onClick={onClearAll}
-                        disabled={!hasHistory}
-                        variant="destructive"
-                        size="sm"
-                        className="h-9 px-4 min-w-[6rem] text-sm font-medium shadow-sm rounded-md bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-                    >
-                        <span>{t("settings.history.clearAll", "Clear All")}</span>
-                    </Button>
-                </div>
+                <Button
+                  onClick={onClearAll}
+                  disabled={!hasHistory}
+                  variant="destructive"
+                  size="sm"
+                  className="h-9 px-4 min-w-[6rem] text-sm font-medium shadow-sm rounded-md bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                >
+                  <span>{t("settings.history.clearAll", "Clear All")}</span>
+                </Button>
+              </div>
             </div>
-            </CardContent>
+          </CardContent>
         </Card>
       </div>
 
@@ -245,7 +254,13 @@ const HistoryStorage: React.FC<{
   );
 };
 
-export const HistorySettings: React.FC = () => {
+interface HistorySettingsProps {
+  onNavigate?: (section: string) => void;
+}
+
+export const HistorySettings: React.FC<HistorySettingsProps> = ({
+  onNavigate,
+}) => {
   const { t } = useTranslation();
   const [showClearDialog, setShowClearDialog] = useState(false);
 
@@ -307,46 +322,46 @@ export const HistorySettings: React.FC = () => {
         onClearAll={() => setShowClearDialog(true)}
         hasHistory={historyEntries.length > 0}
       />
-      
+
       <div className="flex-1 min-h-0 flex flex-col space-y-3">
-         <div className="px-1">
-            <h3 className="text-sm font-medium text-muted-foreground tracking-wide pl-1">
-                {t("settings.history.title")}
-            </h3>
-         </div>
-         
-         <Card className="w-full flex-1 min-h-0 flex flex-col bg-card/50 backdrop-blur-sm ring-0 border-x border-t border-border shadow-sm rounded-t-xl rounded-b-none overflow-hidden">
-            <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+        <div className="px-1">
+          <h3 className="text-sm font-medium text-muted-foreground tracking-wide pl-1">
+            {t("settings.history.title")}
+          </h3>
+        </div>
+
+        <Card className="w-full flex-1 min-h-0 flex flex-col bg-card/50 backdrop-blur-sm ring-0 border-x border-t border-border shadow-sm rounded-t-xl rounded-b-none overflow-hidden">
+          <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
             <div className="p-4 border-b border-border/40 bg-muted/10 pb-3">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 z-10" />
-                <Input
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70 z-10" />
+                  <Input
                     id="history-search-input"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder={t("settings.history.searchPlaceholder")}
                     className="pl-9 pr-16 h-9 bg-background/50 border-border/60 focus:bg-background transition-colors w-full"
-                />
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none border border-border/60 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/30">
+                  />
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none border border-border/60 rounded px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground bg-muted/30">
                     {searchQuery ? (
-                    <span>
+                      <span>
                         {t(
-                        filteredEntries.length === 1
+                          filteredEntries.length === 1
                             ? "settings.history.foundResult"
                             : "settings.history.foundResults",
-                        {
+                          {
                             count: filteredEntries.length,
-                        }
+                          },
                         )}
-                    </span>
+                      </span>
                     ) : (
-                    <>
+                      <>
                         {/* eslint-disable-next-line i18next/no-literal-string */}
                         <span className="text-xs">⌘</span>F
-                    </>
+                      </>
                     )}
-                </div>
+                  </div>
                 </div>
                 <HistoryFilterDropdown
                   filter={filter}
@@ -354,10 +369,10 @@ export const HistorySettings: React.FC = () => {
                   hasActiveFilters={hasActiveFilters}
                   onClearFilters={clearFilters}
                 />
-                </div>
+              </div>
             </div>
             <div className="flex-1 min-h-0 flex flex-col">
-                <HistoryList
+              <HistoryList
                 loading={loading}
                 historyEntries={historyEntries}
                 sortedDates={sortedDates}
@@ -371,11 +386,13 @@ export const HistorySettings: React.FC = () => {
                   getFilterEmptyState(filter, hasActiveFilters, t).emptyMessage
                 }
                 emptyDescription={
-                  getFilterEmptyState(filter, hasActiveFilters, t).emptyDescription
+                  getFilterEmptyState(filter, hasActiveFilters, t)
+                    .emptyDescription
                 }
-                />
+                onNavigate={onNavigate}
+              />
             </div>
-            </CardContent>
+          </CardContent>
         </Card>
         <div className="absolute bottom-0 left-0 right-0 h-10 bg-linear-to-t from-background via-background/60 to-transparent pointer-events-none z-10 backdrop-blur-[1px]" />
       </div>

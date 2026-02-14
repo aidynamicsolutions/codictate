@@ -1,4 +1,6 @@
-use crate::audio_toolkit::{apply_custom_words, filter_and_count_filler_words, filter_hallucinations};
+use crate::audio_toolkit::{
+    apply_custom_words_with_thresholds, filter_and_count_filler_words, filter_hallucinations,
+};
 use crate::managers::model::{EngineType, ModelManager};
 use crate::settings::{get_settings, ModelUnloadTimeout};
 use anyhow::Result;
@@ -515,10 +517,17 @@ impl TranscriptionManager {
 
         // Apply word correction if custom words are configured
         let corrected_result = if !settings.dictionary.is_empty() {
-            let corrected = apply_custom_words(
+            info!(
+                dictionary_entries = settings.dictionary.len(),
+                threshold = settings.word_correction_threshold,
+                split_threshold = settings.word_correction_split_threshold,
+                "Applying custom word correction"
+            );
+            let corrected = apply_custom_words_with_thresholds(
                 &result.text,
                 &settings.dictionary,
                 settings.word_correction_threshold,
+                settings.word_correction_split_threshold,
             );
             if corrected != result.text {
                 info!("After custom words: '{}'", corrected);

@@ -1,10 +1,10 @@
-use tracing::{info, warn};
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use specta::Type;
 use std::collections::HashMap;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
+use tracing::{info, warn};
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
@@ -249,6 +249,8 @@ impl Default for TypingTool {
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct CustomWordEntry {
     pub input: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
     pub replacement: String,
     pub is_replacement: bool,
 }
@@ -297,6 +299,8 @@ pub struct AppSettings {
     pub model_unload_timeout: ModelUnloadTimeout,
     #[serde(default = "default_word_correction_threshold")]
     pub word_correction_threshold: f64,
+    #[serde(default = "default_word_correction_split_threshold")]
+    pub word_correction_split_threshold: f64,
     #[serde(default = "default_history_limit")]
     pub history_limit: usize,
     #[serde(default = "default_recording_retention_period")]
@@ -409,6 +413,10 @@ fn default_word_correction_threshold() -> f64 {
     0.18
 }
 
+fn default_word_correction_split_threshold() -> f64 {
+    0.14
+}
+
 fn default_paste_delay_ms() -> u64 {
     60
 }
@@ -419,7 +427,6 @@ fn default_paste_restore_delay_ms() -> u64 {
 
 fn default_auto_submit() -> bool {
     false
-
 }
 
 fn default_history_limit() -> usize {
@@ -784,6 +791,7 @@ pub fn get_default_settings() -> AppSettings {
         dictionary: Vec::new(),
         model_unload_timeout: ModelUnloadTimeout::Min2,
         word_correction_threshold: default_word_correction_threshold(),
+        word_correction_split_threshold: default_word_correction_split_threshold(),
         history_limit: default_history_limit(),
         recording_retention_period: default_recording_retention_period(),
         paste_method: PasteMethod::default(),
@@ -845,7 +853,6 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         // Parse the entire settings object
         match serde_json::from_value::<AppSettings>(settings_value) {
             Ok(mut settings) => {
-
                 let default_settings = get_default_settings();
                 let mut updated = false;
 
@@ -861,8 +868,8 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
                             );
                             // If current_binding is empty or equals the old default, also update it
                             // This ensures new hotkey defaults are applied to existing users
-                            if existing.current_binding.is_empty() 
-                                || existing.current_binding == existing.default_binding 
+                            if existing.current_binding.is_empty()
+                                || existing.current_binding == existing.default_binding
                             {
                                 info!(
                                     "Also updating current_binding for '{}': '{}' -> '{}'",
@@ -952,7 +959,6 @@ pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {
 
     settings.bindings
 }
-
 
 pub fn get_history_limit(app: &AppHandle) -> usize {
     let settings = get_settings(app);

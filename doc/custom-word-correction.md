@@ -1,60 +1,70 @@
 # Custom Word Correction
 
-Custom word correction automatically corrects or replaces transcribed words with user-defined alternatives. It is designed to handle proper nouns, brand names, domain-specific terminology, and common misspellings.
+Custom word correction automatically corrects or replaces transcribed words with user-defined alternatives. It is designed for proper nouns, brand names, domain-specific terminology, abbreviations, and phrases that ASR frequently mishears.
+
+For a non-technical, UI-first walkthrough, see `doc/dictionary-user-guide.md`.
 
 ## Dictionary Entry Types
 
-Each dictionary entry has three fields:
+Each dictionary entry has four fields:
 
-| Field | Description |
-|-------|-------------|
-| `input` | The word/phrase to recognize |
-| `replacement` | What to replace it with |
-| `is_replacement` | `true` = exact match only, `false` = fuzzy matching enabled |
+| Field            | Description                                                          |
+| ---------------- | -------------------------------------------------------------------- |
+| `input`          | Canonical word/phrase to recognize                                   |
+| `aliases`        | Additional spoken variants for the same canonical term               |
+| `replacement`    | What to output when a match is accepted                              |
+| `is_replacement` | `true` = exact match only, `false` = fuzzy/phonetic matching enabled |
+
+> [!NOTE]
+> Legacy dictionary entries without `aliases` are supported. Missing `aliases` default to an empty list.
 
 ### Two Modes
 
-| Mode | `is_replacement` | Toggle State | Matching | Use Case |
-|------|------------------|--------------|----------|----------|
-| **Vocabulary** | `false` (default) | OFF | Fuzzy + Phonetic | Learn words: `modal` matches `model` |
-| **Replacement** | `true` | ON | Case-insensitive exact | Expand text: `btw` → `by the way` |
+| Mode            | `is_replacement`  | Toggle State | Matching                 | Use Case                                      |
+| --------------- | ----------------- | ------------ | ------------------------ | --------------------------------------------- |
+| **Vocabulary**  | `false` (default) | OFF          | Exact + Fuzzy + Phonetic | Learn terms and names (`shadcn`, `Anthropic`) |
+| **Replacement** | `true`            | ON           | Case-insensitive exact   | Expand text (`btw` -> `by the way`)           |
 
 > [!NOTE]
-> **Fuzzy matching is the default.** Toggle ON "Replace with different text" for exact replacements like abbreviation expansion.
+> **Fuzzy matching is the default.** Toggle ON "Replace with different text" for exact-only replacements.
 
 ### Case Adaptation for Replacements
 
-Replacements automatically adapt to the input's case pattern:
+Replacements adapt to input case pattern:
 
-| Input | Output | Case Pattern |
-|-------|--------|--------------|
-| `btw` | `by the way` | lowercase |
-| `Btw` | `By the way` | Title Case |
-| `BTW` | `BY THE WAY` | ALL CAPS |
+| Input | Output       | Case Pattern |
+| ----- | ------------ | ------------ |
+| `btw` | `by the way` | lowercase    |
+| `Btw` | `By the way` | Title Case   |
+| `BTW` | `BY THE WAY` | ALL CAPS     |
 
 ## "Best of Both Worlds" Algorithm
 
-We use a hybrid approach that combines **N-gram analysis** with **Advanced Phonetic/Fuzzy Matching**. This allows us to correct both single words and split multi-word phrases even when they are phonetically matched rather than exactly matched.
+The matcher combines **N-gram analysis** with **phonetic and fuzzy matching** to support both single-token and split-token dictation.
 
 ### Matching Process
 
-1. **Normalization**: Input text and custom words are normalized (lowercase, punctuation stripped).
-2. **N-gram Sliding Window**: We scan the input text using a sliding window of 1 to 3 words. This allows us to catch phrases like "Chat G P T" and map them to "ChatGPT".
-3. **Hybrid Matching**: For each n-gram, we attempt to match it against your Dictionary entries using prioritized techniques:
-   - **Exact Match**: Highest priority. Always checked. (e.g., "handy" → "Handy")
-   - **Phonetic Match**: Uses **Double Metaphone** to catch "sounds-like" errors. (e.g., "chat jepity" → "ChatGPT")
-   - **Fuzzy Match**: Uses string similarity algorithms:
-     - **Jaro-Winkler**: For short words (≤6 chars) to prioritize prefix matching.
-     - **Damerau-Levenshtein**: For longer words to handle transpositions and typos.
+1. **Normalization**: Input and dictionary terms are normalized (case-insensitive, punctuation-tolerant matching).
+2. **N-gram Sliding Window**:
+   - Exact pass scans up to 1-8 word windows
+   - Fuzzy pass scans up to 1-3 word windows
+3. **Exact-first pass**: Canonical `input` and all `aliases` are checked before fuzzy matching.
+4. **Fuzzy pass**:
+   - **Split-token fuzzy path** for 2-3 word n-grams against single-token targets (strict guards + strict threshold)
+   - **Standard fuzzy path** for regular matching
+5. **Scoring stack**:
+   - **Jaro-Winkler** for short words
+   - **Damerau-Levenshtein** for longer words/transpositions
+   - **Double Metaphone** for phonetic boost
 
-### Multi-Word Fuzzy Support
+### Multi-Word and Split-Token Support
 
-Fuzzy matching works for multi-word phrases when the n-gram word count matches the entry word count:
-
-| Transcription | Entry | Match |
-|--------------|-------|-------|
-| `"super wisper"` | `super whisper → SuperWhisper` | ✅ Fuzzy (2 words = 2 words) |
-| `"use chat gpt"` | `ChatGPT` | ❌ Blocked (3 words ≠ 1 word) |
+| Transcription         | Entry                           | Match                          |
+| --------------------- | ------------------------------- | ------------------------------ |
+| `"super wisper"`      | `super whisper -> SuperWhisper` | ✅ standard fuzzy (multi-word) |
+| `"shad cn"`           | `shadcn` with alias `shad cn`   | ✅ exact alias                 |
+| `"shat cn component"` | `shadcn`                        | ✅ split-token fuzzy           |
+| `"chef cn component"` | `shadcn`                        | ❌ rejected                    |
 
 ### Logic Flow
 
@@ -62,86 +72,99 @@ Fuzzy matching works for multi-word phrases when the n-gram word count matches t
 graph TD
     A[Input Text] --> B[Tokenize into Words]
     B --> C{Iterate Words}
-    C --> D[Generate N-grams 1-3 words]
-    D --> E{Exact Match?}
-    E -- Yes --> F[Replace with Custom Word]
+    C --> D[Generate N-grams (exact 1-8, fuzzy 1-3)]
+    D --> E{Exact Canonical/Alias Match?}
+    E -- Yes --> F[Apply Replacement and Preserve Punctuation]
     E -- No --> G{is_replacement?}
-    G -- Yes --> H[Next Entry]
-    G -- No --> S{Stop Word?}
-    S -- Yes --> H
-    S -- No --> M{Len ≤ 3?}
-    M -- Yes --> H
-    M -- No --> I{Word Count Match?}
-    I -- No --> H
-    I -- Yes --> R{Len Ratio ≥ 60%?}
-    R -- No --> H
-    R -- Yes --> K{Fuzzy Score < Threshold?}
+    G -- Yes --> H[Skip Fuzzy for this entry]
+    G -- No --> I{Split-token path? 2-3 tokens to single-token target}
+    I -- Yes --> J{Split guards pass?}
+    J -- No --> H
+    J -- Yes --> K{Split score < split threshold?}
     K -- Yes --> F
     K -- No --> H
-    F --> L[Advance Iterator past N-gram]
+    I -- No --> L{Standard guards pass?}
+    L -- No --> H
+    L -- Yes --> M{Standard score < threshold?}
+    M -- Yes --> F
+    M -- No --> H
+    F --> N[Advance Iterator past matched n-gram]
     H --> C
 ```
 
 ### Why this Hybrid Approach?
 
-- **N-grams** alone handled "Chat G P T" well but failed on "Anthrapik" if not exact.
-- **Phonetic/Fuzzy** alone handled "Anthrapik" well but failed on split phrases like "Chat G P T".
-- **Hybrid** handles **BOTH**: It can take "Chat G P T", combine it into a candidate string, and then phonetically match that candidate against "ChatGPT".
+- N-grams alone help with segmented speech but miss many phonetic variants.
+- Pure phonetic/fuzzy matching alone can over-trigger without n-gram constraints.
+- Hybrid matching keeps high recall for hard terms while maintaining guardrails against false positives.
 
 ## Configuration
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `dictionary` | `[]` | List of `CustomWordEntry` objects |
-| `word_correction_threshold` | `0.18` | Lower = stricter fuzzy matching (0.0–1.0) |
+| Setting                           | Default | Description                                               |
+| --------------------------------- | ------- | --------------------------------------------------------- |
+| `dictionary`                      | `[]`    | List of `CustomWordEntry` objects                         |
+| `word_correction_threshold`       | `0.18`  | Standard fuzzy acceptance threshold (lower = stricter)    |
+| `word_correction_split_threshold` | `0.14`  | Split-token fuzzy threshold (stricter than standard path) |
 
 ## Examples
 
-| Transcription | Entry (input → replacement) | is_replacement | Match Type | Result |
-|--------------|------------------------------|----------------|------------|--------|
-| `"modal"` | `modal → modal` | `false` | Fuzzy | `"modal"` (matches "model") |
-| `"handy"` | `Handy → Handy` | `false` | Exact | `"Handy"` |
-| `"chat G P T"` | `ChatGPT → ChatGPT` | `false` | N-gram + Exact | `"ChatGPT"` |
-| `"chat jepity"` | `ChatGPT → ChatGPT` | `false` | N-gram + Phonetic | `"ChatGPT"` |
-| `"Anthrapik"` | `Anthropic → Anthropic` | `false` | Fuzzy (Levenshtein) | `"Anthropic"` |
-| `"super wisper"` | `super whisper → SuperWhisper` | `false` | Multi-word Fuzzy | `"SuperWhisper"` |
-| `"btw"` | `btw → by the way` | `true` | Exact only | `"by the way"` |
+| Transcription         | Entry (input/aliases -> replacement)        | `is_replacement` | Match Type                | Result               |
+| --------------------- | ------------------------------------------- | ---------------- | ------------------------- | -------------------- |
+| `"chat gpt"`          | `ChatGPT`, aliases: `chat gpt` -> `ChatGPT` | `false`          | Exact alias               | `"ChatGPT"`          |
+| `"shad c n?"`         | `shadcn`, aliases: `shad c n` -> `shadcn`   | `false`          | Exact alias + punctuation | `"shadcn?"`          |
+| `"Shat CN component"` | `shadcn` -> `shadcn`                        | `false`          | Split-token fuzzy         | `"Shadcn component"` |
+| `"Anthrapik"`         | `Anthropic` -> `Anthropic`                  | `false`          | Standard fuzzy            | `"Anthropic"`        |
+| `"btw"`               | `btw` -> `by the way`                       | `true`           | Exact replacement         | `"by the way"`       |
 
 ## Debug Logging
 
-Enable DEBUG log level to see matching decisions:
+Enable DEBUG log level to see detailed matching decisions.
 
 ```bash
 grep -E "\[CustomWords\]" $(ls -t ~/Library/Logs/com.pais.codictate/codictate*.log | head -n 1)
 ```
 
-Key log messages:
-- `Checking n-gram: 'word' (n=1)` — What's being checked
-- `Skipping fuzzy: is_replacement=true` — Entry requires exact match
-- `Skipping fuzzy: word count 2 != 1` — Word count mismatch
-- `Score for 'x' vs 'y': base=0.123, phonetic=true` — Similarity scores
-- `Matched 2 word(s): 'super wisper' -> 'SuperWhisper'` — Successful match
+Reason-coded decisions include:
+
+- `exact_alias_match`
+- `exact_canonical_match`
+- `skip_guard_word`
+- `skip_short_input`
+- `skip_word_count`
+- `skip_length_ratio`
+- `reject_score`
+- `accept_split_fuzzy`
+- `accept_standard_fuzzy`
+
+Per-session summary logs include:
+
+- `candidates_checked`
+- `exact_hits`
+- `split_fuzzy_hits`
+- `standard_fuzzy_hits`
+- `reject_counts` by reason
 
 ## Technical Details
 
-- **Location**: `src-tauri/src/audio_toolkit/text.rs`
-- **Data Type**: `CustomWordEntry` in `src-tauri/src/settings.rs`
-- **Phonetic Algorithm**: Double Metaphone (via `rphonetic`)
-- **String Similarity**: Jaro-Winkler & Damerau-Levenshtein (via `strsim`)
-- **Key Config**: `SHORT_WORD_THRESHOLD = 6` (switch point for similarity algos)
+- **Matcher**: `src-tauri/src/audio_toolkit/text.rs`
+- **Settings schema**: `src-tauri/src/settings.rs`
+- **Dictionary UI**: `src/components/dictionary/DictionaryEntryModal.tsx`
+- **Dictionary list/search**: `src/components/dictionary/DictionaryPage.tsx`
 
 ## Known Limitations
 
-| Limitation | Impact |
-|------------|--------|
-| **N-gram size** | Max 3 words per phrase. Longer phrases need exact match. |
-| **Performance** | O(N*M) where M is window size (3). Negligible for typical transcriptions. |
-| **False positives** | Mitigated by stop word filter, min-length (≤3 chars), and length ratio (≥60%) guards. |
+| Limitation      | Impact                                                                                   |
+| --------------- | ---------------------------------------------------------------------------------------- |
+| N-gram size     | Exact matching scans up to 8 words; fuzzy matching scans up to 3 words                   |
+| Rescoring       | N-best/lattice rescoring deferred until engines expose alternatives consistently         |
+| False positives | Controlled by guard words, minimum length, length ratio, and split-threshold constraints |
 
 ## UI Features
 
-| Feature | Description |
-|---------|-------------|
-| **Duplicate detection** | Case-insensitive check prevents adding entries with the same input |
-| **Character limits** | Input: 100 chars, Replacement: 300 chars |
-| **Auto-grow textarea** | Input fields expand up to 3 lines as you type |
+| Feature             | Description                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------ |
+| Alias editing       | Add multiple spoken variants per canonical term                                      |
+| Duplicate detection | Prevents collisions across canonical inputs and aliases                              |
+| Search coverage     | Search includes input, replacement, and aliases                                      |
+| Character limits    | Input: 100 chars, Replacement: 300 chars, Alias input: 100 chars each, max 8 aliases |
+| Auto-grow textarea  | Input fields expand up to 3 lines                                                    |
