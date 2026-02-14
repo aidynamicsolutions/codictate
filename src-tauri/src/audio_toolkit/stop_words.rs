@@ -1,0 +1,65 @@
+use std::collections::HashSet;
+use std::sync::LazyLock;
+
+/// High-frequency words that should never use fuzzy matching in custom dictionary replacement.
+///
+/// Source basis: top-ranked English tokens from a frequency-ordered corpus list
+/// (`google-10000-english`, derived from Google's trillion-word n-gram corpus),
+/// then filtered to ambiguity-prone function words and very common discourse terms.
+/// These tokens are frequent enough that fuzzy matching tends to create false positives
+/// (e.g., "where" -> "they're", "then" -> "than", "about" -> "abort").
+///
+/// Exact matches are still allowed because exact matching is evaluated before fuzzy guards.
+pub static FUZZY_GUARD_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    HashSet::from([
+        "a", "about", "above", "after", "again", "against", "all", "almost", "also", "am",
+        "an", "and", "any", "are", "around", "as", "at", "be", "because", "been",
+        "before", "being", "below", "between", "both", "but", "by", "can", "could", "did",
+        "do", "does", "doing", "done", "down", "during", "each", "even", "ever", "few",
+        "for", "from", "further", "get", "got", "had", "has", "have", "having", "he",
+        "her", "here", "hers", "herself", "him", "himself", "his", "how", "however", "i",
+        "if", "in", "into", "is", "it", "its", "itself", "just", "let", "like",
+        "made", "make", "many", "may", "me", "might", "more", "most", "much", "must",
+        "my", "myself", "never", "new", "no", "nor", "not", "now", "of", "off",
+        "often", "on", "once", "one", "only", "or", "other", "our", "ours", "ourselves",
+        "out", "over", "own", "same", "see", "set", "she", "should", "since", "so",
+        "some", "still", "such", "take", "than", "that", "the", "their", "theirs", "them",
+        "themselves", "then", "there", "these", "they", "this", "those", "through", "time", "to",
+        "too", "under", "up", "upon", "us", "use", "used", "using", "very", "want",
+        "was", "way", "we", "well", "were", "what", "when", "where", "which", "while",
+        "who", "whom", "why", "will", "with", "within", "without", "would", "yes", "yet",
+        "you", "your", "yours", "yourself", "yourselves",
+        "aren't", "can't", "couldn't", "didn't", "doesn't", "don't", "hadn't", "hasn't", "haven't", "he's",
+        "here's", "how's", "i'd", "i'll", "i'm", "i've", "isn't", "it's", "let's", "she's",
+        "shouldn't", "that's", "there's", "they're", "we're", "weren't", "what's", "when's", "where's", "who's",
+        "won't", "wouldn't", "you're", "you've",
+        "arent", "cant", "couldnt", "didnt", "doesnt", "dont", "hadnt", "hasnt", "havent", "hes",
+        "heres", "hows", "id", "ill", "im", "ive", "isnt", "lets", "shes", "shouldnt",
+        "thats", "theres", "theyre", "werent", "whats", "whens", "wheres", "whos", "wont", "wouldnt",
+        "youre", "youve",
+    ])
+});
+
+/// Short function words to preserve when collapsing progressive self-corrections.
+///
+/// This list intentionally includes only 1-2 character valid words. We preserve
+/// these words even when they are a prefix of the next word to avoid deleting
+/// legitimate speech (e.g., "a apple", "to tomorrow", "go going").
+pub static SELF_CORRECTION_PROTECTED_SHORT_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    HashSet::from([
+        "a", "i",
+        "am", "an", "as", "at",
+        "be", "by",
+        "do",
+        "go",
+        "he", "hi",
+        "if", "in", "is", "it",
+        "me", "my",
+        "no",
+        "of", "oh", "ok", "on", "or",
+        "so",
+        "to",
+        "up", "us",
+        "we",
+    ])
+});

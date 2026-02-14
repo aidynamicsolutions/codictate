@@ -21,19 +21,9 @@ const MIN_FUZZY_LENGTH: usize = 3;
 /// Aligned with FuzzyWuzzy/RapidFuzz which auto-switch at 1.5x.
 const MIN_LENGTH_RATIO: f64 = 0.60;
 
-/// Common English stop words that should never be fuzzy-matched.
-/// These words are too common and too short to reliably fuzzy-match against
-/// dictionary entries. They can still be *exact*-matched (e.g. "The" → "The").
-const STOP_WORDS: &[&str] = &[
-    "a", "an", "the", "is", "am", "are", "was", "were", "be",
-    "in", "on", "at", "to", "of", "it", "we", "he", "she",
-    "or", "so", "if", "do", "no", "my", "me", "us",
-    "and", "but", "for", "not", "you", "has", "had", "his",
-    "her", "its", "our", "who", "how", "all", "can",
-    "they", "them", "this", "that", "with", "from",
-    "have", "been", "will", "what", "when", "where", "which",
-    "there", "their", "these", "those",
-];
+use crate::audio_toolkit::stop_words::{
+    FUZZY_GUARD_WORDS, SELF_CORRECTION_PROTECTED_SHORT_WORDS,
+};
 
 /// Phonetic codes for a word (primary and alternate Double Metaphone codes)
 #[derive(Debug, Clone)]
@@ -199,9 +189,9 @@ pub fn apply_custom_words(text: &str, custom_words: &[CustomWordEntry], threshol
                     continue;
                 }
 
-                // Guard: skip fuzzy for stop words (too common to reliably fuzzy-match)
-                if STOP_WORDS.contains(&ngram_text.as_str()) {
-                    debug!("[CustomWords] Skipping fuzzy: '{}' is a stop word", ngram_text);
+                // Guard: skip fuzzy for common words (too common to reliably fuzzy-match)
+                if FUZZY_GUARD_WORDS.contains(ngram_text.as_str()) {
+                    debug!("[CustomWords] Skipping fuzzy: '{}' is a guard word", ngram_text);
                     continue;
                 }
 
@@ -501,63 +491,77 @@ pub fn filter_transcription_output(text: &str) -> String {
 /// Collapse progressive self-correction patterns where consecutive short fragments
 /// build up to a longer target word.
 /// e.g., "dr f fu fuzzy" → "fuzzy" (speaker's multiple attempts at saying a word)
+/// e.g., "sh ... showing" → "showing" (distant prefix match)
 ///
-/// Algorithm: for each long word (≥ 4 chars), look backwards for consecutive short
-/// words (≤ 2 chars). If 2+ of those short words are prefixes of the long word,
-/// drop the entire fragment run. This avoids capturing unrelated short words that
-/// aren't adjacent to the target.
+/// Algorithm:
+/// 1. Iterate through words.
+/// 2. For each "target" word (len >= 3), look back up to 3 words.
+/// 3. If a previous word is a short prefix (len <= 2) of the target, and NOT a protected word, drop it.
 fn collapse_self_corrections(text: &str) -> String {
     let words: Vec<&str> = text.split_whitespace().collect();
-    if words.len() < 3 {
+    if words.len() < 2 {
         return text.to_string();
     }
 
-    const MAX_FRAGMENT_LEN: usize = 2;
-    const MIN_TARGET_LEN: usize = 4;
-    const MIN_PREFIX_MATCHES: usize = 2;
-    // We scan backwards for contiguous prefix matches. 
-    // This replaces MAX_LOOKBACK with a dynamic window that only includes valid fragments.
-
-    // Mark which words should be dropped
     let mut drop = vec![false; words.len()];
 
-    for j in 0..words.len() {
-        // Only consider long words as potential targets (strip punctuation for length check)
-        let target_stripped = strip_punctuation(words[j]);
-        if target_stripped.len() < MIN_TARGET_LEN {
+    for i in 0..words.len() {
+        // Only look for corrections relative to words that are not themselves dropped
+        if drop[i] {
+            continue;
+        }
+
+        let target_stripped = strip_punctuation(words[i]);
+        // Target must be substantive enough to be the "real" word
+        if target_stripped.len() < 3 {
             continue;
         }
 
         let target_lower = target_stripped.to_lowercase();
-        
-        // Walk backwards looking for contiguous prefix matches
-        let mut k = j;
-        let mut matches = Vec::new();
-        
-        while k > 0 {
-            let prev_idx = k - 1;
-            let fragment = strip_punctuation(words[prev_idx]);
-            
-            // Check constraints:
-            // 1. Must be short
-            if fragment.len() > MAX_FRAGMENT_LEN {
-                break; 
-            }
-            // 2. Must be a prefix
-            if !target_lower.starts_with(&fragment.to_lowercase()) {
+
+        // Look back up to 3 words for hesitation fragments
+        // range: 1 to 3
+        for back in 1..=3 {
+            if i < back {
                 break;
             }
-            // 3. Must be a "fresh" word (not already dropped by a previous target catch)
-            // Although scanning strict contiguous blocks usually avoids overlap issues.
-            
-            matches.push(prev_idx);
-            k -= 1;
-        }
+            let prev_idx = i - back;
 
-        if matches.len() >= MIN_PREFIX_MATCHES {
-            for match_idx in matches {
-                drop[match_idx] = true;
+            if drop[prev_idx] {
+                continue;
+            } // Already dropped
+
+            let fragment_stripped = strip_punctuation(words[prev_idx]);
+
+            // Constraint 1: Fragment must be short
+            // "n", "f" (len 1), "sh", "dr" (len 2)
+            if fragment_stripped.len() > 2 {
+                continue;
             }
+            if fragment_stripped.is_empty() {
+                continue;
+            }
+
+            let fragment_lower = fragment_stripped.to_lowercase();
+
+            // Constraint 2: Fragment must be a prefix of the target
+            if !target_lower.starts_with(&fragment_lower) {
+                continue;
+            }
+
+            // Constraint 3: Fragment must NOT be a valid preserved short word.
+            // "a" -> "apple" (a is preserved). SKIP.
+            // "go" -> "going" (go is preserved). SKIP.
+            // "n" -> "new" (n is not preserved). DROP.
+            let is_preserved =
+                SELF_CORRECTION_PROTECTED_SHORT_WORDS.contains(fragment_lower.as_str());
+
+            if is_preserved {
+                continue;
+            }
+
+            // If we satisfied all constraints, mark for dropping
+            drop[prev_idx] = true;
         }
     }
 
@@ -839,6 +843,33 @@ mod tests {
     }
 
     #[test]
+    fn test_no_false_positive_your_to_youre() {
+        // "your" is high-frequency and should not fuzzily mutate to "you're"
+        let text = "your code works";
+        let custom_words = vec![vocabulary("you're", "you're")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "your code works");
+    }
+
+    #[test]
+    fn test_no_false_positive_then_to_than() {
+        // "then" is high-frequency and should not fuzzily mutate to "than"
+        let text = "then we test";
+        let custom_words = vec![vocabulary("than", "than")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "then we test");
+    }
+
+    #[test]
+    fn test_no_false_positive_about_to_abort() {
+        // "about" is high-frequency and should not fuzzily mutate to "abort"
+        let text = "about this behavior";
+        let custom_words = vec![vocabulary("abort", "abort")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "about this behavior");
+    }
+
+    #[test]
     fn test_short_exact_match_still_works() {
         // Short words can still be exact-matched (e.g. abbreviation replacement)
         let text = "btw I am busy";
@@ -974,7 +1005,7 @@ mod tests {
 
     #[test]
     fn test_self_correction_normal_short_words_preserved() {
-        // "I am" before "amazing" — only 1 prefix match ("am"), threshold is 2
+        // "I am" before "amazing" — "am" is in protected short words, so it is kept
         assert_eq!(
             filter_hallucinations("I am amazing"),
             "I am amazing"
@@ -983,7 +1014,7 @@ mod tests {
 
     #[test]
     fn test_self_correction_single_fragment_no_collapse() {
-        // Only 1 short word before target — need at least 2
+        // "to" is in protected short words, so it is kept
         assert_eq!(
             filter_hallucinations("to tomorrow"),
             "to tomorrow"
@@ -1022,7 +1053,7 @@ mod tests {
 
     #[test]
     fn test_self_correction_target_too_short() {
-        // Target word "and" is only 3 chars (< 4 minimum) — no collapse
+        // Target word "and" is short (3 chars), but "a" and "an" are protected short words
         assert_eq!(
             filter_hallucinations("a an and"),
             "a an and"
@@ -1034,5 +1065,97 @@ mod tests {
         assert_eq!(count_words("hello world"), 2);
         assert_eq!(count_words("  hello   world  "), 2);
         assert_eq!(count_words("One, two, three."), 3);
+    }
+
+    #[test]
+    fn test_cleanup_n_new() {
+        // "Would this n new phonetic slip up work with the correction file?"
+        let input = "Would this n new phonetic slip up work with the correction file?";
+        let expected = "Would this new phonetic slip up work with the correction file?";
+        assert_eq!(filter_hallucinations(input), expected);
+    }
+
+    #[test]
+    fn test_cleanup_f_from() {
+        // "As in f from the sentence meaning..."
+        let input = "As in f from the sentence meaning";
+        let expected = "As in from the sentence meaning";
+        assert_eq!(filter_hallucinations(input), expected);
+    }
+
+    #[test]
+    fn test_cleanup_sh_showing() {
+        // "...tile sh is still showing the street only."
+        let input = "tile sh is still showing the street";
+        let expected = "tile is still showing the street";
+        assert_eq!(filter_hallucinations(input), expected);
+    }
+
+    #[test]
+    fn test_cleanup_preserve_apple() {
+        // "a" is protected, should NOT be removed
+        let input = "I am a apple";
+        assert_eq!(filter_hallucinations(input), "I am a apple");
+    }
+
+    #[test]
+    fn test_cleanup_preserve_i_identify() {
+        // "i" is protected, so it should not be removed before "identify"
+        let input = "I i identify this";
+        assert_eq!(filter_hallucinations(input), "I i identify this");
+    }
+
+    #[test]
+    fn test_cleanup_preserve_go_going() {
+        // "go" is a valid word, should NOT be removed
+        let input = "I go going home";
+        assert_eq!(filter_hallucinations(input), "I go going home");
+    }
+
+    #[test]
+    fn test_cleanup_preserve_up_upload() {
+        // "up" is a valid word, should be preserved
+        let input = "Click up upload";
+        assert_eq!(filter_hallucinations(input), "Click up upload");
+    }
+
+    #[test]
+    fn test_cleanup_preserve_ok_okay() {
+        // "ok" is protected, should NOT be removed
+        let input = "It is ok okay";
+        assert_eq!(filter_hallucinations(input), "It is ok okay");
+    }
+
+    #[test]
+    fn test_cleanup_multi_fragment() {
+        // "dr f fu fuzzy" -> "dr fuzzy"
+        // 1. "dr" (len 2) is NOT a prefix of "fuzzy", so it is preserved.
+        // 2. "f" (len 1) IS a prefix of "fuzzy", so it is dropped.
+        // 3. "fu" (len 2) IS a prefix of "fuzzy", so it is dropped.
+        assert_eq!(
+            filter_hallucinations("dr f fu fuzzy"),
+            "dr fuzzy"
+        );
+    }
+
+    #[test]
+    fn test_regression_common_short_words_false_positives() {
+        // These should NOT be collapsed because the short words are valid common words
+        // properly used in context, even though they are prefixes of the next word.
+        
+        // "bus" is a prefix of "busy" -> should be preserved
+        assert_eq!(filter_hallucinations("The bus busy schedule"), "The bus busy schedule");
+        
+        // "car" is prefix of "carpet" -> should be preserved
+        assert_eq!(filter_hallucinations("The car carpet is dirty"), "The car carpet is dirty");
+        
+        // "pen" is prefix of "pencil" -> should be preserved
+        assert_eq!(filter_hallucinations("Use a pen pencil or marker"), "Use a pen pencil or marker");
+        
+        // "net" is prefix of "network" -> should be preserved
+        assert_eq!(filter_hallucinations("The net network speed"), "The net network speed");
+
+        // "man" is prefix of "manage" -> should be preserved
+        assert_eq!(filter_hallucinations("can you man manage this?"), "can you man manage this?");
     }
 }

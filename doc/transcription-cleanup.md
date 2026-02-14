@@ -38,16 +38,34 @@ Only **3 or more** consecutive identical words trigger the collapse. Two consecu
 
 ### Progressive self-corrections
 
-Detects when a speaker makes multiple short attempts before landing on the intended word. When 2+ consecutive short words (≤ 2 chars) **immediately** precede a longer word (≥ 4 chars) and are prefixes of that word, they are removed.
+Detects when a speaker makes short attempts before landing on the intended word. 
+
+**Logic:**
+- Iterates through words.
+- For each "target" word (≥ 3 chars), looks back up to **3 words**.
+- If a previous word is a short prefix (≤ 2 chars) of the target, and is **not** a protected word (like "go", "up", "a", "is"), it is removed.
+
+This handles cases like:
+- **Immediate prefix:** "n new" → "new"
+- **Distant prefix:** "sh is still showing" → "is still showing" (where "sh" matches "showing")
+
+**Protected Words:**
+Common short words are preserved to prevent accidental removal of valid speech.
+- **Preserved:** "I go going home" ("go" is preserved)
+- **Preserved:** "I am a apple" ("a" is preserved)
 
 | Before | After |
 |--------|-------|
 | "the correction is **f fu** fuzzy matching" | "the correction is fuzzy matching" |
-| "say **b bu** buzz" | "say buzz" |
-| "dr **f fu** fuzzy" | "dr fuzzy" (unrelated "dr" preserved) |
+| "Would this **n** new phonetic..." | "Would this new phonetic..." |
+| "As in **f** from the sentence meaning..." | "As in from the sentence meaning..." |
+| "...tile **sh** is still showing..." | "...tile is still showing..." |
 
 > [!NOTE]
-> The filter only removes **contiguous** prefix matches. If an unrelated word breaks the sequence, it is preserved.
+> We intentionally use two different guard lists in code:
+> - **Fuzzy Guard Words** for custom-dictionary fuzzy matching safety, expanded from frequency-ranked common English words.
+> - **Self-Correction Protected Short Words** for preserving valid 1-2 character words during cleanup.
+> These lists are separate because they solve different error modes.
 
 > [!IMPORTANT]
 > **Filter Order:** When both filters are enabled, **Remove Filler Words** runs first. This ensures that filler words don't interrupt stutter patterns, allowing the **Remove Repeated Words** filter to catch stutters like "I uh I uh I want" (which becomes "I I I want" → "I want").
@@ -63,7 +81,7 @@ The function `filter_and_count_filler_words()` counts and removes all filler wor
 
 - **Filler word list** is English-only. Non-English filler words are not removed.
 - Both filters operate on the final text output; they cannot distinguish between actual speech and ASR artifacts at the audio level.
-- Self-correction detection requires fragments to be ≤ 2 characters; longer false starts (e.g., "fuz fuzzy") are not detected.
+- Self-correction detection only removes 1-2 character prefixes. This intentionally preserves many valid 3-letter words (e.g., "bus", "car", "pen") but can miss longer false starts (e.g., "fuz fuzzy").
 - **ASR model artifacts:** The ASR model may transcribe filler sounds as real words (e.g., "uh" → "in R"). These are not catchable by regex-based filler filters. Use **Refine** (AI post-processing) to correct these artifacts via the homophone correction prompt.
 
 ## Settings
