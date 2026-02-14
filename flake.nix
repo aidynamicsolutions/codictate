@@ -11,7 +11,10 @@
       nixpkgs,
     }:
     let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
       # Read version from Cargo.toml
       cargoToml = builtins.fromTOML (builtins.readFile ./src-tauri/Cargo.toml);
@@ -93,11 +96,14 @@
             preBuild = ''
               cp -r ${bunDeps}/node_modules node_modules
               chmod -R +w node_modules
-              patchShebangs node_modules
+              substituteInPlace node_modules/.bin/{tsc,vite} \
+                --replace-fail "/usr/bin/env node" "${lib.getExe pkgs.bun}"
               export HOME=$TMPDIR
-              ${pkgs.bun}/bin/bun run build
+              bun run build
             '';
 
+            # Tests require runtime resources (audio devices, model files, GPU/Vulkan)
+            # not available in the Nix build sandbox
             doCheck = false;
 
             # The tauri hook's installPhase expects target/ in cwd, but our
@@ -115,7 +121,6 @@
               pkg-config
               wrapGAppsHook4
               bun
-              nodejs
               jq
               cmake
               llvmPackages.libclang
@@ -132,13 +137,20 @@
               onnxruntime
               libayatana-appindicator
               libevdev
-              xorg.libX11
-              xorg.libXtst
+              libx11
+              libxtst
               gtk-layer-shell
               openssl
               vulkan-loader
               vulkan-headers
               shaderc
+
+              # Required for WebKitGTK audio/video
+              gst_all_1.gstreamer
+              gst_all_1.gst-plugins-base
+              gst_all_1.gst-plugins-good
+              gst_all_1.gst-plugins-bad
+              gst_all_1.gst-plugins-ugly
             ];
 
             env = {
@@ -146,15 +158,29 @@
               BINDGEN_EXTRA_CLANG_ARGS = "-isystem ${pkgs.llvmPackages.libclang.lib}/lib/clang/${lib.getVersion pkgs.llvmPackages.libclang}/include -isystem ${pkgs.glibc.dev}/include";
               ORT_LIB_LOCATION = "${pkgs.onnxruntime}/lib";
               OPENSSL_NO_VENDOR = "1";
+
+              # Tell Gstreamer where to find plugins
+              GST_PLUGIN_SYSTEM_PATH_1_0 = "${pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" (
+                with pkgs.gst_all_1;
+                [
+                  gstreamer
+                  gst-plugins-base
+                  gst-plugins-good
+                  gst-plugins-bad
+                  gst-plugins-ugly
+                ]
+              )}";
             };
 
             preFixup = ''
               gappsWrapperArgs+=(
                 --set WEBKIT_DISABLE_DMABUF_RENDERER 1
-                --prefix LD_LIBRARY_PATH : "${lib.makeLibraryPath [
-                  pkgs.vulkan-loader
-                  pkgs.onnxruntime
-                ]}"
+                --prefix LD_LIBRARY_PATH : "${
+                  lib.makeLibraryPath [
+                    pkgs.vulkan-loader
+                    pkgs.onnxruntime
+                  ]
+                }"
               )
             '';
 
@@ -163,7 +189,7 @@
               homepage = "https://github.com/cjpais/Handy";
               license = lib.licenses.mit;
               mainProgram = "handy";
-              platforms = [ "x86_64-linux" ];
+              platforms = supportedSystems;
             };
           };
 
@@ -175,7 +201,9 @@
       devShells = forAllSystems (
         system:
         let
-          pkgs = nixpkgs.legacyPackages.${system};
+          pkgs = import nixpkgs {
+            inherit system;
+          };
         in
         {
           default = pkgs.mkShell {
@@ -211,6 +239,19 @@
 
             LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
             LD_LIBRARY_PATH = "${pkgs.lib.makeLibraryPath [ pkgs.libappindicator ]}";
+            GST_PLUGIN_SYSTEM_PATH_1_0 = "${pkgs.lib.makeSearchPathOutput "lib" "lib/gstreamer-1.0" (
+              with pkgs.gst_all_1;
+              [
+                gstreamer
+                gst-plugins-base
+                gst-plugins-good
+                gst-plugins-bad
+                gst-plugins-ugly
+              ]
+            )}";
+
+            # Same as wrapGAppsHook4
+            XDG_DATA_DIRS = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}:${pkgs.gtk3}/share/gsettings-schemas/${pkgs.gtk3.name}:${pkgs.hicolor-icon-theme}/share";
 
             shellHook = ''
               echo "Handy development environment"

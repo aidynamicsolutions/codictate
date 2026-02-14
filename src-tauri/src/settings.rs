@@ -229,6 +229,22 @@ impl SoundTheme {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum TypingTool {
+    Auto,
+    Wtype,
+    Kwtype,
+    Dotool,
+    Ydotool,
+    Xdotool,
+}
+
+impl Default for TypingTool {
+    fn default() -> Self {
+        TypingTool::Auto
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct CustomWordEntry {
@@ -334,6 +350,8 @@ pub struct AppSettings {
     pub paste_delay_ms: u64,
     #[serde(default = "default_paste_restore_delay_ms")]
     pub paste_restore_delay_ms: u64,
+    #[serde(default = "default_typing_tool")]
+    pub typing_tool: TypingTool,
 }
 
 fn default_true() -> bool {
@@ -430,7 +448,7 @@ fn default_append_trailing_space() -> bool {
 
 fn default_app_language() -> String {
     tauri_plugin_os::locale()
-        .and_then(|l| l.split(['-', '_']).next().map(String::from))
+        .map(|l| l.replace('_', "-"))
         .unwrap_or_else(|| "en".to_string())
 }
 
@@ -553,6 +571,10 @@ fn default_post_process_prompts() -> Vec<LLMPrompt> {
         name: "Improve Transcriptions".to_string(),
         prompt: "Clean this transcript:\n1. Fix spelling, capitalization, and punctuation errors\n2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)\n3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)\n4. Remove filler words (um, uh, like as filler)\n5. Keep the language in the original version (if it was french, keep it in french for example)\n\nPreserve exact meaning and word order. Do not paraphrase or reorder content.\n\nReturn only the cleaned transcript.\n\nTranscript:\n${output}".to_string(),
     }]
+}
+
+fn default_typing_tool() -> TypingTool {
+    TypingTool::Auto
 }
 
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
@@ -786,6 +808,7 @@ pub fn get_default_settings() -> AppSettings {
 
         paste_delay_ms: default_paste_delay_ms(),
         paste_restore_delay_ms: default_paste_restore_delay_ms(),
+        typing_tool: default_typing_tool(),
     }
 }
 

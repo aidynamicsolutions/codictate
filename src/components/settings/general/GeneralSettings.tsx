@@ -25,6 +25,7 @@ import { ShowUnloadModelInTray } from "../ShowUnloadModelInTray";
 import { StartHidden } from "../StartHidden";
 import { AutostartToggle } from "../AutostartToggle";
 import { PasteMethodSetting } from "../PasteMethod";
+import { TypingToolSetting } from "../TypingTool";
 import { ClipboardHandlingSetting } from "../ClipboardHandling";
 import { PostProcessingToggle } from "../PostProcessingToggle";
 import { FillerWordFilter } from "../FillerWordFilter";
@@ -144,6 +145,7 @@ export const GeneralSettings: React.FC = () => {
         <AutostartToggle descriptionMode="tooltip" grouped={true} />
         <ShowOverlay descriptionMode="tooltip" grouped={true} />
         <PasteMethodSetting descriptionMode="tooltip" grouped={true} />
+        <TypingToolSetting descriptionMode="tooltip" grouped={true} />
         <ClipboardHandlingSetting descriptionMode="tooltip" grouped={true} />
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />

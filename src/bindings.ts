@@ -123,6 +123,17 @@ async changePasteMethodSetting(method: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async getAvailableTypingTools() : Promise<string[]> {
+    return await TAURI_INVOKE("get_available_typing_tools");
+},
+async changeTypingToolSetting(tool: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_typing_tool_setting", { tool }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeClipboardHandlingSetting(handling: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_clipboard_handling_setting", { handling }) };
@@ -1006,7 +1017,7 @@ enable_filler_word_filter?: boolean;
 /**
  * When true, collapses repeated/stuttered words caused by ASR hallucinations.
  */
-enable_hallucination_filter?: boolean; show_tray_icon?: boolean; show_unload_model_in_tray?: boolean; paste_delay_ms?: number; paste_restore_delay_ms?: number }
+enable_hallucination_filter?: boolean; show_tray_icon?: boolean; show_unload_model_in_tray?: boolean; paste_delay_ms?: number; paste_restore_delay_ms?: number; typing_tool?: TypingTool }
 export type AudioDevice = { index: string; name: string; is_default: boolean; is_bluetooth: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
@@ -1100,6 +1111,7 @@ export type PostProcessProvider = { id: string; label: string; base_url: string;
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 /**
  * User profile data - separate from app settings.
  * This stores onboarding and user identity information.
