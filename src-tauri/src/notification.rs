@@ -3,7 +3,11 @@
 //! This module provides a simple API for showing native notifications with proper
 //! localization and urgency differentiation between error and info notifications.
 
-use tracing::{error, warn};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
+
+use tracing::{debug, error, warn};
 use tauri::AppHandle;
 use tauri_plugin_notification::{NotificationExt, PermissionState};
 
@@ -16,6 +20,45 @@ pub enum NotificationType {
     Info,
     /// Error notification (e.g., post-processing failed)
     Error,
+}
+
+const PERMISSION_NOTIFICATION_COOLDOWN: Duration = Duration::from_secs(10);
+const MIC_PERMISSION_NOTIFICATION_ID: &str = "microphone-permission-denied";
+const ACCESSIBILITY_PERMISSION_NOTIFICATION_ID: &str = "accessibility-permission-lost";
+
+static NOTIFICATION_COOLDOWN_STATE: OnceLock<Mutex<HashMap<&'static str, Instant>>> = OnceLock::new();
+
+fn should_emit_with_cooldown(
+    tracker: &mut HashMap<&'static str, Instant>,
+    notification_id: &'static str,
+    now: Instant,
+    cooldown: Duration,
+) -> bool {
+    match tracker.get(notification_id) {
+        Some(last_shown_at) if now.duration_since(*last_shown_at) < cooldown => false,
+        _ => {
+            tracker.insert(notification_id, now);
+            true
+        }
+    }
+}
+
+fn should_emit_permission_notification(notification_id: &'static str, now: Instant) -> bool {
+    let cooldown_state = NOTIFICATION_COOLDOWN_STATE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut tracker = match cooldown_state.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            warn!("Notification cooldown state was poisoned, recovering");
+            poisoned.into_inner()
+        }
+    };
+
+    should_emit_with_cooldown(
+        &mut tracker,
+        notification_id,
+        now,
+        PERMISSION_NOTIFICATION_COOLDOWN,
+    )
 }
 
 /// Show a native notification with the given type, title key, and body key.
@@ -151,4 +194,109 @@ pub fn show_error_with_text(app: &AppHandle, body: &str) {
 pub fn show_info_with_text(app: &AppHandle, body: &str) {
     let title = i18n::t(app, "notifications.infoTitle");
     show_notification_with_text(app, NotificationType::Info, &title, body);
+}
+
+/// Notify user that microphone permission is required without forcing the app window to focus.
+pub fn show_microphone_permission_denied(app: &AppHandle) {
+    if !should_emit_permission_notification(MIC_PERMISSION_NOTIFICATION_ID, Instant::now()) {
+        debug!("Skipping microphone permission notification due to cooldown");
+        return;
+    }
+
+    show_notification(
+        app,
+        NotificationType::Info,
+        "permissions.microphoneDeniedTitle",
+        "permissions.microphoneDenied",
+    );
+}
+
+/// Notify user that accessibility permission was revoked without forcing the app window to focus.
+pub fn show_accessibility_permission_lost(app: &AppHandle) {
+    if !should_emit_permission_notification(ACCESSIBILITY_PERMISSION_NOTIFICATION_ID, Instant::now())
+    {
+        debug!("Skipping accessibility permission notification due to cooldown");
+        return;
+    }
+
+    show_notification(
+        app,
+        NotificationType::Info,
+        "permissions.accessibilityLostTitle",
+        "permissions.accessibilityLost",
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cooldown_allows_first_notification() {
+        let mut tracker = HashMap::new();
+        let now = Instant::now();
+        assert!(should_emit_with_cooldown(
+            &mut tracker,
+            "mic",
+            now,
+            Duration::from_secs(10),
+        ));
+    }
+
+    #[test]
+    fn cooldown_blocks_repeat_within_window() {
+        let mut tracker = HashMap::new();
+        let now = Instant::now();
+
+        assert!(should_emit_with_cooldown(
+            &mut tracker,
+            "mic",
+            now,
+            Duration::from_secs(10),
+        ));
+        assert!(!should_emit_with_cooldown(
+            &mut tracker,
+            "mic",
+            now + Duration::from_secs(3),
+            Duration::from_secs(10),
+        ));
+    }
+
+    #[test]
+    fn cooldown_allows_after_window_expires() {
+        let mut tracker = HashMap::new();
+        let now = Instant::now();
+
+        assert!(should_emit_with_cooldown(
+            &mut tracker,
+            "mic",
+            now,
+            Duration::from_secs(10),
+        ));
+        assert!(should_emit_with_cooldown(
+            &mut tracker,
+            "mic",
+            now + Duration::from_secs(11),
+            Duration::from_secs(10),
+        ));
+    }
+
+    #[test]
+    fn cooldown_is_tracked_per_notification_id() {
+        let mut tracker = HashMap::new();
+        let now = Instant::now();
+
+        assert!(should_emit_with_cooldown(
+            &mut tracker,
+            "mic",
+            now,
+            Duration::from_secs(10),
+        ));
+        assert!(should_emit_with_cooldown(
+            &mut tracker,
+            "accessibility",
+            now + Duration::from_secs(1),
+            Duration::from_secs(10),
+        ));
+    }
 }

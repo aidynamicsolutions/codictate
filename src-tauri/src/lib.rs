@@ -629,17 +629,30 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // Handle app exit to properly shutdown sidecar processes
-            if let tauri::RunEvent::Exit = event {
-                #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-                {
-                    if let Some(mlx_manager) = app.try_state::<Arc<MlxModelManager>>() {
-                        tracing::info!("App exiting, stopping MLX sidecar server...");
-                        if let Err(e) = mlx_manager.stop_server() {
-                            tracing::error!("Failed to stop MLX sidecar server: {}", e);
+            match event {
+                #[cfg(target_os = "macos")]
+                tauri::RunEvent::Reopen {
+                    has_visible_windows,
+                    ..
+                } => {
+                    if !has_visible_windows {
+                        tracing::info!("App reopen requested with no visible windows, showing main window");
+                        show_main_window(app);
+                    }
+                }
+                // Handle app exit to properly shutdown sidecar processes
+                tauri::RunEvent::Exit => {
+                    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+                    {
+                        if let Some(mlx_manager) = app.try_state::<Arc<MlxModelManager>>() {
+                            tracing::info!("App exiting, stopping MLX sidecar server...");
+                            if let Err(e) = mlx_manager.stop_server() {
+                                tracing::error!("Failed to stop MLX sidecar server: {}", e);
+                            }
                         }
                     }
                 }
+                _ => {}
             }
         });
 }

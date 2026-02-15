@@ -84,15 +84,15 @@ App Launch
 2. **Backup**: `TapDisabledByTimeout` event (can be delayed 5-10s by macOS)
 3. On detection:
    - Reset flags, stop run loop
-   - Show main window (bring to foreground)
    - Emit `accessibility-permission-lost` event
+   - Show a throttled native notification (no forced focus steal)
    - `PermissionBanner` shows modal with "Open Settings" button
 
 ### Microphone (recording fails)
 
 1. Permission checked in `fn_key_monitor.rs` BEFORE overlay shows
 2. Uses `AVCaptureDevice.authorizationStatus(for: .audio)` via objc2
-3. Denied → show in-app modal dialog with "Open Settings" button
+3. Denied → emit permission event + show throttled native notification (no forced focus steal)
 
 ## Permission Revocation Flow
 
@@ -112,23 +112,30 @@ App Launch
             ├────────────────────────────┤
             ▼                            ▼
  ┌────────────────────────────────────────────────┐
- │  Emit Event → Frontend Shows Modal             │
+ │  Emit Event + Native Notification              │
  │  "accessibility-permission-lost" /             │
  │  "microphone-permission-denied"                │
  └───────────────────────┬────────────────────────┘
                          │
-                         ▼
-                ┌──────────────┐
-                │ User clicks  │
-                │ "Open        │
-                │ Settings"    │
-                └──────┬───────┘
-                       │
-                       ▼
-                ┌──────────────┐
-                │ Deep-link to │
-                │ System Prefs │
-                └──────────────┘
+         ┌───────────────┴────────────────┐
+         ▼                                ▼
+ ┌──────────────┐                  ┌──────────────┐
+ │ User clicks  │                  │ Main window  │
+ │ notification │                  │ already open │
+ └──────┬───────┘                  └──────┬───────┘
+        │                                  │
+        ▼                                  ▼
+ ┌──────────────┐                  ┌──────────────────────────┐
+ │ macOS Reopen │                  │ PermissionBanner modal/  │
+ │ event shows  │                  │ banner guides user       │
+ │ main window  │                  └─────────────┬────────────┘
+ └──────┬───────┘                                │
+        │                                         ▼
+        ▼                                ┌──────────────┐
+ ┌──────────────┐                        │ Deep-link to │
+ │ Permission   │                        │ System Prefs │
+ │ UI appears   │                        └──────────────┘
+ └──────────────┘
 ```
 
 ## Key Learnings
@@ -147,3 +154,5 @@ App Launch
 - **Restart Fn monitor on grant**: Call `startFnKeyMonitor(true)` when permission transitions from denied to granted
 - **DRY with PermissionBanner**: Shared component handles modal, banner, event, and focus for both permission types
 - **Accessibility-first priority**: Microphone UI only renders when accessibility is already granted
+- **No hotkey focus theft**: Permission failures from transcription hotkeys notify the user without bringing the app window to front
+- **Reopen-driven recovery**: On macOS, app reopen events (dock/notification click) are used to surface the main UI when hidden

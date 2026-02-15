@@ -457,11 +457,11 @@ fn start_permission_check_thread(app: AppHandle) {
                 }
                 
                 warn!("Accessibility permission was revoked! Stopping Fn key monitor.");
-                
-                // Show the main window so the modal is visible
-                crate::show_main_window(&app);
-                // Emit event to frontend (modal handles UX)
+
+                // Emit event so frontend can show permission UI if main window is already visible.
                 let _ = app.emit("accessibility-permission-lost", ());
+                // Show native notification without forcing app focus.
+                crate::notification::show_accessibility_permission_lost(&app);
                 
                 // Stop the Fn key monitor
                 let _ = stop_fn_key_monitor();
@@ -550,10 +550,9 @@ fn handle_fn_pressed(app: &AppHandle) {
             use tauri::Emitter;
             
             if check_microphone_permission() == MicrophonePermission::Denied {
-                warn!("Microphone permission denied, showing permission dialog");
-                // Show the main window and emit event for permission dialog
-                crate::show_main_window(app);
+                warn!("Microphone permission denied, notifying user without focusing app");
                 let _ = app.emit("microphone-permission-denied", ());
+                crate::notification::show_microphone_permission_denied(app);
                 return; // Don't set PTT_STARTED or start recording
             }
         }
@@ -666,9 +665,9 @@ fn handle_handsfree_toggle(app: &AppHandle) {
         use tauri::Emitter;
         
         if check_microphone_permission() == MicrophonePermission::Denied {
-            warn!("Microphone permission denied, showing permission dialog");
-            crate::show_main_window(app);
+            warn!("Microphone permission denied, notifying user without focusing app");
             let _ = app.emit("microphone-permission-denied", ());
+            crate::notification::show_microphone_permission_denied(app);
             return;
         }
     }

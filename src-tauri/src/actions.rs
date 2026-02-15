@@ -284,13 +284,11 @@ impl ShortcutAction for TranscribeAction {
                 
                 if check_microphone_permission() == MicrophonePermission::Denied {
                     error!("Microphone permission denied, cannot start recording");
-                    
-                    // Show the main window so the permission dialog modal can be seen
-                    // (the app usually runs in the background)
-                    crate::show_main_window(app);
-                    
-                    // Emit event to frontend to show permission dialog
+
+                    // Emit event so frontend can show permission UI if it's already visible
                     let _ = app.emit("microphone-permission-denied", ());
+                    // Show native notification without stealing focus from the active app
+                    crate::notification::show_microphone_permission_denied(app);
                     return; // Don't show overlay or start recording
                 }
             }
@@ -953,5 +951,4 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     );
     map
 });
-
 
