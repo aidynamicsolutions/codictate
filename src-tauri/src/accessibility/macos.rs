@@ -754,9 +754,9 @@ mod tests {
     #[test]
     fn test_expand_to_word_boundaries_space() {
         let text = "hello world";
-        // cursor at the space
+        // Cursor at the whitespace boundary selects the preceding word.
         let result = expand_to_word_boundaries(text, 5);
-        assert_eq!(result, None);
+        assert_eq!(result, Some((0, "hello".to_string())));
     }
 
     #[test]

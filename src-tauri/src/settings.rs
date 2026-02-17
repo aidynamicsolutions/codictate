@@ -722,6 +722,26 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    #[cfg(target_os = "macos")]
+    let undo_last_shortcut = "control+command+z";
+    #[cfg(target_os = "windows")]
+    let undo_last_shortcut = "ctrl+alt+z";
+    #[cfg(target_os = "linux")]
+    let undo_last_shortcut = "ctrl+alt+z";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let undo_last_shortcut = "ctrl+alt+z";
+
+    bindings.insert(
+        "undo_last_transcript".to_string(),
+        ShortcutBinding {
+            id: "undo_last_transcript".to_string(),
+            name: "Undo last transcript".to_string(),
+            description: "Undo the most recent transcript paste from Codictate.".to_string(),
+            default_binding: undo_last_shortcut.to_string(),
+            current_binding: undo_last_shortcut.to_string(),
+        },
+    );
+
     // Refine last transcript: polish the last transcription with AI and paste
     // Uses Option+Cmd+V on macOS (parallels paste_last_transcript but with Option for AI action)
     #[cfg(target_os = "macos")]

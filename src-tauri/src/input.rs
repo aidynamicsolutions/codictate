@@ -123,6 +123,32 @@ pub fn send_copy_cmd_c(enigo: &mut Enigo) -> Result<(), String> {
     Ok(())
 }
 
+/// Sends a Cmd+Z (macOS) or Ctrl+Z (Windows/Linux) undo command using
+/// platform-specific key paths.
+pub fn send_undo_cmd_z(enigo: &mut Enigo) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let (modifier_key, z_key_code) = (Key::Meta, Key::Other(6)); // macOS virtual keycode 6 = 'Z'
+    #[cfg(target_os = "windows")]
+    let (modifier_key, z_key_code) = (Key::Control, Key::Other(0x5A)); // VK_Z
+    #[cfg(target_os = "linux")]
+    let (modifier_key, z_key_code) = (Key::Control, Key::Unicode('z'));
+
+    enigo
+        .key(modifier_key, enigo::Direction::Press)
+        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
+    enigo
+        .key(z_key_code, enigo::Direction::Click)
+        .map_err(|e| format!("Failed to click Z key: {}", e))?;
+
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    enigo
+        .key(modifier_key, enigo::Direction::Release)
+        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+
+    Ok(())
+}
+
 /// Sends a Ctrl+Shift+V paste command.
 /// This is commonly used in terminal applications on Linux to paste without formatting.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.

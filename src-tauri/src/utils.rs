@@ -2,16 +2,55 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::shortcut;
 use crate::ManagedToggleState;
-use tracing::{debug, info, warn};
 use std::process::Command;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
+use tracing::{debug, info, warn};
 
 // Re-export all utility modules for easy access
 // pub use crate::audio_feedback::*;
 pub use crate::clipboard::*;
 pub use crate::overlay::*;
 pub use crate::tray::*;
+
+const CANCEL_REOPEN_SUPPRESS_MS: u64 = 2_000;
+static CANCEL_REOPEN_SUPPRESSION_UNTIL_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_epoch_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn suppression_remaining_ms_at(now_ms: u64, until_ms: u64) -> u64 {
+    until_ms.saturating_sub(now_ms)
+}
+
+pub fn mark_cancel_reopen_suppression() {
+    let now_ms = now_epoch_ms();
+    let until_ms = now_ms.saturating_add(CANCEL_REOPEN_SUPPRESS_MS);
+    CANCEL_REOPEN_SUPPRESSION_UNTIL_MS.store(until_ms, Ordering::SeqCst);
+
+    info!(
+        event_code = "cancel_foreground_suppression_set",
+        duration_ms = CANCEL_REOPEN_SUPPRESS_MS,
+        until_ms,
+        "Set foreground suppression window after cancellation"
+    );
+}
+
+pub fn cancel_reopen_suppression_remaining_ms() -> u64 {
+    let now_ms = now_epoch_ms();
+    let until_ms = CANCEL_REOPEN_SUPPRESSION_UNTIL_MS.load(Ordering::SeqCst);
+    suppression_remaining_ms_at(now_ms, until_ms)
+}
+
+pub fn is_cancel_reopen_suppressed() -> bool {
+    cancel_reopen_suppression_remaining_ms() > 0
+}
 
 /// Get system memory in gigabytes using macOS sysctl
 pub fn get_system_memory_gb() -> u64 {
@@ -76,6 +115,8 @@ pub fn cancel_current_operation(app: &AppHandle) {
         shortcut::unregister_cancel_shortcut(app);
         return;
     }
+
+    mark_cancel_reopen_suppression();
 
     // CRITICAL: Clear active session IMMEDIATELY to prevent pending transcriptions from pasting
     // Do not defer this to the background thread!
@@ -144,4 +185,53 @@ pub fn is_kde_plasma() -> bool {
 #[cfg(target_os = "linux")]
 pub fn is_kde_wayland() -> bool {
     is_wayland() && is_kde_plasma()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{LazyLock, Mutex};
+
+    static SUPPRESSION_TEST_GUARD: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    #[test]
+    fn suppression_remaining_clamps_at_zero() {
+        assert_eq!(suppression_remaining_ms_at(100, 90), 0);
+        assert_eq!(suppression_remaining_ms_at(100, 100), 0);
+        assert_eq!(suppression_remaining_ms_at(100, 150), 50);
+    }
+
+    #[test]
+    fn suppression_state_expires_at_boundary() {
+        let _guard = SUPPRESSION_TEST_GUARD.lock().unwrap();
+        let now_ms = now_epoch_ms();
+
+        CANCEL_REOPEN_SUPPRESSION_UNTIL_MS.store(now_ms.saturating_add(10), Ordering::SeqCst);
+        assert!(is_cancel_reopen_suppressed());
+        assert!(cancel_reopen_suppression_remaining_ms() > 0);
+
+        CANCEL_REOPEN_SUPPRESSION_UNTIL_MS.store(now_ms, Ordering::SeqCst);
+        assert!(!is_cancel_reopen_suppressed());
+        assert_eq!(cancel_reopen_suppression_remaining_ms(), 0);
+
+        CANCEL_REOPEN_SUPPRESSION_UNTIL_MS.store(0, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn mark_sets_active_suppression_window() {
+        let _guard = SUPPRESSION_TEST_GUARD.lock().unwrap();
+        let before_mark_ms = now_epoch_ms();
+        mark_cancel_reopen_suppression();
+        let after_mark_ms = now_epoch_ms();
+
+        let until_ms = CANCEL_REOPEN_SUPPRESSION_UNTIL_MS.load(Ordering::SeqCst);
+        assert!(until_ms >= before_mark_ms.saturating_add(CANCEL_REOPEN_SUPPRESS_MS));
+        assert!(until_ms <= after_mark_ms.saturating_add(CANCEL_REOPEN_SUPPRESS_MS));
+
+        let remaining_ms = cancel_reopen_suppression_remaining_ms();
+        assert!(remaining_ms > 0);
+        assert!(remaining_ms <= CANCEL_REOPEN_SUPPRESS_MS);
+
+        CANCEL_REOPEN_SUPPRESSION_UNTIL_MS.store(0, Ordering::SeqCst);
+    }
 }

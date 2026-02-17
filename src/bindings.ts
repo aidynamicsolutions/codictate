@@ -991,6 +991,18 @@ async acceptCorrection() : Promise<Result<null, string>> {
 },
 async dismissCorrection() : Promise<void> {
     await TAURI_INVOKE("dismiss_correction");
+},
+async undoOverlayCardDismissed() : Promise<void> {
+    await TAURI_INVOKE("undo_overlay_card_dismissed");
+},
+async undoOverlayCardPresented() : Promise<void> {
+    await TAURI_INVOKE("undo_overlay_card_presented");
+},
+async undoMarkDiscoverabilityHintSeen() : Promise<void> {
+    await TAURI_INVOKE("undo_mark_discoverability_hint_seen");
+},
+async overlayUpdateInteractionRegions(regions: OverlayInteractionRegionsPayload) : Promise<void> {
+    await TAURI_INVOKE("overlay_update_interaction_regions", { regions });
 }
 }
 
@@ -1105,6 +1117,8 @@ export type MlxModelStatus =
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; is_custom: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_5"
+export type OverlayClientRect = { x: number; y: number; width: number; height: number }
+export type OverlayInteractionRegionsPayload = { overlayVisible: boolean; messageLaneRect: OverlayClientRect | null; actionRects?: OverlayClientRect[] }
 export type OverlayPosition = "none" | "top" | "bottom"
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null }

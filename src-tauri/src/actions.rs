@@ -13,13 +13,12 @@ use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{self, show_recording_overlay, show_transcribing_overlay};
 use crate::ManagedToggleState;
-use tauri::Emitter;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
-use once_cell::sync::Lazy;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tauri::AppHandle;
+use tauri::Emitter;
 use tauri::Manager;
 use tracing::{debug, error, info, info_span, warn};
 
@@ -34,7 +33,11 @@ struct TranscribeAction {
     post_process: bool,
 }
 
-async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, transcription: &str) -> Option<String> {
+async fn post_process_transcription(
+    app: &AppHandle,
+    settings: &AppSettings,
+    transcription: &str,
+) -> Option<String> {
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
@@ -86,7 +89,7 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
     }
 
     utils::show_processing_overlay(app);
-    
+
     debug!(
         "Starting LLM post-processing with provider '{}' (model: {})",
         provider.id, model
@@ -143,7 +146,10 @@ async fn post_process_transcription(app: &AppHandle, settings: &AppSettings, tra
 
         // Get the MLX manager from app state
         let mlx_manager = app.state::<Arc<MlxModelManager>>();
-        return match mlx_manager.process_text(&processed_prompt, None, None, None).await {
+        return match mlx_manager
+            .process_text(&processed_prompt, None, None, None)
+            .await
+        {
             Ok(result) => {
                 let result: String = result;
                 if result.trim().is_empty() {
@@ -249,15 +255,20 @@ async fn maybe_convert_chinese_variant(
     }
 }
 
+fn auto_refined_from_post_processed_text(post_processed_text: &Option<String>) -> bool {
+    post_processed_text.is_some()
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         // Generate session ID for log correlation
         let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
         let _session_span = info_span!("session", session = %session_id).entered();
-        
+
         // Emit session ID to frontend for correlated logging
         use tauri::Emitter;
         let _ = app.emit("session-started", &session_id);
+        crate::undo::clear_stop_transition_marker(app);
 
         let app_clone = app.clone();
         let binding_id_clone = binding_id.to_string();
@@ -267,21 +278,24 @@ impl ShortcutAction for TranscribeAction {
         // it can cancel the start operation.
         let rm = app.state::<Arc<AudioRecordingManager>>();
         if !rm.prepare_recording(binding_id) {
-             debug!("Failed to prepare recording for binding {} (state not Idle)", binding_id);
-             return;
+            debug!(
+                "Failed to prepare recording for binding {} (state not Idle)",
+                binding_id
+            );
+            return;
         }
 
         // Spawn a thread to avoid blocking the event tap/caller
         std::thread::spawn(move || {
             let app = &app_clone;
             let binding_id = &binding_id_clone;
-            
+
             // Check microphone permission BEFORE showing any UI
             // This prevents the overlay from appearing when permission is denied
             #[cfg(target_os = "macos")]
             {
                 use crate::permissions::{check_microphone_permission, MicrophonePermission};
-                
+
                 if check_microphone_permission() == MicrophonePermission::Denied {
                     error!("Microphone permission denied, cannot start recording");
 
@@ -292,7 +306,7 @@ impl ShortcutAction for TranscribeAction {
                     return; // Don't show overlay or start recording
                 }
             }
-            
+
             let start_time = Instant::now();
             info!("Recording started for binding: {}", binding_id);
 
@@ -301,7 +315,7 @@ impl ShortcutAction for TranscribeAction {
             tm.initiate_model_load();
 
             change_tray_icon(app, TrayIconState::Recording);
-            
+
             let rm = app.state::<Arc<AudioRecordingManager>>();
 
             // Get the microphone mode to determine audio feedback timing
@@ -310,10 +324,10 @@ impl ShortcutAction for TranscribeAction {
             debug!("Microphone mode - always_on: {}", is_always_on);
 
             let mut recording_started = false;
-            
+
             // NOTE: try_start_recording is now BLOCKING until the audio stream is ready (in OnDemand mode).
             // This ensures we don't show the overlay until we are actually recording.
-            
+
             if is_always_on {
                 // Always-on mode: Play audio feedback immediately, then apply mute after sound finishes
                 debug!("Always-on mode: Playing audio feedback immediately");
@@ -338,20 +352,21 @@ impl ShortcutAction for TranscribeAction {
                 // On-demand mode: Start recording first, then play audio feedback, then apply mute
                 // This allows the microphone to be activated before playing the sound
                 debug!("On-demand mode: Starting recording first (blocking), then audio feedback");
-                
+
                 // Check if we're using a Bluetooth device and if this is the first trigger
                 // For Bluetooth: show "Starting microphone..." overlay during warmup
                 // For first trigger of ANY device: show "Starting microphone..." while initializing
                 // Note: Use catch_unwind to protect against any panics in device detection
                 let is_bluetooth = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     rm.is_current_device_bluetooth()
-                })).unwrap_or_else(|e| {
+                }))
+                .unwrap_or_else(|e| {
                     error!("Panic in Bluetooth detection: {:?}", e);
                     false
                 });
-                
+
                 let is_first_trigger = rm.is_first_trigger();
-                
+
                 // Only show "Starting microphone..." for Bluetooth devices.
                 // Internal mics start fast enough (~100-200ms) that we can just wait
                 // and show the recording overlay directly - no confusing state transitions.
@@ -360,14 +375,14 @@ impl ShortcutAction for TranscribeAction {
                     info!("Bluetooth mic detected, showing connecting overlay");
                     utils::show_connecting_overlay(app);
                 }
-                
+
                 let recording_start_time = Instant::now();
-                
+
                 // Blocks here until Mic is ready (~100-200ms for internal, ~500ms+ for Bluetooth)
                 if rm.try_start_recording(binding_id, &session_id) {
                     recording_started = true;
                     debug!("Recording started in {:?}", recording_start_time.elapsed());
-                    
+
                     // Add warmup delay for Bluetooth microphones.
                     // Bluetooth mics often send silence while waking up, causing first words to be lost.
                     // Pre-warming triggers the Bluetooth profile switch at app startup, so we only need
@@ -384,11 +399,11 @@ impl ShortcutAction for TranscribeAction {
                         std::thread::sleep(std::time::Duration::from_millis(warmup_delay_ms));
                         debug!("Bluetooth warmup delay completed");
                     }
-                    
+
                     // Show overlay recording state NOW (with smooth fade-in animation)
                     info!("TranscribeAction::start: showing recording overlay (on-demand)");
                     show_recording_overlay(app);
-                    
+
                     // Small delay to ensure microphone stream is active (extra safety)
                     let app_clone = app.clone();
                     let rm_clone = Arc::clone(&rm);
@@ -425,6 +440,7 @@ impl ShortcutAction for TranscribeAction {
 
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
+        crate::undo::mark_stop_transition_marker(app);
 
         let ah = app.clone();
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
@@ -432,7 +448,7 @@ impl ShortcutAction for TranscribeAction {
         let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
 
         change_tray_icon(app, TrayIconState::Transcribing);
-        
+
         // Unmute before playing audio feedback so the stop sound is audible
         rm.remove_mute();
 
@@ -440,8 +456,10 @@ impl ShortcutAction for TranscribeAction {
         play_feedback_sound(app, SoundType::Stop);
 
         // Get session_id BEFORE stopping (it will be cleared after stop)
-        let session_id = rm.get_current_session_id().unwrap_or_else(|| "unknown".to_string());
-        
+        let session_id = rm
+            .get_current_session_id()
+            .unwrap_or_else(|| "unknown".to_string());
+
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let session_id_for_task = session_id.clone();
         let post_process = self.post_process;
@@ -450,6 +468,7 @@ impl ShortcutAction for TranscribeAction {
             let session_span = info_span!("session", session = %session_id);
             async move {
                 let _guard = session_span.enter();
+                let _stop_transition_guard = crate::undo::StopTransitionGuard::new(&ah);
                 let binding_id = binding_id.clone();
                 debug!(
                     "Starting async transcription task for binding: {}",
@@ -460,11 +479,11 @@ impl ShortcutAction for TranscribeAction {
                 if let Some(samples) = rm.stop_recording(&binding_id) {
                     // Register this session as active for transcription
                     tm.set_active_session(session_id_for_task.clone());
-                    
+
                     // Start showing transcribing overlay NOW, after we have confirmed valid samples.
                     // This protects against "phantom stops" from double-triggers showing the overlay incorrectly.
                     show_transcribing_overlay(&ah);
-                    
+
                     debug!(
                         "Recording stopped and samples retrieved in {:?}, sample count: {}",
                         stop_recording_time.elapsed(),
@@ -475,15 +494,17 @@ impl ShortcutAction for TranscribeAction {
                     let samples_clone = samples.clone(); // Clone for history saving
                     match tm.transcribe(samples) {
                         Ok((transcription, filler_words_removed)) => {
-                             // Check if the session was cancelled during transcription (from llm)
+                            // Check if the session was cancelled during transcription (from llm)
                             if !tm.is_session_active(&session_id_for_task) {
-                                debug!("Transcription for session {} was cancelled, discarding result", session_id_for_task);
+                                debug!(
+                                    "Transcription for session {} was cancelled, discarding result",
+                                    session_id_for_task
+                                );
                                 utils::hide_recording_overlay(&ah);
                                 change_tray_icon(&ah, TrayIconState::Idle);
                                 shortcut::unregister_cancel_shortcut(&ah);
                                 return;
                             }
-                            
 
                             debug!(
                                 "Transcription completed in {:?}: '{}' (filler_words_removed: {})",
@@ -491,7 +512,7 @@ impl ShortcutAction for TranscribeAction {
                                 transcription,
                                 filler_words_removed
                             );
-                            if !transcription.is_empty() {
+                            if !transcription.trim().is_empty() {
                                 let settings = get_settings(&ah);
                                 let mut final_text = transcription.clone();
                                 let mut post_processed_text: Option<String> = None;
@@ -506,7 +527,10 @@ impl ShortcutAction for TranscribeAction {
 
                                 // Check cancellation again before expensive LLM post-processing
                                 if !tm.is_session_active(&session_id_for_task) {
-                                    debug!("Session {} cancelled before post-processing, aborting", session_id_for_task);
+                                    debug!(
+                                        "Session {} cancelled before post-processing, aborting",
+                                        session_id_for_task
+                                    );
                                     utils::hide_overlay_after_transcription(&ah);
                                     change_tray_icon(&ah, TrayIconState::Idle);
                                     shortcut::unregister_cancel_shortcut(&ah);
@@ -521,12 +545,13 @@ impl ShortcutAction for TranscribeAction {
                                 } else {
                                     None
                                 };
-                                if let Some(processed_text) = processed
-                                {
+                                if let Some(processed_text) = processed {
                                     post_processed_text = Some(processed_text.clone());
                                     final_text = processed_text;
 
-                                    if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
+                                    if let Some(prompt_id) =
+                                        &settings.post_process_selected_prompt_id
+                                    {
                                         if let Some(prompt) = settings
                                             .post_process_prompts
                                             .iter()
@@ -540,13 +565,25 @@ impl ShortcutAction for TranscribeAction {
                                     post_processed_text = Some(final_text.clone());
                                 }
 
+                                let source_action = if post_process {
+                                    "transcribe_with_post_process"
+                                } else {
+                                    "transcribe"
+                                };
+                                let stats_token = crate::undo::reserve_stats_token(&ah);
+                                let auto_refined =
+                                    auto_refined_from_post_processed_text(&post_processed_text);
+                                let suggestion_text = transcription.clone();
+
                                 let hm_clone = Arc::clone(&hm);
                                 let transcription_for_history = transcription.clone();
                                 let filler_count = filler_words_removed as i64;
+                                let app_for_stats = ah.clone();
                                 tauri::async_runtime::spawn(async move {
                                     // Calculate duration in milliseconds (sample rate is 16kHz)
-                                    let duration_ms = (samples_clone.len() as f64 / 16000.0 * 1000.0) as i64;
-                                    if let Err(e) = hm_clone
+                                    let duration_ms =
+                                        (samples_clone.len() as f64 / 16000.0 * 1000.0) as i64;
+                                    match hm_clone
                                         .save_transcription(
                                             samples_clone,
                                             transcription_for_history,
@@ -557,7 +594,17 @@ impl ShortcutAction for TranscribeAction {
                                         )
                                         .await
                                     {
-                                        error!("Failed to save transcription to history: {}", e);
+                                        Ok(contribution) => {
+                                            crate::undo::register_stats_contribution(
+                                                &app_for_stats,
+                                                stats_token,
+                                                source_action,
+                                                contribution,
+                                            );
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to save transcription to history: {}", e);
+                                        }
                                     }
                                 });
 
@@ -565,10 +612,24 @@ impl ShortcutAction for TranscribeAction {
                                 let paste_time = Instant::now();
                                 ah.run_on_main_thread(move || {
                                     match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(()) => debug!(
-                                            "Text pasted successfully in {:?}",
-                                            paste_time.elapsed()
-                                        ),
+                                        Ok(result) => {
+                                            debug!(
+                                                "Text pasted successfully in {:?}",
+                                                paste_time.elapsed()
+                                            );
+                                            if result.did_paste {
+                                                crate::undo::register_successful_paste(
+                                                    &ah_clone,
+                                                    crate::undo::PasteCapture {
+                                                        source_action,
+                                                        stats_token: Some(stats_token),
+                                                        auto_refined,
+                                                        pasted_text: result.pasted_text,
+                                                        suggestion_text: suggestion_text.clone(),
+                                                    },
+                                                );
+                                            }
+                                        }
                                         Err(e) => error!("Failed to paste transcription: {}", e),
                                     }
                                     utils::hide_overlay_after_transcription(&ah_clone);
@@ -592,7 +653,7 @@ impl ShortcutAction for TranscribeAction {
                     }
                 } else {
                     debug!("No samples retrieved from recording stop");
-                    // Use SAFE hide. If another thread is actively transcribing, this "failed stop" 
+                    // Use SAFE hide. If another thread is actively transcribing, this "failed stop"
                     // should not interrupt it.
                     utils::hide_overlay_if_recording(&ah);
                     change_tray_icon(&ah, TrayIconState::Idle);
@@ -605,7 +666,7 @@ impl ShortcutAction for TranscribeAction {
                 if let Ok(mut states) = ah.state::<ManagedToggleState>().lock() {
                     states.active_toggles.insert(binding_id, false);
                 }
-                
+
                 // Always ensure cancel shortcut is unregistered at the end
                 shortcut::unregister_cancel_shortcut(&ah);
             }
@@ -628,6 +689,18 @@ impl ShortcutAction for CancelAction {
 
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
         // Nothing to do on stop for cancel
+    }
+}
+
+struct UndoLastTranscriptAction;
+
+impl ShortcutAction for UndoLastTranscriptAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        crate::undo::trigger_undo_last_transcript(app);
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // One-shot action; no key-release behavior.
     }
 }
 
@@ -660,16 +733,16 @@ struct PasteLastTranscriptAction;
 impl ShortcutAction for PasteLastTranscriptAction {
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
         debug!("Paste last transcript triggered");
-        
+
         // Check if recording is active - don't interfere with recording/transcription flow
         let audio_manager = app.state::<Arc<AudioRecordingManager>>();
         if audio_manager.is_recording() {
             debug!("Paste last transcript skipped: recording is active");
             return;
         }
-        
+
         let app_clone = app.clone();
-        
+
         // Spawn async task to get the latest transcription and paste it
         tauri::async_runtime::spawn(async move {
             let text = if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
@@ -683,12 +756,18 @@ impl ShortcutAction for PasteLastTranscriptAction {
                                 .as_ref()
                                 .unwrap_or(&latest.transcription_text)
                                 .clone();
-                            debug!(chars = text.len(), "Retrieved latest transcription for paste");
-                            Some(text)
+                            debug!(
+                                chars = text.len(),
+                                "Retrieved latest transcription for paste"
+                            );
+                            Some((text, latest.transcription_text.clone()))
                         } else {
                             info!("No history entries available for paste last transcript");
                             // Show notification to inform user
-                            crate::notification::show_info(&app_clone, "pasteLastTranscript.noHistory");
+                            crate::notification::show_info(
+                                &app_clone,
+                                "pasteLastTranscript.noHistory",
+                            );
                             None
                         }
                     }
@@ -701,23 +780,40 @@ impl ShortcutAction for PasteLastTranscriptAction {
                 error!("HistoryManager not available for paste last transcript");
                 None
             };
-            
+
             // If we have text, paste it on the main thread
-            if let Some(text_to_paste) = text {
+            if let Some((text_to_paste, suggestion_text)) = text {
                 if !text_to_paste.is_empty() {
                     // Add a delay before pasting to allow the user to release the hotkey modifiers.
                     // When pressing e.g. Ctrl+Cmd+V, those keys are still held when we try to
                     // simulate Cmd+V. Without this delay, the target app would receive Ctrl+Cmd+V
                     // (which does nothing) instead of just Cmd+V.
                     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                    
+
                     let app_for_paste = app_clone.clone();
-                    if let Err(e) = app_clone.run_on_main_thread(move || {
-                        match crate::utils::paste(text_to_paste, app_for_paste) {
-                            Ok(()) => info!("Pasted last transcript successfully"),
-                            Err(e) => error!("Failed to paste last transcript: {}", e),
-                        }
-                    }) {
+                    let app_for_undo_slot = app_clone.clone();
+                    if let Err(e) =
+                        app_clone.run_on_main_thread(move || {
+                            match crate::utils::paste(text_to_paste, app_for_paste) {
+                                Ok(result) => {
+                                    info!("Pasted last transcript successfully");
+                                    if result.did_paste {
+                                        crate::undo::register_successful_paste(
+                                            &app_for_undo_slot,
+                                            crate::undo::PasteCapture {
+                                                source_action: "paste_last_transcript",
+                                                stats_token: None,
+                                                auto_refined: false,
+                                                pasted_text: result.pasted_text,
+                                                suggestion_text,
+                                            },
+                                        );
+                                    }
+                                }
+                                Err(e) => error!("Failed to paste last transcript: {}", e),
+                            }
+                        })
+                    {
                         error!("Failed to run paste on main thread: {:?}", e);
                     }
                 } else {
@@ -739,69 +835,76 @@ struct RefineLastTranscriptAction;
 impl ShortcutAction for RefineLastTranscriptAction {
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
         debug!("Refine last transcript triggered");
-        
+
         // Check if recording is active - don't interfere with recording/transcription flow
         let audio_manager = app.state::<Arc<AudioRecordingManager>>();
         if audio_manager.is_recording() {
             debug!("Refine last transcript skipped: recording is active");
             return;
         }
-        
+
         let app_clone = app.clone();
-        
+
         // Spawn async task to get the latest transcription, refine it, and paste
         tauri::async_runtime::spawn(async move {
             // Get the last raw transcription from history
-            let raw_text = if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
-                let manager = history_manager.inner().clone();
-                match manager.get_history_entries(1, 0, None, false, None).await {
-                    Ok(entries) => {
-                        if let Some(latest) = entries.first() {
-                            // Always use the RAW transcription, not post-processed
-                            Some(latest.transcription_text.clone())
-                        } else {
-                            info!("No history entries available for refine last transcript");
-                            crate::notification::show_info(&app_clone, "refineLastTranscript.noHistory");
+            let raw_text =
+                if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
+                    let manager = history_manager.inner().clone();
+                    match manager.get_history_entries(1, 0, None, false, None).await {
+                        Ok(entries) => {
+                            if let Some(latest) = entries.first() {
+                                // Always use the RAW transcription, not post-processed
+                                Some(latest.transcription_text.clone())
+                            } else {
+                                info!("No history entries available for refine last transcript");
+                                crate::notification::show_info(
+                                    &app_clone,
+                                    "refineLastTranscript.noHistory",
+                                );
+                                None
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to get history entries: {}", e);
                             None
                         }
                     }
-                    Err(e) => {
-                        error!("Failed to get history entries: {}", e);
-                        None
-                    }
-                }
-            } else {
-                error!("HistoryManager not available for refine last transcript");
-                None
-            };
-            
+                } else {
+                    error!("HistoryManager not available for refine last transcript");
+                    None
+                };
+
             let Some(raw_text) = raw_text else {
                 return;
             };
-            
+
             if raw_text.is_empty() {
                 debug!("Refine last transcript skipped: transcription text is empty");
                 return;
             }
-            
+
             // Get settings and run post-processing
             let settings = get_settings(&app_clone);
-            
+
             // Check if post-processing is enabled and configured
             if !settings.post_process_enabled {
                 info!("Refine is disabled. Enable it in settings first.");
                 crate::notification::show_info(&app_clone, "refineLastTranscript.disabled");
                 return;
             }
-            
-            debug!(chars = raw_text.len(), "Starting refinement of last transcript");
-            
+
+            debug!(
+                chars = raw_text.len(),
+                "Starting refinement of last transcript"
+            );
+
             // Run post-processing
             let refined_text = post_process_transcription(&app_clone, &settings, &raw_text).await;
-            
+
             // Hide processing overlay
             crate::utils::hide_overlay_after_transcription(&app_clone);
-            
+
             let final_text = if let Some(refined) = refined_text {
                 debug!(chars = refined.len(), "Refinement completed");
                 refined
@@ -811,15 +914,30 @@ impl ShortcutAction for RefineLastTranscriptAction {
                 crate::notification::show_info(&app_clone, "refineLastTranscript.failed");
                 return;
             };
-            
+
             // Add a delay before pasting to allow the user to release the hotkey modifiers
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-            
+
             // Paste the refined text
             let app_for_paste = app_clone.clone();
+            let app_for_undo_slot = app_clone.clone();
             if let Err(e) = app_clone.run_on_main_thread(move || {
                 match crate::utils::paste(final_text, app_for_paste) {
-                    Ok(()) => info!("Pasted refined transcript successfully"),
+                    Ok(result) => {
+                        info!("Pasted refined transcript successfully");
+                        if result.did_paste {
+                            crate::undo::register_successful_paste(
+                                &app_for_undo_slot,
+                                crate::undo::PasteCapture {
+                                    source_action: "refine_last_transcript",
+                                    stats_token: None,
+                                    auto_refined: true,
+                                    pasted_text: result.pasted_text,
+                                    suggestion_text: raw_text,
+                                },
+                            );
+                        }
+                    }
                     Err(e) => error!("Failed to paste refined transcript: {}", e),
                 }
             }) {
@@ -911,7 +1029,7 @@ impl ShortcutAction for CorrectAction {
 }
 
 // Static Action Map
-pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
+pub static ACTION_MAP: LazyLock<HashMap<String, Arc<dyn ShortcutAction>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
     map.insert(
         "transcribe".to_string(),
@@ -942,6 +1060,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         Arc::new(PasteLastTranscriptAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
+        "undo_last_transcript".to_string(),
+        Arc::new(UndoLastTranscriptAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
         "refine_last_transcript".to_string(),
         Arc::new(RefineLastTranscriptAction) as Arc<dyn ShortcutAction>,
     );
@@ -952,3 +1074,19 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map
 });
 
+#[cfg(test)]
+mod tests {
+    use super::auto_refined_from_post_processed_text;
+
+    #[test]
+    fn auto_refined_is_false_without_post_processed_output() {
+        assert!(!auto_refined_from_post_processed_text(&None));
+    }
+
+    #[test]
+    fn auto_refined_is_true_when_output_exists() {
+        assert!(auto_refined_from_post_processed_text(&Some(
+            "refined output".to_string()
+        )));
+    }
+}

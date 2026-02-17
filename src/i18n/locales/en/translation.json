@@ -601,6 +601,10 @@
             "name": "Paste last transcript",
             "description": "Paste the last thing you dictated"
           },
+          "undo_last_transcript": {
+            "name": "Undo last transcript",
+            "description": "Undo the most recent transcript paste from Codictate"
+          },
           "cancel": {
             "name": "Cancel",
             "description": "Cancels the current recording."
@@ -1102,7 +1106,21 @@
     "cancelling": "Cancelling...",
     "starting": "Starting microphone...",
     "correcting": "Correcting...",
-    "correctionHint": "Tab ✓  Esc ✗"
+    "correctionHint": "Tab ✓  Esc ✗",
+    "undo": {
+      "feedback": {
+        "success": "Undo applied",
+        "failed": "Undo failed",
+        "recordingCanceled": "Recording canceled",
+        "processingCanceled": "Processing canceled",
+        "nothingToUndo": "Nothing to undo",
+        "expired": "Undo expired"
+      },
+      "discoverability": {
+        "title": "Undo tip",
+        "hint": "Tip: Press {{shortcut}} to undo your last transcript within 2 minutes."
+      }
+    }
   },
   "recording": {
     "limitWarning": "Recording ends in 30 seconds"

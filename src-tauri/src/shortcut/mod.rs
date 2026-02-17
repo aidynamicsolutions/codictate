@@ -1,6 +1,6 @@
-use tracing::{debug, error, info, warn};
 use serde::Serialize;
 use specta::Type;
+use tracing::{debug, error, info, warn};
 
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
@@ -8,6 +8,8 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 
 use crate::actions::ACTION_MAP;
 
+use crate::managers::audio::AudioRecordingManager;
+use crate::managers::transcription::TranscriptionManager;
 use crate::settings::ShortcutBinding;
 use crate::settings::{
     self, get_settings, AutoSubmitKey, ClipboardHandling, CustomWordEntry, LLMPrompt,
@@ -16,8 +18,6 @@ use crate::settings::{
 };
 use crate::tray;
 use crate::ManagedToggleState;
-use crate::managers::audio::AudioRecordingManager;
-use crate::managers::transcription::TranscriptionManager;
 use std::sync::Arc;
 
 pub fn init_shortcuts(app: &AppHandle) {
@@ -57,9 +57,15 @@ pub fn init_shortcuts(app: &AppHandle) {
         }
 
         if let Err(e) = register_shortcut(app, binding.clone()) {
-            error!("[init_shortcuts] Failed to register shortcut '{}' for {}: {}", binding.current_binding, id, e);
+            error!(
+                "[init_shortcuts] Failed to register shortcut '{}' for {}: {}",
+                binding.current_binding, id, e
+            );
         } else {
-            debug!("[init_shortcuts] Successfully registered shortcut '{}' for {}", binding.current_binding, id);
+            debug!(
+                "[init_shortcuts] Successfully registered shortcut '{}' for {}",
+                binding.current_binding, id
+            );
         }
     }
 
@@ -135,12 +141,15 @@ pub fn change_binding(
     // Check against reserved system shortcuts (macOS only for now)
     // Check against reserved system shortcuts
     if let Err(reason) = reserved::check_reserved_shortcut(&binding) {
-            warn!("change_binding reserved shortcut error: {} - {}", binding, reason);
-            return Ok(BindingResponse {
-                success: false,
-                binding: None,
-                error: Some(reason),
-            });
+        warn!(
+            "change_binding reserved shortcut error: {} - {}",
+            binding, reason
+        );
+        return Ok(BindingResponse {
+            success: false,
+            binding: None,
+            error: Some(reason),
+        });
     }
 
     // If this is an fn-based shortcut (fn alone or fn+key), just update settings
@@ -155,7 +164,10 @@ pub fn change_binding(
         for (other_id, other_binding) in &settings.bindings {
             if other_id != &id && other_binding.current_binding.to_lowercase() == binding_lower {
                 let error_msg = format!("Shortcut '{}' is already in use", binding);
-                warn!("change_binding duplicate error for fn shortcut: {}", error_msg);
+                warn!(
+                    "change_binding duplicate error for fn shortcut: {}",
+                    error_msg
+                );
                 return Ok(BindingResponse {
                     success: false,
                     binding: None,
@@ -171,7 +183,7 @@ pub fn change_binding(
             }
             b.current_binding = binding;
             settings.bindings.insert(id.clone(), b.clone());
-            
+
             settings::write_settings(&app, settings);
             return Ok(BindingResponse {
                 success: true,
@@ -188,7 +200,6 @@ pub fn change_binding(
     }
 
     // Block reserved system shortcuts for macOS (non-fn shortcuts)
-
 
     // Validate the new shortcut before we touch the current registration
     if let Err(e) = validate_shortcut_string(&binding) {
@@ -212,7 +223,9 @@ pub fn change_binding(
     }
 
     // Update the binding in the settings
-    settings.bindings.insert(id.clone(), updated_binding.clone());
+    settings
+        .bindings
+        .insert(id.clone(), updated_binding.clone());
 
     // Save the settings
     settings::write_settings(&app, settings);
@@ -906,8 +919,6 @@ pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(
     Ok(())
 }
 
-
-
 /// Validate that a shortcut contains at least one non-modifier key.
 /// The tauri-plugin-global-shortcut library requires at least one main key.
 fn validate_shortcut_string(raw: &str) -> Result<(), String> {
@@ -1007,13 +1018,16 @@ pub fn register_cancel_shortcut(app: &AppHandle) {
         let app_clone = app.clone();
         tauri::async_runtime::spawn(async move {
             if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                debug!("Attempting to register cancel shortcut: {}", cancel_binding.current_binding);
+                debug!(
+                    "Attempting to register cancel shortcut: {}",
+                    cancel_binding.current_binding
+                );
                 match register_shortcut(&app_clone, cancel_binding) {
                     Ok(_) => debug!("Successfully registered cancel shortcut"),
                     Err(e) => error!("Failed to register cancel shortcut: {}", e),
                 }
             } else {
-                 warn!("No 'cancel' binding found in settings");
+                warn!("No 'cancel' binding found in settings");
             }
         });
     }
@@ -1035,19 +1049,19 @@ pub fn unregister_cancel_shortcut(app: &AppHandle) {
             // If recording is active or any transcription session is active, we must KEEP the shortcut registered
             let audio_manager = app_clone.state::<Arc<AudioRecordingManager>>();
             let tm = app_clone.state::<Arc<TranscriptionManager>>();
-            
+
             let is_recording = audio_manager.is_recording();
-            // We need a thread-safe way to check if any session is active. 
+            // We need a thread-safe way to check if any session is active.
             // Checking active_session_id is a reasonable proxy for "is transcribing"
             // assuming it's managed correctly.
             let is_transcribing = tm.is_any_session_active();
 
             if is_recording || is_transcribing {
-                 info!(
+                info!(
                      "Skipping unregister_cancel_shortcut: session still active (recording={}, transcribing={})",
                      is_recording, is_transcribing
                  );
-                 return;
+                return;
             }
 
             if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
@@ -1105,10 +1119,19 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                             tracing::debug!("Shortcut: 'cancel' pressed - triggering action.start");
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
-                    } else if binding_id_for_closure == "paste_last_transcript" {
-                        // Paste last transcript is a one-shot action - always trigger on press
+                    } else if matches!(
+                        binding_id_for_closure.as_str(),
+                        "paste_last_transcript"
+                            | "undo_last_transcript"
+                            | "refine_last_transcript"
+                            | "correct_text"
+                    ) {
+                        // One-shot actions always trigger on key press.
                         if event.state == ShortcutState::Pressed {
-                            tracing::debug!("Shortcut: 'paste_last_transcript' pressed - triggering action.start");
+                            tracing::debug!(
+                                "Shortcut: '{}' pressed - triggering one-shot action.start",
+                                binding_id_for_closure
+                            );
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
                     } else if binding_id_for_closure == "transcribe" {
@@ -1236,7 +1259,10 @@ pub fn change_show_tray_icon_setting(app: AppHandle, enabled: bool) -> Result<()
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_show_unload_model_in_tray_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+pub fn change_show_unload_model_in_tray_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.show_unload_model_in_tray = enabled;
     settings::write_settings(&app, settings);

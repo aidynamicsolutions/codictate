@@ -29,6 +29,38 @@ When the user initiates a cancellation:
 
 This ensures the "Cancelling..." feedback is never prematurely clobbered by race conditions.
 
+### Cancellation Foreground Behavior
+
+Cancel actions are designed to be **non-foregrounding**:
+1.  Clicking overlay Cancel must not bring the main app window to front.
+2.  This applies across cancel entry points that route through centralized cancellation.
+3.  On macOS, a short reopen suppression window (2s) blocks accidental app foregrounding during cancel races, then normal reopen behavior resumes.
+
+### Unified Message Lane (Undo Feedback)
+
+Undo feedback and discoverability hints share the same center message lane.
+
+1.  **Single Presentation Model**
+    *   Undo feedback (`Undo applied`, `Nothing to undo`, `Undo expired`) and discoverability use the same lane used by transcribing/processing text.
+
+2.  **Overflow Handling**
+    *   Text stays centered/static when it fits.
+    *   Marquee scrolling activates only when text overflows available width.
+    *   `prefers-reduced-motion` disables marquee animation.
+
+3.  **Operation Priority**
+    *   Operational overlay states (`Recording`, `Transcribing`, `Processing`, `Connecting`, `Cancelling`) always preempt undo feedback/discoverability cards.
+    *   If an undo hint card is visible and recording/transcription starts, the undo card is dismissed immediately and the operation UI is shown.
+    *   Pending undo-card timers are cleared when operation states are shown so they cannot hide the overlay mid-session.
+
+### Hover Hit-Testing Coordinate Space
+
+On Retina displays, hover hit-testing can fail if coordinate spaces are mixed.
+
+1.  `outer_position()` is in **physical pixels**.
+2.  Enigo `location()` and `getBoundingClientRect()` are in **logical points**.
+3.  Overlay hover regions must normalize to one space (logical points) before `contains()` checks.
+
 ### Zero-Latency Optimizations
 
 To ensure the overlay appears **instantly (0ms delay)** when the shortcut is pressed, we implement several critical optimizations:
@@ -57,7 +89,7 @@ This ensures the user has immediate feedback that the system is responsive, whil
 
 ## Platform Implementation
 
-*   **macOS**: Uses `NSPanel` via `tauri-nspanel` for "Status" level floating behavior (appears above full-screen apps).
+*   **macOS**: Uses `NSPanel` via `tauri-nspanel` for "Status" level floating behavior (appears above full-screen apps), configured as a non-activating panel (`no_activate`, `nonactivating_panel`, cannot become key/main) so overlay interaction does not focus the main app window.
 *   **Windows**: Uses Win32 `SetWindowPos` to strictly enforce `HWND_TOPMOST`.
 *   **Linux**: Standard Tauri webview with `always_on_top`.
 

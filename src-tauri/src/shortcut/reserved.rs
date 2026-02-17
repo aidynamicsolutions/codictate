@@ -242,3 +242,20 @@ pub fn check_reserved_shortcut(shortcut: &str) -> Result<(), String> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::check_reserved_shortcut;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn undo_default_binding_is_not_reserved() {
+        assert!(check_reserved_shortcut("control+command+z").is_ok());
+    }
+
+    #[test]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    fn undo_default_binding_is_not_reserved() {
+        assert!(check_reserved_shortcut("ctrl+alt+z").is_ok());
+    }
+}

@@ -171,6 +171,8 @@ src/i18n/
 
 ## Code Style
 
+**Diff hygiene:** Never run formatters or perform formatting-only edits unless the user explicitly asks for formatting.
+
 **Rust:**
 
 - Run `cargo fmt` and `cargo clippy` before committing

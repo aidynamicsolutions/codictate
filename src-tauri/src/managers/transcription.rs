@@ -567,7 +567,7 @@ impl TranscriptionManager {
             translation_note
         );
 
-        let final_result = filtered_result;
+        let final_result = filtered_result.trim().to_string();
 
         if final_result.is_empty() {
             info!("Final transcription result is empty");

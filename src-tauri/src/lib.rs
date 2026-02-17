@@ -15,20 +15,19 @@ mod i18n;
 mod input;
 mod llm_client;
 mod managers;
-mod notification;
 mod menu;
+mod notification;
 mod overlay;
 mod permissions;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod tracing_config;
 mod tray;
 mod tray_i18n;
-mod tracing_config;
+mod undo;
 mod user_profile;
 mod utils;
-use specta_typescript::{BigIntExportBehavior, Typescript};
-use tauri_specta::{collect_commands, Builder};
 use managers::audio::AudioRecordingManager;
 use managers::correction::CorrectionManager;
 use managers::history::HistoryManager;
@@ -40,16 +39,17 @@ use managers::transcription::TranscriptionManager;
 use signal_hook::consts::SIGUSR2;
 #[cfg(unix)]
 use signal_hook::iterator::Signals;
+use specta_typescript::{BigIntExportBehavior, Typescript};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::image::Image;
+use tauri_specta::{collect_commands, Builder};
 
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use crate::settings::get_settings;
-
 
 #[derive(Default)]
 struct ShortcutToggleStates {
@@ -95,7 +95,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
 
     // Initialize the i18n system
     i18n::init(app_handle);
-    
+
     // Initialize the input state (Enigo singleton for keyboard/mouse simulation)
     // This is lazy-initialized - if accessibility permissions are not granted,
     // Enigo will be None until permissions are granted and try_init() is called
@@ -131,15 +131,15 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Initialize CorrectionManager for AI voice correction
     let correction_manager = Arc::new(CorrectionManager::new(app_handle.clone()));
     app_handle.manage(correction_manager);
-    
+
     // Pre-warm Bluetooth microphone if selected
     // (triggers A2DP→HFP switch if needed)
     recording_manager.prewarm_bluetooth_mic();
-    
+
     // Warm up the recorder (loads VAD model) without opening the mic
     // This removes the ~700ms delay on first record
     recording_manager.warmup_recorder();
-    
+
     // Start background loading of the transcription model
     // This removes the ~1.5s delay on first transcription
     transcription_manager.initiate_model_load();
@@ -261,7 +261,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         // Disable autostart if user has opted out
         let _ = autostart_manager.disable();
     }
-    
+
     // Listen for "overlay-ready" event from the frontend
     // This signals that the React component has registered its event listeners
     // and is ready to receive show-overlay/hide-overlay events
@@ -287,14 +287,12 @@ fn trigger_update_check(app: AppHandle) -> Result<(), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-
     // On Apple Silicon macOS, include MLX commands
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     let specta_builder = Builder::<tauri::Wry>::new().commands(collect_commands![
         shortcut::change_binding,
         shortcut::reset_binding,
         shortcut::reset_bindings,
-
         shortcut::change_audio_feedback_setting,
         shortcut::change_audio_feedback_volume_setting,
         shortcut::change_sound_theme_setting,
@@ -304,7 +302,6 @@ pub fn run() {
         shortcut::change_selected_language_setting,
         shortcut::change_overlay_position_setting,
         shortcut::change_debug_mode_setting,
-
         shortcut::change_word_correction_threshold_setting,
         shortcut::change_paste_method_setting,
         shortcut::get_available_typing_tools,
@@ -333,7 +330,6 @@ pub fn run() {
         shortcut::change_update_checks_setting,
         shortcut::change_show_tray_icon_setting,
         shortcut::change_show_unload_model_in_tray_setting,
-
         user_profile::get_user_profile_command,
         user_profile::update_user_profile_setting,
         trigger_update_check,
@@ -415,6 +411,10 @@ pub fn run() {
         commands::menu::set_update_menu_text,
         commands::correction::accept_correction,
         commands::correction::dismiss_correction,
+        undo::undo_overlay_card_dismissed,
+        undo::undo_overlay_card_presented,
+        undo::undo_mark_discoverability_hint_seen,
+        overlay::overlay_update_interaction_regions,
     ]);
 
     // On other platforms, exclude MLX commands
@@ -423,7 +423,6 @@ pub fn run() {
         shortcut::change_binding,
         shortcut::reset_binding,
         shortcut::reset_bindings,
-
         shortcut::change_audio_feedback_setting,
         shortcut::change_audio_feedback_volume_setting,
         shortcut::change_sound_theme_setting,
@@ -433,7 +432,6 @@ pub fn run() {
         shortcut::change_selected_language_setting,
         shortcut::change_overlay_position_setting,
         shortcut::change_debug_mode_setting,
-
         shortcut::change_word_correction_threshold_setting,
         shortcut::change_paste_method_setting,
         shortcut::change_clipboard_handling_setting,
@@ -525,6 +523,10 @@ pub fn run() {
         commands::menu::set_update_menu_text,
         commands::correction::accept_correction,
         commands::correction::dismiss_correction,
+        undo::undo_overlay_card_dismissed,
+        undo::undo_overlay_card_presented,
+        undo::undo_mark_discoverability_hint_seen,
+        overlay::overlay_update_interaction_regions,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -563,17 +565,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(ShortcutToggleStates::default()))
         .manage(Mutex::new(false) as OnboardingPasteOverride)
+        .manage(undo::UndoManager::default())
         .setup(move |app| {
             // Initialize tracing with log directory
-            let log_dir = app.path().app_log_dir()
+            let log_dir = app
+                .path()
+                .app_log_dir()
                 .expect("Failed to get app log directory");
-            
+
             // Create log directory if it doesn't exist
             std::fs::create_dir_all(&log_dir).ok();
-            
-            tracing_config::init_tracing(&log_dir)
-                .expect("Failed to initialize tracing");
-            
+
+            tracing_config::init_tracing(&log_dir).expect("Failed to initialize tracing");
+
             let settings = get_settings(app.handle());
             // Set file log level from settings
             let file_log_level = match settings.log_level {
@@ -584,17 +588,15 @@ pub fn run() {
                 settings::LogLevel::Trace => tracing::Level::TRACE,
             };
             tracing_config::set_file_log_level(file_log_level);
-            
+
             let app_handle = app.handle().clone();
 
             initialize_core_logic(&app_handle);
-            
+
             #[cfg(target_os = "macos")]
             if let Err(e) = menu::init(&app_handle) {
                 tracing::error!("Failed to initialize app menu: {}", e);
             }
-
-
 
             Ok(())
         })
@@ -623,6 +625,11 @@ pub fn run() {
                 // Update tray icon to match new theme, maintaining idle state
                 utils::change_tray_icon(window.app_handle(), utils::TrayIconState::Idle);
             }
+            tauri::WindowEvent::Focused(focused) => {
+                if *focused && window.label() == "main" {
+                    undo::flush_pending_linux_toast(&window.app_handle());
+                }
+            }
             _ => {}
         })
         .invoke_handler(specta_builder.invoke_handler())
@@ -636,8 +643,28 @@ pub fn run() {
                     ..
                 } => {
                     if !has_visible_windows {
-                        tracing::info!("App reopen requested with no visible windows, showing main window");
-                        show_main_window(app);
+                        let remaining_ms = utils::cancel_reopen_suppression_remaining_ms();
+                        let cancel_suppressed = utils::is_cancel_reopen_suppressed();
+                        if overlay::is_overlay_active() {
+                            tracing::info!(
+                                event_code = "reopen_foreground_suppressed",
+                                reason = "overlay_active",
+                                remaining_ms,
+                                "App reopen requested with no visible windows while overlay is active, skipping main window show"
+                            );
+                        } else if cancel_suppressed {
+                            tracing::info!(
+                                event_code = "reopen_foreground_suppressed",
+                                reason = "cancel_suppression",
+                                remaining_ms,
+                                "App reopen requested with no visible windows during cancel suppression window, skipping main window show"
+                            );
+                        } else {
+                            tracing::info!(
+                                "App reopen requested with no visible windows, showing main window"
+                            );
+                            show_main_window(app);
+                        }
                     }
                 }
                 // Handle app exit to properly shutdown sidecar processes

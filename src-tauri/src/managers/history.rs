@@ -79,6 +79,15 @@ pub struct HomeStats {
     pub filler_filter_active: bool,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct StatsContribution {
+    pub word_count: i64,
+    pub effective_duration_ms: i64,
+    pub filler_words_removed: i64,
+    pub date_added_to_streak_list: bool,
+    pub date_key: String,
+}
+
 pub struct HistoryManager {
     app_handle: AppHandle,
     recordings_dir: PathBuf,
@@ -240,7 +249,7 @@ impl HistoryManager {
         post_process_prompt: Option<String>,
         duration_ms: i64,
         filler_words_removed: i64,
-    ) -> Result<()> {
+    ) -> Result<StatsContribution> {
         let timestamp = Utc::now().timestamp();
         let file_name = format!("codictate-{}.wav", timestamp);
         let title = self.format_timestamp_title(timestamp);
@@ -250,7 +259,7 @@ impl HistoryManager {
         save_wav_file(file_path, &audio_samples).await?;
 
         // Save to database
-        self.save_to_database(
+        let contribution = self.save_to_database(
             file_name,
             timestamp,
             title,
@@ -272,7 +281,7 @@ impl HistoryManager {
             debug!("Successfully emitted history-updated event");
         }
 
-        Ok(())
+        Ok(contribution)
     }
 
     fn save_to_database(
@@ -285,7 +294,7 @@ impl HistoryManager {
         post_process_prompt: Option<String>,
         duration_ms: i64,
         filler_words_removed: i64,
-    ) -> Result<()> {
+    ) -> Result<StatsContribution> {
         let mut conn = self.get_connection()?;
         let tx = conn.transaction()?;
 
@@ -320,8 +329,10 @@ impl HistoryManager {
         ).unwrap_or_else(|_| "[]".to_string());
 
         let mut dates: Vec<String> = serde_json::from_str(&current_dates_json).unwrap_or_default();
+        let mut date_added_to_streak_list = false;
         if !dates.contains(&today_str) {
             dates.push(today_str);
+            date_added_to_streak_list = true;
         }
         let new_dates_json = serde_json::to_string(&dates).unwrap_or_else(|_| "[]".to_string());
 
@@ -353,6 +364,83 @@ impl HistoryManager {
         tx.commit()?;
 
         debug!("Saved transcription to database and updated stats (filler_words_removed: {})", filler_words_removed);
+        Ok(StatsContribution {
+            word_count,
+            effective_duration_ms,
+            filler_words_removed,
+            date_added_to_streak_list,
+            date_key: if let Some(dt) = DateTime::from_timestamp(timestamp, 0) {
+                dt.with_timezone(&Local).format("%Y-%m-%d").to_string()
+            } else {
+                "1970-01-01".to_string()
+            },
+        })
+    }
+
+    pub fn rollback_stats_contribution(&self, contribution: &StatsContribution) -> Result<()> {
+        let mut conn = self.get_connection()?;
+        Self::rollback_stats_contribution_with_conn(&mut conn, contribution)?;
+
+        if let Err(e) = self.app_handle.emit("history-updated", ()) {
+            error!("Failed to emit history-updated event after rollback: {}", e);
+        }
+
+        Ok(())
+    }
+
+    fn rollback_stats_contribution_with_conn(
+        conn: &mut Connection,
+        contribution: &StatsContribution,
+    ) -> Result<()> {
+        let tx = conn.transaction()?;
+
+        let (total_words, total_duration_ms, total_transcriptions, transcription_dates_json, total_filler_words_removed): (i64, i64, i64, String, i64) = tx.query_row(
+            "SELECT total_words, total_duration_ms, total_transcriptions, transcription_dates, COALESCE(total_filler_words_removed, 0) FROM user_stats WHERE id = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get(0).unwrap_or(0),
+                    row.get(1).unwrap_or(0),
+                    row.get(2).unwrap_or(0),
+                    row.get(3).unwrap_or_else(|_| "[]".to_string()),
+                    row.get(4).unwrap_or(0),
+                ))
+            },
+        )?;
+
+        let mut dates: Vec<String> = serde_json::from_str(&transcription_dates_json).unwrap_or_default();
+        if contribution.date_added_to_streak_list {
+            dates.retain(|date| date != &contribution.date_key);
+        }
+        let new_dates_json = serde_json::to_string(&dates).unwrap_or_else(|_| "[]".to_string());
+
+        let next_total_words = total_words.saturating_sub(contribution.word_count).max(0);
+        let next_total_duration_ms = total_duration_ms
+            .saturating_sub(contribution.effective_duration_ms)
+            .max(0);
+        let next_total_transcriptions = total_transcriptions.saturating_sub(1).max(0);
+        let next_total_filler_words_removed = total_filler_words_removed
+            .saturating_sub(contribution.filler_words_removed)
+            .max(0);
+
+        tx.execute(
+            "UPDATE user_stats SET
+                total_words = ?1,
+                total_duration_ms = ?2,
+                total_transcriptions = ?3,
+                transcription_dates = ?4,
+                total_filler_words_removed = ?5
+             WHERE id = 1",
+            params![
+                next_total_words,
+                next_total_duration_ms,
+                next_total_transcriptions,
+                new_dates_json,
+                next_total_filler_words_removed
+            ],
+        )?;
+
+        tx.commit()?;
         Ok(())
     }
 
@@ -916,7 +1004,25 @@ mod tests {
                 post_processed_text TEXT,
                 post_process_prompt TEXT,
                 duration_ms INTEGER DEFAULT 0
-            );",
+            );
+            CREATE TABLE user_stats (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                total_words INTEGER DEFAULT 0,
+                total_duration_ms INTEGER DEFAULT 0,
+                total_transcriptions INTEGER DEFAULT 0,
+                first_transcription_date INTEGER,
+                last_transcription_date INTEGER,
+                transcription_dates TEXT DEFAULT '[]',
+                total_filler_words_removed INTEGER DEFAULT 0
+            );
+            INSERT INTO user_stats (
+                id,
+                total_words,
+                total_duration_ms,
+                total_transcriptions,
+                transcription_dates,
+                total_filler_words_removed
+            ) VALUES (1, 0, 0, 0, '[]', 0);",
         )
         .expect("create transcription_history table");
         conn
@@ -962,5 +1068,106 @@ mod tests {
         assert_eq!(entry.timestamp, 200);
         assert_eq!(entry.transcription_text, "second");
         assert_eq!(entry.post_processed_text.as_deref(), Some("processed"));
+    }
+
+    fn read_stats(conn: &Connection) -> (i64, i64, i64, String, i64) {
+        conn.query_row(
+            "SELECT total_words, total_duration_ms, total_transcriptions, transcription_dates, total_filler_words_removed FROM user_stats WHERE id = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get(0).unwrap_or(0),
+                    row.get(1).unwrap_or(0),
+                    row.get(2).unwrap_or(0),
+                    row.get(3).unwrap_or_else(|_| "[]".to_string()),
+                    row.get(4).unwrap_or(0),
+                ))
+            },
+        )
+        .expect("read stats row")
+    }
+
+    #[test]
+    fn rollback_stats_contribution_reverses_stats_and_removes_date_when_added() {
+        let mut conn = setup_conn();
+        conn.execute(
+            "UPDATE user_stats SET total_words = 120, total_duration_ms = 6000, total_transcriptions = 3, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 9 WHERE id = 1",
+            [],
+        )
+        .expect("seed stats");
+
+        let contribution = StatsContribution {
+            word_count: 40,
+            effective_duration_ms: 2000,
+            filler_words_removed: 3,
+            date_added_to_streak_list: true,
+            date_key: "2026-02-15".to_string(),
+        };
+
+        HistoryManager::rollback_stats_contribution_with_conn(&mut conn, &contribution)
+            .expect("rollback stats");
+
+        let (words, duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
+        assert_eq!(words, 80);
+        assert_eq!(duration, 4000);
+        assert_eq!(total_transcriptions, 2);
+        assert_eq!(dates_json, "[]");
+        assert_eq!(filler_removed, 6);
+    }
+
+    #[test]
+    fn rollback_stats_contribution_keeps_date_when_not_added_by_contribution() {
+        let mut conn = setup_conn();
+        conn.execute(
+            "UPDATE user_stats SET total_words = 80, total_duration_ms = 3200, total_transcriptions = 2, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 4 WHERE id = 1",
+            [],
+        )
+        .expect("seed stats");
+
+        let contribution = StatsContribution {
+            word_count: 20,
+            effective_duration_ms: 1200,
+            filler_words_removed: 1,
+            date_added_to_streak_list: false,
+            date_key: "2026-02-15".to_string(),
+        };
+
+        HistoryManager::rollback_stats_contribution_with_conn(&mut conn, &contribution)
+            .expect("rollback stats");
+
+        let (words, duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
+        assert_eq!(words, 60);
+        assert_eq!(duration, 2000);
+        assert_eq!(total_transcriptions, 1);
+        assert_eq!(dates_json, "[\"2026-02-15\"]");
+        assert_eq!(filler_removed, 3);
+    }
+
+    #[test]
+    fn rollback_stats_contribution_clamps_values_to_zero() {
+        let mut conn = setup_conn();
+        conn.execute(
+            "UPDATE user_stats SET total_words = 5, total_duration_ms = 100, total_transcriptions = 0, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 1 WHERE id = 1",
+            [],
+        )
+        .expect("seed stats");
+
+        let contribution = StatsContribution {
+            word_count: 50,
+            effective_duration_ms: 5000,
+            filler_words_removed: 9,
+            date_added_to_streak_list: true,
+            date_key: "2026-02-15".to_string(),
+        };
+
+        HistoryManager::rollback_stats_contribution_with_conn(&mut conn, &contribution)
+            .expect("rollback stats");
+
+        let (words, duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
+        assert_eq!(words, 0);
+        assert_eq!(duration, 0);
+        assert_eq!(total_transcriptions, 0);
+        assert_eq!(dates_json, "[]");
+        assert_eq!(filler_removed, 0);
     }
 }

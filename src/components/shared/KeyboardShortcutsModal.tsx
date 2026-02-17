@@ -30,7 +30,7 @@ const MAC_KEY_SYMBOLS: Record<string, string> = {
  * Helper to get the display symbol and text for a key
  */
 export const getKeyDisplay = (
-  keyName: string
+  keyName: string,
 ): { symbol: string | null; text: string } => {
   const normalizedKey = keyName.toLowerCase().trim();
   const symbol = MAC_KEY_SYMBOLS[normalizedKey] || null;
@@ -98,7 +98,14 @@ export const ShortcutCard: React.FC<ShortcutCardProps> = ({
   const [showSuccess, setShowSuccess] = React.useState(false);
 
   // Use the shared shortcut recorder hook
-  const { isRecording, displayKeys, startRecording, error, warning, clearError } = useShortcutRecorder({
+  const {
+    isRecording,
+    displayKeys,
+    startRecording,
+    error,
+    warning,
+    clearError,
+  } = useShortcutRecorder({
     onSave: async (shortcut) => {
       await updateBinding(shortcutId, shortcut);
       setShowSuccess(true);
@@ -107,15 +114,19 @@ export const ShortcutCard: React.FC<ShortcutCardProps> = ({
     },
     onCancel: () => {
       // Resume the suspended binding on cancel
-      commands.resumeBinding(shortcutId).catch((err) =>
-        logError(`Failed to resume binding: ${err}`, "fe-shortcuts")
-      );
+      commands
+        .resumeBinding(shortcutId)
+        .catch((err) =>
+          logError(`Failed to resume binding: ${err}`, "fe-shortcuts"),
+        );
     },
     onRecordingStart: () => {
       // Suspend the binding while recording to avoid triggering transcription
-      commands.suspendBinding(shortcutId).catch((err) =>
-        logError(`Failed to suspend binding: ${err}`, "fe-shortcuts")
-      );
+      commands
+        .suspendBinding(shortcutId)
+        .catch((err) =>
+          logError(`Failed to suspend binding: ${err}`, "fe-shortcuts"),
+        );
     },
     onRecordingEnd: () => {
       // Note: We do NOT call resumeBinding() here because change_binding()
@@ -158,7 +169,10 @@ export const ShortcutCard: React.FC<ShortcutCardProps> = ({
                   ))
                 ) : (
                   <span className="text-sm text-muted-foreground">
-                    {t("onboarding.hotkeySetup.modal.pressKeys", "Press keys...")}
+                    {t(
+                      "onboarding.hotkeySetup.modal.pressKeys",
+                      "Press keys...",
+                    )}
                   </span>
                 )}
               </div>
@@ -182,10 +196,14 @@ export const ShortcutCard: React.FC<ShortcutCardProps> = ({
         {/* Fixed height container for error/warning messages - sized for 3 lines to prevent card resizing */}
         <div className="h-4 max-w-[280px] mt-1 mb-1 flex items-start justify-end">
           {error && (
-            <span className="text-xs text-destructive select-none leading-tight text-right">{error}</span>
+            <span className="text-xs text-destructive select-none leading-tight text-right">
+              {error}
+            </span>
           )}
           {warning && !error && (
-            <span className="text-xs text-yellow-600 dark:text-yellow-500 select-none leading-tight text-right">{warning}</span>
+            <span className="text-xs text-yellow-600 dark:text-yellow-500 select-none leading-tight text-right">
+              {warning}
+            </span>
           )}
         </div>
       </div>
@@ -222,7 +240,14 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
     try {
       // Use atomic reset that bypasses duplicate checking between the bindings
       // This handles any combination of conflicts (e.g., one set to the other's default)
-      await resetBindings(["transcribe", "transcribe_handsfree", "paste_last_transcript", "refine_last_transcript", "correct_text"]);
+      await resetBindings([
+        "transcribe",
+        "transcribe_handsfree",
+        "paste_last_transcript",
+        "undo_last_transcript",
+        "refine_last_transcript",
+        "correct_text",
+      ]);
     } catch (error) {
       logError(`Failed to reset bindings: ${error}`, "fe-shortcuts");
     }
@@ -232,9 +257,7 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[85vh] overflow-y-auto select-none cursor-default border-border/60 shadow-2xl dark:border-border dark:shadow-black/50 dark:bg-card">
         <DialogHeader className="mb-4">
-          <DialogTitle>
-            {t("onboarding.hotkeySetup.modal.title")}
-          </DialogTitle>
+          <DialogTitle>{t("onboarding.hotkeySetup.modal.title")}</DialogTitle>
           <DialogDescription>
             {t("onboarding.hotkeySetup.modal.subtitle", {
               appName: t("appName"),
@@ -248,31 +271,59 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
             key={`transcribe-${resetKey}`}
             shortcutId="transcribe"
             title={t("settings.general.shortcut.bindings.transcribe.name")}
-            description={t("settings.general.shortcut.bindings.transcribe.description")}
+            description={t(
+              "settings.general.shortcut.bindings.transcribe.description",
+            )}
           />
 
           {/* Hands-free mode shortcut */}
           <ShortcutCard
             key={`transcribe_handsfree-${resetKey}`}
             shortcutId="transcribe_handsfree"
-            title={t("settings.general.shortcut.bindings.transcribe_handsfree.name")}
-            description={t("settings.general.shortcut.bindings.transcribe_handsfree.description")}
+            title={t(
+              "settings.general.shortcut.bindings.transcribe_handsfree.name",
+            )}
+            description={t(
+              "settings.general.shortcut.bindings.transcribe_handsfree.description",
+            )}
           />
 
           {/* Paste last transcript shortcut */}
           <ShortcutCard
             key={`paste_last_transcript-${resetKey}`}
             shortcutId="paste_last_transcript"
-            title={t("settings.general.shortcut.bindings.paste_last_transcript.name")}
-            description={t("settings.general.shortcut.bindings.paste_last_transcript.description")}
+            title={t(
+              "settings.general.shortcut.bindings.paste_last_transcript.name",
+            )}
+            description={t(
+              "settings.general.shortcut.bindings.paste_last_transcript.description",
+            )}
+          />
+
+          {/* Undo last transcript shortcut */}
+          <ShortcutCard
+            key={`undo_last_transcript-${resetKey}`}
+            shortcutId="undo_last_transcript"
+            title={t(
+              "settings.general.shortcut.bindings.undo_last_transcript.name",
+              "Undo last transcript",
+            )}
+            description={t(
+              "settings.general.shortcut.bindings.undo_last_transcript.description",
+              "Undo the most recent transcript paste from Codictate",
+            )}
           />
 
           {/* Refine last transcript shortcut */}
           <ShortcutCard
             key={`refine_last_transcript-${resetKey}`}
             shortcutId="refine_last_transcript"
-            title={t("settings.general.shortcut.bindings.refine_last_transcript.name")}
-            description={t("settings.general.shortcut.bindings.refine_last_transcript.description")}
+            title={t(
+              "settings.general.shortcut.bindings.refine_last_transcript.name",
+            )}
+            description={t(
+              "settings.general.shortcut.bindings.refine_last_transcript.description",
+            )}
           />
 
           {/* AI Correct Text shortcut */}
@@ -280,7 +331,9 @@ export const KeyboardShortcutsModal: React.FC<KeyboardShortcutsModalProps> = ({
             key={`correct_text-${resetKey}`}
             shortcutId="correct_text"
             title={t("settings.general.shortcut.bindings.correct_text.name")}
-            description={t("settings.general.shortcut.bindings.correct_text.description")}
+            description={t(
+              "settings.general.shortcut.bindings.correct_text.description",
+            )}
           />
 
           {/* Divider */}

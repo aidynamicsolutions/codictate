@@ -107,6 +107,22 @@ Output location: `src-tauri/target/release/bundle/`
 
 ---
 
+## Backup Compatibility
+
+Before each release, verify that changes do not break existing user backups:
+
+- [ ] Backup format version has been bumped if archive structure changed
+- [ ] Migration pipeline handles previous backup format versions correctly
+- [ ] Settings backup inclusion/exclusion lists updated for any new/removed `AppSettings` fields
+- [ ] History payload schema changes have corresponding migration in the restore pipeline
+- [ ] Dictionary payload schema changes have corresponding migration in the restore pipeline
+- [ ] Test: restore a backup created with the previous release on the new build
+- [ ] Test: round-trip backup (export + restore) produces identical data
+
+See [backup-restore.md](backup-restore.md) for full feature documentation, ADR, and error catalog.
+
+---
+
 ## Files Reference
 
 | Purpose | File |
@@ -116,3 +132,4 @@ Output location: `src-tauri/target/release/bundle/`
 | Bundle ID | `tauri.conf.json` → `identifier` |
 | macOS Signing | `tauri.conf.json` → `bundle.macOS` |
 | Auto-Updater | `tauri.conf.json` → `plugins.updater` |
+| Backup Format | `doc/backup-restore.md` |

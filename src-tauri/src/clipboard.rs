@@ -566,17 +566,30 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
     auto_submit && paste_method != PasteMethod::None
 }
 
-pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
+#[derive(Debug, Clone)]
+pub struct PasteResult {
+    pub pasted_text: String,
+    pub did_paste: bool,
+}
+
+pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String> {
+    if text.trim().is_empty() {
+        info!("Skipping paste because text is empty after trimming");
+        return Ok(PasteResult {
+            pasted_text: text,
+            did_paste: false,
+        });
+    }
+
     let settings = get_settings(&app_handle);
 
-    
     // Check if onboarding paste override is enabled
     // This works around WebView not receiving CGEvent-simulated Cmd+V keystrokes
     let onboarding_override = app_handle
         .try_state::<crate::OnboardingPasteOverride>()
         .and_then(|state| state.lock().ok().map(|v| *v))
         .unwrap_or(false);
-    
+
     // Use Direct paste method if onboarding override is enabled
     let paste_method = if onboarding_override {
         info!("Using Direct paste method (onboarding override)");
@@ -604,25 +617,26 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let enigo_state = app_handle
         .try_state::<EnigoState>()
         .ok_or("Enigo state not initialized")?;
-    
+
     // Try to initialize Enigo if not already available (permissions may have been granted)
     if !enigo_state.is_available() {
         enigo_state.try_init();
     }
-    
+
     let mut guard = enigo_state
         .0
         .lock()
         .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
-    
+
     let enigo = guard.as_mut().ok_or(
         "Accessibility permissions not granted. Please enable accessibility access in System Settings > Privacy & Security > Accessibility."
     )?;
 
     // Perform the paste operation
-    match paste_method {
+    let did_paste = match paste_method {
         PasteMethod::None => {
             info!("PasteMethod::None selected - skipping paste action");
+            false
         }
         PasteMethod::Direct => {
             paste_direct(
@@ -631,6 +645,7 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
                 #[cfg(target_os = "linux")]
                 settings.typing_tool,
             )?;
+            true
         }
         PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert => {
             paste_via_clipboard(
@@ -640,9 +655,10 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
                 &paste_method,
                 paste_delay_ms,
                 paste_restore_delay_ms,
-            )?
+            )?;
+            true
         }
-    }
+    };
 
     if should_send_auto_submit(settings.auto_submit, paste_method) {
         std::thread::sleep(Duration::from_millis(50));
@@ -657,7 +673,10 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
             .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
     }
 
-    Ok(())
+    Ok(PasteResult {
+        pasted_text: text,
+        did_paste,
+    })
 }
 
 #[cfg(test)]
