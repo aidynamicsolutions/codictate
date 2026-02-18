@@ -144,10 +144,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // This removes the ~1.5s delay on first transcription
     transcription_manager.initiate_model_load();
 
-    // Note: Shortcuts are NOT initialized here.
-    // The frontend is responsible for calling the `initialize_shortcuts` command
-    // after permissions are confirmed (on macOS) or after onboarding completes.
-    // This matches the pattern used for Enigo initialization.
+    // Bootstrap global shortcuts during backend startup so hidden/background
+    // launches can use one-shot actions (e.g. undo_last_transcript) without
+    // waiting for the main UI to mount.
+    //
+    // On macOS this may defer if accessibility permission is not yet granted;
+    // frontend recovery paths retry initialization after permission transitions.
+    let _ = commands::initialize_shortcuts_with_source(app_handle, "backend_startup");
 
     // Initialize Fn key monitor on macOS for transcription via Fn key
     #[cfg(target_os = "macos")]

@@ -81,6 +81,11 @@ Requests macOS accessibility and microphone permissions.
 - `checkAccessibilityPermission()` / `requestAccessibilityPermission()`
 - `checkMicrophonePermission()` / `requestMicrophonePermission()`
 
+**Shortcut initialization ownership**:
+- Onboarding permissions no longer carry sole responsibility for global shortcut registration.
+- Backend startup now performs shortcut bootstrap before main UI mount.
+- Frontend still provides recovery retry when accessibility permission is granted later.
+
 **System Settings URLs** (opened via `@tauri-apps/plugin-opener`):
 - Accessibility: `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`
 - Microphone: `x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone`

@@ -53,7 +53,7 @@ This document describes macOS permission handling in Codictate.
 | `tray.rs` | Tray icon state management (Idle, Recording, Transcribing) |
 | `input.rs` | Enigo initialization (lazy if no accessibility permission) |
 | `PermissionBanner.tsx` | Generic component: modal + banner + focus re-check + event listener |
-| `AccessibilityPermissions.tsx` | Wrapper using PermissionBanner, restarts Fn monitor on grant |
+| `AccessibilityPermissions.tsx` | Wrapper using PermissionBanner, retries Enigo + shortcut init + Fn monitor on grant |
 | `MicrophonePermissions.tsx` | Wrapper using PermissionBanner, waits for accessibility first |
 | `PermissionModal.tsx` | Unified modal dialog for permission requests |
 
@@ -66,6 +66,11 @@ App Launch
     │   └─► check_accessibility_permission()
     │       ├─► GRANTED: Initialize Enigo immediately
     │       └─► NOT GRANTED: Skip (no system dialog triggered)
+    │
+    ├─► shortcut bootstrap: initialize_shortcuts_with_source("backend_startup")
+    │   └─► check_accessibility_permission()
+    │       ├─► GRANTED: Register global shortcuts immediately
+    │       └─► NOT GRANTED: Defer init (retry later via frontend recovery)
     │
     ├─► fn_key_monitor.rs: start_fn_key_monitor()
     │   └─► check_accessibility_permission()
@@ -151,7 +156,7 @@ App Launch
 - **Avoid system dialog**: Don't call `prompt_accessibility_permission()` or `Enigo::new()` without checking permission first
 - **Graceful error handling**: Use `match` not `expect()` in tray icon code to avoid panics
 - **Focus-based re-check**: Use window focus event to detect permission grant (user returns from Settings)
-- **Restart Fn monitor on grant**: Call `startFnKeyMonitor(true)` when permission transitions from denied to granted
+- **Permission-grant recovery path**: On accessibility grant, retry `initializeEnigo()`, `initializeShortcuts()`, and `startFnKeyMonitor(true)`
 - **DRY with PermissionBanner**: Shared component handles modal, banner, event, and focus for both permission types
 - **Accessibility-first priority**: Microphone UI only renders when accessibility is already granted
 - **No hotkey focus theft**: Permission failures from transcription hotkeys notify the user without bringing the app window to front

@@ -18,6 +18,12 @@ Fast loop:
 
 You can customize this in Keyboard Shortcuts settings.
 
+## Availability At Startup
+
+- Shortcut registration is bootstrapped from backend startup, so undo is available even if the main UI has not mounted yet (for example `start_hidden=true` sessions).
+- On macOS, if accessibility permission is missing at startup, initialization is deferred and retried when permission is granted.
+- Opening the Keyboard Shortcuts modal is not required for undo registration.
+
 ## Strict Tracking Rules
 
 Undo operates on a single in-memory tracked paste slot.

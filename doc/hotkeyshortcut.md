@@ -256,33 +256,36 @@ The overlay window is created at startup and kept `visible` but transparent (`op
 
 ### Shortcut Initialization at Startup
 
-Shortcuts must be initialized after accessibility permissions are granted:
+Shortcut initialization is backend-first and idempotent:
 
-- **During onboarding**: `initializeShortcuts()` is called in `AccessibilityOnboarding.tsx`
-- **On normal app restart**: `checkOnboardingStatus()` in `App.tsx` calls `initializeShortcuts()` when `onboarding_completed` is true
+- **Backend startup bootstrap**: `initialize_core_logic()` in `lib.rs` calls `initialize_shortcuts_with_source(..., "backend_startup")` immediately.
+- **Frontend fallback (normal restart)**: `checkOnboardingStatus()` in `App.tsx` still calls `initializeShortcuts()` when `onboarding_completed` is true.
+- **Frontend recovery (permission grant)**: `AccessibilityPermissions.tsx` retries `initializeEnigo()`, `initializeShortcuts()`, and `startFnKeyMonitor(true)` when accessibility permission transitions from denied to granted.
 
-> **Critical**: The `checkOnboardingStatus()` function MUST be called on mount via useEffect. Without this, shortcuts won't register and new bindings won't migrate.
+On macOS, startup bootstrap may defer if accessibility permission is missing. Deferred init is expected and retries are automatic via the frontend recovery paths above.
 
 ### Binding Migration (Adding New Shortcuts)
 
 When adding a new shortcut binding to `get_default_settings()`, the migration in `load_or_create_app_settings()` automatically adds missing bindings to existing users:
 
 ```
-App Start → checkOnboardingStatus() → initializeShortcuts() → load_or_create_app_settings()
-                                                                        ↓
-                                                   For each default binding not in stored settings:
-                                                   1. Log "Adding missing binding: {id}"
-                                                   2. Insert into settings.bindings
-                                                   3. store.set() + store.save()
+App Start → backend shortcut bootstrap → load_or_create_app_settings()
+                                       ↓
+                  For each default binding not in stored settings:
+                  1. Log "Adding missing binding: {id}"
+                  2. Insert into settings.bindings
+                  3. store.set() + store.save()
 ```
 
 **Key Files**:
 - [settings.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/settings.rs): Migration logic in `load_or_create_app_settings()` (lines 754-790)
-- [App.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/App.tsx): `checkOnboardingStatus()` must be called on mount
+- [lib.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/lib.rs): Startup bootstrap via `initialize_shortcuts_with_source(..., "backend_startup")`
+- [App.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/App.tsx): Fallback initialization for onboarding-complete sessions
+- [AccessibilityPermissions.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/AccessibilityPermissions.tsx): Permission-grant recovery retry path
 
 **Debugging Migration Issues**:
-1. Check logs for "Adding missing binding" or "Shortcuts initialized successfully"
-2. If missing, verify `checkOnboardingStatus()` is called (look for `[init_shortcuts]` log entries)
+1. Check logs for `shortcut_init_attempt` / `shortcut_init_success` / `shortcut_init_deferred` / `shortcut_init_failure`
+2. If deferred, confirm accessibility permission status and permission-grant recovery path logs
 3. Check `settings_store.json` to confirm bindings are persisted
 
 
@@ -448,4 +451,3 @@ This architecture ensures that **standard shortcuts** (e.g., `Option+Space`) are
 -   **Standard Shortcuts**: Managed by the OS global shortcut system. They **never** fail even if the Fn monitor is restarting.
 -   **Fn Shortcuts**: Managed by the `fn_key_monitor`. If they timeout, they auto-recover after 1 second.
 -   **Mixed Usage**: A user with `Option+Space` (PTT) and `Fn+Space` (Hands-Free) has the most robust setup. If the Fn monitor hits a snag, PTT remains fully functional while Hands-Free briefly recovers.
-

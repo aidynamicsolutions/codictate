@@ -214,14 +214,7 @@ function App() {
       if (profileResult.status === "ok") {
         const userProfile = profileResult.data;
         if (userProfile.onboarding_completed) {
-          // Initialize shortcuts when onboarding is already complete
-          // (During onboarding, this is called from PermissionsStep.tsx)
-          Promise.all([
-            commands.initializeEnigo(),
-            commands.initializeShortcuts(),
-          ]).catch((e) => {
-            logError(`Failed to initialize: ${e}`, "App");
-          });
+          void initializeInputAndShortcuts("onboarding_completed_check");
 
           // Refresh devices
           useSettingsStore.getState().refreshAudioDevices();
@@ -239,7 +232,42 @@ function App() {
     }
   };
 
+  const initializeInputAndShortcuts = async (source: string) => {
+    logInfo(`event=shortcut_init_attempt source=${source} channel=frontend`, "App");
+
+    try {
+      const [enigoResult, shortcutsResult] = await Promise.all([
+        commands.initializeEnigo(),
+        commands.initializeShortcuts(),
+      ]);
+
+      if (enigoResult.status === "error") {
+        logError(
+          `event=shortcut_init_failure source=${source} component=enigo error=${enigoResult.error}`,
+          "App",
+        );
+      }
+
+      if (shortcutsResult.status === "error") {
+        logError(
+          `event=shortcut_init_failure source=${source} component=shortcuts error=${shortcutsResult.error}`,
+          "App",
+        );
+      }
+
+      if (enigoResult.status === "ok" && shortcutsResult.status === "ok") {
+        logInfo(
+          `event=shortcut_init_success source=${source} channel=frontend`,
+          "App",
+        );
+      }
+    } catch (error) {
+      logError(`event=shortcut_init_failure source=${source} error=${error}`, "App");
+    }
+  };
+
   const handleOnboardingComplete = () => {
+    void initializeInputAndShortcuts("onboarding_completion_transition");
     // Transition to main app - onboarding is complete
     setShowOnboarding(false);
   };

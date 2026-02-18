@@ -223,24 +223,183 @@ pub fn initialize_enigo(app: AppHandle) -> Result<(), String> {
 /// Marker state to track if shortcuts have been initialized.
 pub struct ShortcutsInitialized;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShortcutInitGate {
+    AlreadyInitialized,
+    DeferredMissingAccessibility,
+    Proceed,
+}
+
+fn evaluate_shortcut_init_gate(
+    already_initialized: bool,
+    accessibility_required: bool,
+    accessibility_granted: bool,
+) -> ShortcutInitGate {
+    if already_initialized {
+        return ShortcutInitGate::AlreadyInitialized;
+    }
+
+    if accessibility_required && !accessibility_granted {
+        return ShortcutInitGate::DeferredMissingAccessibility;
+    }
+
+    ShortcutInitGate::Proceed
+}
+
+fn should_mark_shortcuts_initialized(gate: ShortcutInitGate, failed_count: usize) -> bool {
+    matches!(gate, ShortcutInitGate::Proceed) && failed_count == 0
+}
+
+pub(crate) fn initialize_shortcuts_with_source(
+    app: &AppHandle,
+    source: &str,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let accessibility_required = true;
+    #[cfg(not(target_os = "macos"))]
+    let accessibility_required = false;
+
+    #[cfg(target_os = "macos")]
+    let accessibility_granted = crate::permissions::check_accessibility_permission();
+    #[cfg(not(target_os = "macos"))]
+    let accessibility_granted = true;
+
+    let gate = evaluate_shortcut_init_gate(
+        app.try_state::<ShortcutsInitialized>().is_some(),
+        accessibility_required,
+        accessibility_granted,
+    );
+
+    match gate {
+        ShortcutInitGate::AlreadyInitialized => {
+            tracing::debug!(
+                event_code = "shortcut_init_attempt",
+                source = %source,
+                accessibility_granted = accessibility_granted,
+                outcome = "already_initialized",
+                "Shortcuts already initialized"
+            );
+            return Ok(());
+        }
+        ShortcutInitGate::DeferredMissingAccessibility => {
+            tracing::info!(
+                event_code = "shortcut_init_attempt",
+                source = %source,
+                accessibility_granted = accessibility_granted,
+                "Attempting shortcut initialization"
+            );
+            tracing::info!(
+                event_code = "shortcut_init_deferred",
+                source = %source,
+                accessibility_granted = accessibility_granted,
+                attempted_count = 0,
+                success_count = 0,
+                failed_count = 0,
+                failed_ids = "-",
+                reason = "accessibility_permission_missing",
+                "Shortcut initialization deferred"
+            );
+            return Err(
+                "Shortcut initialization deferred: accessibility permission not granted"
+                    .to_string(),
+            );
+        }
+        ShortcutInitGate::Proceed => {}
+    }
+
+    tracing::info!(
+        event_code = "shortcut_init_attempt",
+        source = %source,
+        accessibility_granted = accessibility_granted,
+        "Attempting shortcut initialization"
+    );
+
+    let report = crate::shortcut::init_shortcuts(app);
+    let failed_ids_csv = report.failed_ids_csv();
+
+    if !should_mark_shortcuts_initialized(gate, report.failed_count()) {
+        tracing::warn!(
+            event_code = "shortcut_init_failure",
+            source = %source,
+            accessibility_granted = accessibility_granted,
+            attempted_count = report.attempted_count(),
+            success_count = report.success_count(),
+            failed_count = report.failed_count(),
+            failed_ids = %failed_ids_csv,
+            "Shortcut initialization completed with failures"
+        );
+        return Err(format!(
+            "Shortcut initialization failed for bindings: {}",
+            failed_ids_csv
+        ));
+    }
+
+    app.manage(ShortcutsInitialized);
+
+    tracing::info!(
+        event_code = "shortcut_init_success",
+        source = %source,
+        accessibility_granted = accessibility_granted,
+        attempted_count = report.attempted_count(),
+        success_count = report.success_count(),
+        failed_count = report.failed_count(),
+        failed_ids = %failed_ids_csv,
+        "Shortcuts initialized successfully"
+    );
+
+    Ok(())
+}
+
 /// Initialize keyboard shortcuts.
 /// On macOS, this should be called after accessibility permissions are granted.
 /// This is idempotent - calling it multiple times is safe.
 #[specta::specta]
 #[tauri::command]
 pub fn initialize_shortcuts(app: AppHandle) -> Result<(), String> {
-    // Check if already initialized
-    if app.try_state::<ShortcutsInitialized>().is_some() {
-        tracing::debug!("Shortcuts already initialized");
-        return Ok(());
+    initialize_shortcuts_with_source(&app, "frontend_command")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        evaluate_shortcut_init_gate, should_mark_shortcuts_initialized, ShortcutInitGate,
+    };
+
+    #[test]
+    fn gate_is_already_initialized_when_marker_is_present() {
+        let gate = evaluate_shortcut_init_gate(true, true, false);
+        assert_eq!(gate, ShortcutInitGate::AlreadyInitialized);
     }
 
-    // Initialize shortcuts
-    crate::shortcut::init_shortcuts(&app);
+    #[test]
+    fn gate_defers_when_accessibility_is_required_and_missing() {
+        let gate = evaluate_shortcut_init_gate(false, true, false);
+        assert_eq!(gate, ShortcutInitGate::DeferredMissingAccessibility);
+    }
 
-    // Mark as initialized
-    app.manage(ShortcutsInitialized);
+    #[test]
+    fn gate_proceeds_when_accessibility_not_required() {
+        let gate = evaluate_shortcut_init_gate(false, false, false);
+        assert_eq!(gate, ShortcutInitGate::Proceed);
+    }
 
-    tracing::info!("Shortcuts initialized successfully");
-    Ok(())
+    #[test]
+    fn mark_shortcuts_initialized_only_when_gate_proceeds_and_no_failures() {
+        assert!(should_mark_shortcuts_initialized(
+            ShortcutInitGate::Proceed,
+            0
+        ));
+        assert!(!should_mark_shortcuts_initialized(
+            ShortcutInitGate::Proceed,
+            1
+        ));
+        assert!(!should_mark_shortcuts_initialized(
+            ShortcutInitGate::DeferredMissingAccessibility,
+            0
+        ));
+        assert!(!should_mark_shortcuts_initialized(
+            ShortcutInitGate::AlreadyInitialized,
+            0
+        ));
+    }
 }

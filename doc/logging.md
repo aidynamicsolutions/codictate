@@ -111,6 +111,9 @@ bun run tauri:dev:verbose  # TRACE level (very noisy)
 ## Common Debug Patterns
 
 ```bash
+# Shortcut bootstrap / availability
+bun run logs:grep "shortcut_init_"
+
 # Recording issues
 bun run logs:grep "Recording|vad"
 
@@ -126,6 +129,24 @@ bun run logs:grep "ERROR"
 # Frontend only
 bun run logs:grep "target=fe"
 ```
+
+## Shortcut Initialization Event Codes
+
+Backend shortcut bootstrap emits structured events:
+
+- `shortcut_init_attempt`: initialization attempt started
+- `shortcut_init_deferred`: deferred (typically accessibility permission missing on macOS)
+- `shortcut_init_success`: initialization completed with zero failures
+- `shortcut_init_failure`: initialization completed with one or more failed bindings
+
+Useful fields:
+
+- `source`: bootstrap origin (`backend_startup`, `frontend_command`)
+- `accessibility_granted`
+- `attempted_count`
+- `success_count`
+- `failed_count`
+- `failed_ids`
 
 ## Architecture
 

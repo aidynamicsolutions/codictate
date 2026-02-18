@@ -8,7 +8,7 @@
 
 ## Log Verification Commands
 - [ ] Step 4: Prepare latest log file command: `LOG_FILE=$(ls -1t ~/Library/Logs/com.pais.codictate/codictate*.log | head -n 1)`.
-- [ ] Step 5: Use this command template after each test block: `rg -n "undo_slot_|undo_dispatch_|undo_operation_cancel_|undo_stats_rollback_|undo_discoverability_" "$LOG_FILE" | grep -v "Accessibility permission check" | tail -n 200`.
+- [ ] Step 5: Use this command template after each test block: `rg -n "shortcut_init_|undo_slot_|undo_dispatch_|undo_operation_cancel_|undo_stats_rollback_|undo_discoverability_" "$LOG_FILE" | grep -v "Accessibility permission check" | tail -n 300`.
 
 ## Core Behavior: Transcribe Undo Rolls Back Stats
 - [x] Step 6: Use `transcribe` to paste a sentence with at least 6 words into the editor.
@@ -61,3 +61,15 @@
 ## Final Result
 - [ ] Step 42: Mark test PASS only if all blocks passed UI and backend log checks.
 - [ ] Step 43: If FAIL, record failing step number, observed UI behavior, expected behavior, and approximate timestamp.
+
+## Startup Availability Regression (No UI Reopen Needed)
+- [ ] Step 44: Set `start_hidden=true`, fully restart the app, and do not open the main window.
+- [ ] Step 45: Trigger `transcribe`, then trigger `undo_last_transcript`.
+- [ ] Step 46: Confirm undo works immediately without opening Keyboard Shortcuts modal.
+- [ ] Step 47: Log pass criteria: startup path contains `shortcut_init_attempt` and `shortcut_init_success` with `source=backend_startup`.
+
+## Permission Re-Grant Recovery
+- [ ] Step 48: Launch with accessibility permission denied; confirm undo shortcut is unavailable.
+- [ ] Step 49: Grant accessibility permission in System Settings and return to app.
+- [ ] Step 50: Without opening Keyboard Shortcuts modal, trigger `transcribe`, then trigger `undo_last_transcript`.
+- [ ] Step 51: Confirm undo now works and log pass criteria: `shortcut_init_deferred` followed by `shortcut_init_success` from a frontend recovery source.

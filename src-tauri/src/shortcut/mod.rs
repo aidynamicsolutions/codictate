@@ -20,35 +20,117 @@ use crate::tray;
 use crate::ManagedToggleState;
 use std::sync::Arc;
 
-pub fn init_shortcuts(app: &AppHandle) {
-    let default_bindings = settings::get_default_settings().bindings;
-    let user_settings = settings::load_or_create_app_settings(app);
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShortcutInitSkipReason {
+    CancelAction,
+    FnManaged,
+    AlreadyRegistered,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShortcutInitSkipEntry {
+    pub id: String,
+    pub reason: ShortcutInitSkipReason,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShortcutInitFailureReason {
+    RegistrationFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShortcutInitFailureEntry {
+    pub id: String,
+    pub binding: String,
+    pub reason: ShortcutInitFailureReason,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ShortcutInitReport {
+    attempted_ids: Vec<String>,
+    success_ids: Vec<String>,
+    failed: Vec<ShortcutInitFailureEntry>,
+    skipped: Vec<ShortcutInitSkipEntry>,
+}
+
+impl ShortcutInitReport {
+    pub fn attempted_count(&self) -> usize {
+        self.attempted_ids.len()
+    }
+
+    pub fn success_count(&self) -> usize {
+        self.success_ids.len()
+    }
+
+    pub fn failed_count(&self) -> usize {
+        self.failed.len()
+    }
+
+    pub fn skipped_count(&self) -> usize {
+        self.skipped.len()
+    }
+
+    #[cfg(test)]
+    pub fn is_successful(&self) -> bool {
+        self.failed.is_empty()
+    }
+
+    pub fn failed_ids(&self) -> Vec<String> {
+        self.failed.iter().map(|entry| entry.id.clone()).collect()
+    }
+
+    pub fn failed_ids_csv(&self) -> String {
+        let failed_ids = self.failed_ids();
+        if failed_ids.is_empty() {
+            "-".to_string()
+        } else {
+            failed_ids.join(",")
+        }
+    }
+}
+
+fn is_fn_managed_shortcut(binding: &str) -> bool {
+    let binding_lower = binding.to_lowercase();
+    binding_lower == "fn"
+        || binding_lower.starts_with("fn+")
+        || binding_lower.contains("+fn")
+}
+
+fn init_shortcuts_with<Bindings, IsRegistered, Register>(
+    bindings: Bindings,
+    mut is_registered: IsRegistered,
+    mut register: Register,
+) -> ShortcutInitReport
+where
+    Bindings: IntoIterator<Item = (String, ShortcutBinding)>,
+    IsRegistered: FnMut(&ShortcutBinding) -> bool,
+    Register: FnMut(&ShortcutBinding) -> Result<(), String>,
+{
+    let mut report = ShortcutInitReport::default();
 
     debug!("[init_shortcuts] Starting shortcut initialization");
 
-    // Register all default shortcuts, applying user customizations
-    for (id, default_binding) in default_bindings {
+    for (id, binding) in bindings {
         if id == "cancel" {
+            report.skipped.push(ShortcutInitSkipEntry {
+                id: id.clone(),
+                reason: ShortcutInitSkipReason::CancelAction,
+            });
             debug!("[init_shortcuts] Skipping cancel shortcut (registered dynamically)");
-            continue; // Skip cancel shortcut, it will be registered dynamically
+            continue;
         }
-        let binding = user_settings
-            .bindings
-            .get(&id)
-            .cloned()
-            .unwrap_or(default_binding);
 
         debug!(
             "[init_shortcuts] Processing binding '{}': current='{}', default='{}'",
             id, binding.current_binding, binding.default_binding
         );
 
-        // Skip registration for fn-based shortcuts (handled by fn_key_monitor.rs)
-        let binding_lower = binding.current_binding.to_lowercase();
-        if binding_lower == "fn"
-            || binding_lower.starts_with("fn+")
-            || binding_lower.contains("+fn")
-        {
+        if is_fn_managed_shortcut(&binding.current_binding) {
+            report.skipped.push(ShortcutInitSkipEntry {
+                id: id.clone(),
+                reason: ShortcutInitSkipReason::FnManaged,
+            });
             debug!(
                 "[init_shortcuts] Skipping fn-based shortcut '{}' for {} (handled by fn_key_monitor)",
                 binding.current_binding, id
@@ -56,20 +138,77 @@ pub fn init_shortcuts(app: &AppHandle) {
             continue;
         }
 
-        if let Err(e) = register_shortcut(app, binding.clone()) {
+        if is_registered(&binding) {
+            report.skipped.push(ShortcutInitSkipEntry {
+                id: id.clone(),
+                reason: ShortcutInitSkipReason::AlreadyRegistered,
+            });
+            debug!(
+                "[init_shortcuts] Skipping already-registered shortcut '{}' for {}",
+                binding.current_binding, id
+            );
+            continue;
+        }
+
+        report.attempted_ids.push(id.clone());
+
+        if let Err(error) = register(&binding) {
             error!(
                 "[init_shortcuts] Failed to register shortcut '{}' for {}: {}",
-                binding.current_binding, id, e
+                binding.current_binding, id, error
             );
+            report.failed.push(ShortcutInitFailureEntry {
+                id,
+                binding: binding.current_binding.clone(),
+                reason: ShortcutInitFailureReason::RegistrationFailed,
+                error,
+            });
         } else {
             debug!(
                 "[init_shortcuts] Successfully registered shortcut '{}' for {}",
                 binding.current_binding, id
             );
+            report.success_ids.push(id);
         }
     }
 
-    debug!("[init_shortcuts] Shortcut initialization complete");
+    report
+}
+
+pub fn init_shortcuts(app: &AppHandle) -> ShortcutInitReport {
+    let default_bindings = settings::get_default_settings().bindings;
+    let user_settings = settings::load_or_create_app_settings(app);
+
+    let resolved_bindings = default_bindings.into_iter().map(|(id, default_binding)| {
+        let binding = user_settings
+            .bindings
+            .get(&id)
+            .cloned()
+            .unwrap_or(default_binding);
+        (id, binding)
+    });
+
+    let report = init_shortcuts_with(
+        resolved_bindings,
+        |binding| {
+            binding
+                .current_binding
+                .parse::<Shortcut>()
+                .map(|shortcut| app.global_shortcut().is_registered(shortcut))
+                .unwrap_or(false)
+        },
+        |binding| register_shortcut(app, binding.clone()),
+    );
+
+    debug!(
+        "[init_shortcuts] Shortcut initialization complete: attempted={} success={} failed={} skipped={}",
+        report.attempted_count(),
+        report.success_count(),
+        report.failed_count(),
+        report.skipped_count()
+    );
+
+    report
 }
 
 #[derive(Serialize, Type)]
@@ -1271,4 +1410,75 @@ pub fn change_show_unload_model_in_tray_setting(
     tray::update_tray_menu_sync(&app, &tray::TrayIconState::Idle, None);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn binding(id: &str, current_binding: &str) -> ShortcutBinding {
+        ShortcutBinding {
+            id: id.to_string(),
+            name: format!("{id} name"),
+            description: format!("{id} description"),
+            default_binding: current_binding.to_string(),
+            current_binding: current_binding.to_string(),
+        }
+    }
+
+    #[test]
+    fn init_shortcuts_report_tracks_attempts_successes_failures_and_skips() {
+        let bindings = vec![
+            ("cancel".to_string(), binding("cancel", "escape")),
+            ("fn_only".to_string(), binding("fn_only", "fn")),
+            ("already".to_string(), binding("already", "control+shift+a")),
+            ("good".to_string(), binding("good", "control+shift+g")),
+            ("bad".to_string(), binding("bad", "control+shift+b")),
+        ];
+
+        let mut register_calls = Vec::<String>::new();
+        let report = init_shortcuts_with(
+            bindings,
+            |entry| entry.id == "already",
+            |entry| {
+                register_calls.push(entry.id.clone());
+                if entry.id == "bad" {
+                    Err("simulated register failure".to_string())
+                } else {
+                    Ok(())
+                }
+            },
+        );
+
+        assert_eq!(register_calls, vec!["good".to_string(), "bad".to_string()]);
+        assert_eq!(report.attempted_count(), 2);
+        assert_eq!(report.success_count(), 1);
+        assert_eq!(report.failed_count(), 1);
+        assert_eq!(report.skipped_count(), 3);
+        assert_eq!(report.failed_ids(), vec!["bad".to_string()]);
+    }
+
+    #[test]
+    fn init_shortcuts_skips_already_registered_bindings_for_retry_safety() {
+        let bindings = vec![
+            ("existing".to_string(), binding("existing", "control+shift+e")),
+            ("new".to_string(), binding("new", "control+shift+n")),
+        ];
+
+        let mut register_calls = Vec::<String>::new();
+        let report = init_shortcuts_with(
+            bindings,
+            |entry| entry.id == "existing",
+            |entry| {
+                register_calls.push(entry.id.clone());
+                Ok(())
+            },
+        );
+
+        assert_eq!(register_calls, vec!["new".to_string()]);
+        assert_eq!(report.attempted_count(), 1);
+        assert_eq!(report.success_count(), 1);
+        assert_eq!(report.failed_count(), 0);
+        assert!(report.is_successful());
+    }
 }
