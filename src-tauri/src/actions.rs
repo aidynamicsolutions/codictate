@@ -259,6 +259,22 @@ fn auto_refined_from_post_processed_text(post_processed_text: &Option<String>) -
     post_processed_text.is_some()
 }
 
+fn build_undo_paste_capture(
+    source_action: &'static str,
+    stats_token: Option<u64>,
+    auto_refined: bool,
+    paste_result: crate::clipboard::PasteResult,
+    suggestion_text: String,
+) -> crate::undo::PasteCapture {
+    crate::undo::PasteCapture {
+        source_action,
+        stats_token,
+        auto_refined,
+        pasted_text: paste_result.pasted_text,
+        suggestion_text,
+    }
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         // Generate session ID for log correlation
@@ -618,15 +634,16 @@ impl ShortcutAction for TranscribeAction {
                                                 paste_time.elapsed()
                                             );
                                             if result.did_paste {
+                                                let capture = build_undo_paste_capture(
+                                                    source_action,
+                                                    Some(stats_token),
+                                                    auto_refined,
+                                                    result,
+                                                    suggestion_text.clone(),
+                                                );
                                                 crate::undo::register_successful_paste(
                                                     &ah_clone,
-                                                    crate::undo::PasteCapture {
-                                                        source_action,
-                                                        stats_token: Some(stats_token),
-                                                        auto_refined,
-                                                        pasted_text: result.pasted_text,
-                                                        suggestion_text: suggestion_text.clone(),
-                                                    },
+                                                    capture,
                                                 );
                                             }
                                         }
@@ -798,15 +815,16 @@ impl ShortcutAction for PasteLastTranscriptAction {
                                 Ok(result) => {
                                     info!("Pasted last transcript successfully");
                                     if result.did_paste {
+                                        let capture = build_undo_paste_capture(
+                                            "paste_last_transcript",
+                                            None,
+                                            false,
+                                            result,
+                                            suggestion_text,
+                                        );
                                         crate::undo::register_successful_paste(
                                             &app_for_undo_slot,
-                                            crate::undo::PasteCapture {
-                                                source_action: "paste_last_transcript",
-                                                stats_token: None,
-                                                auto_refined: false,
-                                                pasted_text: result.pasted_text,
-                                                suggestion_text,
-                                            },
+                                            capture,
                                         );
                                     }
                                 }
@@ -926,15 +944,16 @@ impl ShortcutAction for RefineLastTranscriptAction {
                     Ok(result) => {
                         info!("Pasted refined transcript successfully");
                         if result.did_paste {
+                            let capture = build_undo_paste_capture(
+                                "refine_last_transcript",
+                                None,
+                                true,
+                                result,
+                                raw_text,
+                            );
                             crate::undo::register_successful_paste(
                                 &app_for_undo_slot,
-                                crate::undo::PasteCapture {
-                                    source_action: "refine_last_transcript",
-                                    stats_token: None,
-                                    auto_refined: true,
-                                    pasted_text: result.pasted_text,
-                                    suggestion_text: raw_text,
-                                },
+                                capture,
                             );
                         }
                     }
@@ -1076,7 +1095,7 @@ pub static ACTION_MAP: LazyLock<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy
 
 #[cfg(test)]
 mod tests {
-    use super::auto_refined_from_post_processed_text;
+    use super::{auto_refined_from_post_processed_text, build_undo_paste_capture};
 
     #[test]
     fn auto_refined_is_false_without_post_processed_output() {
@@ -1088,5 +1107,27 @@ mod tests {
         assert!(auto_refined_from_post_processed_text(&Some(
             "refined output".to_string()
         )));
+    }
+
+    #[test]
+    fn undo_payload_uses_transformed_pasted_text() {
+        let paste_result = crate::clipboard::PasteResult {
+            pasted_text: "normalized output".to_string(),
+            did_paste: true,
+        };
+
+        let capture = build_undo_paste_capture(
+            "transcribe",
+            Some(7),
+            true,
+            paste_result,
+            "raw output".to_string(),
+        );
+
+        assert_eq!(capture.pasted_text, "normalized output");
+        assert_eq!(capture.source_action, "transcribe");
+        assert_eq!(capture.stats_token, Some(7));
+        assert!(capture.auto_refined);
+        assert_eq!(capture.suggestion_text, "raw output");
     }
 }

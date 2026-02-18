@@ -8,7 +8,7 @@ use core_foundation::base::{CFGetTypeID, CFRelease, CFTypeRef, TCFType};
 use core_foundation::string::{CFString, CFStringGetTypeID, CFStringRef};
 use tracing::{debug, error, info, warn};
 
-use super::CapturedContext;
+use super::{CapturedContext, TextInsertionContext};
 
 // ─── AXUIElement FFI ────────────────────────────────────────────────
 
@@ -421,6 +421,92 @@ fn extract_context(full_text: &str, cursor_pos: usize, radius: usize) -> String 
     full_text[start..end].to_string()
 }
 
+/// Convert a UTF-16 code-unit offset into a UTF-8 byte index.
+///
+/// AXSelectedTextRange uses UTF-16 units. For insertion/selection start we
+/// round down to the nearest scalar boundary when an offset lands inside a
+/// surrogate pair.
+fn utf16_offset_to_byte_floor(text: &str, utf16_offset: usize) -> Option<usize> {
+    if utf16_offset == 0 {
+        return Some(0);
+    }
+
+    let mut utf16_units_seen = 0usize;
+    for (byte_index, ch) in text.char_indices() {
+        if utf16_units_seen == utf16_offset {
+            return Some(byte_index);
+        }
+        let next = utf16_units_seen.checked_add(ch.len_utf16())?;
+        if next > utf16_offset {
+            return Some(byte_index);
+        }
+        utf16_units_seen = next;
+    }
+
+    if utf16_units_seen == utf16_offset {
+        Some(text.len())
+    } else {
+        None
+    }
+}
+
+/// Convert a UTF-16 code-unit offset into a UTF-8 byte index.
+///
+/// For insertion/selection end we round up to the nearest scalar boundary
+/// when an offset lands inside a surrogate pair.
+fn utf16_offset_to_byte_ceil(text: &str, utf16_offset: usize) -> Option<usize> {
+    if utf16_offset == 0 {
+        return Some(0);
+    }
+
+    let mut utf16_units_seen = 0usize;
+    for (byte_index, ch) in text.char_indices() {
+        if utf16_units_seen == utf16_offset {
+            return Some(byte_index);
+        }
+        let next = utf16_units_seen.checked_add(ch.len_utf16())?;
+        if next >= utf16_offset {
+            return Some(byte_index + ch.len_utf8());
+        }
+        utf16_units_seen = next;
+    }
+
+    if utf16_units_seen == utf16_offset {
+        Some(text.len())
+    } else {
+        None
+    }
+}
+
+fn build_insertion_context(full_text: &str, range: CFRange) -> Option<TextInsertionContext> {
+    if range.location < 0 || range.length < 0 {
+        return None;
+    }
+
+    // AXSelectedTextRange is UTF-16 based; convert to UTF-8 byte indices
+    // before slicing Rust strings.
+    let start_utf16 = range.location as usize;
+    let end_utf16 = start_utf16.checked_add(range.length as usize)?;
+    let start = utf16_offset_to_byte_floor(full_text, start_utf16)?;
+    let end = utf16_offset_to_byte_ceil(full_text, end_utf16)?;
+    let (start, end) = if end < start {
+        (start, start)
+    } else {
+        (start, end)
+    };
+
+    let left_slice = &full_text[..start];
+    let right_slice = &full_text[end..];
+
+    Some(TextInsertionContext {
+        left_char: left_slice.chars().next_back(),
+        left_non_whitespace_char: left_slice.chars().rev().find(|c| !c.is_whitespace()),
+        right_char: right_slice.chars().next(),
+        right_non_whitespace_char: right_slice.chars().find(|c| !c.is_whitespace()),
+        has_selection: end > start,
+    })
+}
+
 // ─── Clipboard fallback ─────────────────────────────────────────────
 
 /// Fallback: simulate Cmd+C to capture selection via clipboard.
@@ -485,6 +571,45 @@ fn capture_via_clipboard(app_handle: &tauri::AppHandle) -> Option<String> {
 }
 
 // ─── Public API ─────────────────────────────────────────────────────
+
+/// Capture lightweight boundary context used for smart transcript insertion.
+///
+/// This intentionally avoids clipboard fallback to prevent side-effects during
+/// regular paste operations.
+pub fn capture_insertion_context(_app_handle: &tauri::AppHandle) -> Option<TextInsertionContext> {
+    if !crate::permissions::check_accessibility_permission() {
+        debug!("Skipping insertion context capture: accessibility permission missing");
+        return None;
+    }
+
+    let element = match get_focused_element() {
+        Ok(el) => el,
+        Err(e) => {
+            debug!("Skipping insertion context capture: focused element unavailable ({})", e);
+            return None;
+        }
+    };
+
+    let full_text = get_full_text(element);
+    let range = get_selected_text_range(element);
+
+    unsafe { CFRelease(element) };
+
+    let Some(full_text) = full_text else {
+        debug!("Skipping insertion context capture: AXValue text unavailable");
+        return None;
+    };
+    let Some(range) = range else {
+        debug!("Skipping insertion context capture: AXSelectedTextRange unavailable");
+        return None;
+    };
+
+    let context = build_insertion_context(&full_text, range);
+    if context.is_none() {
+        debug!("Skipping insertion context capture: invalid text range");
+    }
+    context
+}
 
 /// Capture text context from the currently focused application.
 ///
@@ -771,5 +896,153 @@ mod tests {
         // Should capture "brown fox jum" area
         assert!(ctx.contains("fox"));
         assert!(ctx.len() <= 20 + 10); // roughly radius * 2 + some
+    }
+
+    #[test]
+    fn test_build_insertion_context_start_of_text() {
+        let text = "world";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 0,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, None);
+        assert_eq!(context.left_non_whitespace_char, None);
+        assert_eq!(context.right_char, Some('w'));
+        assert_eq!(context.right_non_whitespace_char, Some('w'));
+        assert!(!context.has_selection);
+    }
+
+    #[test]
+    fn test_build_insertion_context_middle_of_text() {
+        let text = "hello world";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 5,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, Some('o'));
+        assert_eq!(context.left_non_whitespace_char, Some('o'));
+        assert_eq!(context.right_char, Some(' '));
+        assert_eq!(context.right_non_whitespace_char, Some('w'));
+        assert!(!context.has_selection);
+    }
+
+    #[test]
+    fn test_build_insertion_context_preserves_right_boundary_punctuation() {
+        let text = "hello.world";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 5,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, Some('o'));
+        assert_eq!(context.left_non_whitespace_char, Some('o'));
+        assert_eq!(context.right_char, Some('.'));
+        assert_eq!(context.right_non_whitespace_char, Some('.'));
+        assert!(!context.has_selection);
+    }
+
+    #[test]
+    fn test_build_insertion_context_end_of_text() {
+        let text = "hello";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 5,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, Some('o'));
+        assert_eq!(context.left_non_whitespace_char, Some('o'));
+        assert_eq!(context.right_char, None);
+        assert_eq!(context.right_non_whitespace_char, None);
+        assert!(!context.has_selection);
+    }
+
+    #[test]
+    fn test_build_insertion_context_with_selection() {
+        let text = "hello world";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 6,
+                length: 5,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, Some(' '));
+        assert_eq!(context.left_non_whitespace_char, Some('o'));
+        assert_eq!(context.right_char, None);
+        assert_eq!(context.right_non_whitespace_char, None);
+        assert!(context.has_selection);
+    }
+
+    #[test]
+    fn test_build_insertion_context_emoji_cursor_uses_utf16_offsets() {
+        let text = "a🙂b";
+        // UTF-16 offsets: a=1, 🙂=2, b=1. Cursor after emoji is 3.
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 3,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, Some('🙂'));
+        assert_eq!(context.left_non_whitespace_char, Some('🙂'));
+        assert_eq!(context.right_char, Some('b'));
+        assert_eq!(context.right_non_whitespace_char, Some('b'));
+        assert!(!context.has_selection);
+    }
+
+    #[test]
+    fn test_build_insertion_context_emoji_selection_uses_utf16_length() {
+        let text = "a🙂b";
+        // Select just the emoji: start at 1, length 2 (UTF-16 code units).
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 1,
+                length: 2,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, Some('a'));
+        assert_eq!(context.left_non_whitespace_char, Some('a'));
+        assert_eq!(context.right_char, Some('b'));
+        assert_eq!(context.right_non_whitespace_char, Some('b'));
+        assert!(context.has_selection);
+    }
+
+    #[test]
+    fn test_build_insertion_context_rejects_out_of_bounds_utf16_offsets() {
+        let text = "a🙂b";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 999,
+                length: 0,
+            },
+        );
+        assert!(context.is_none());
     }
 }

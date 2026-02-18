@@ -23,6 +23,21 @@ pub struct CapturedContext {
     pub cursor_screen_position: (f64, f64),
 }
 
+/// Minimal boundary context for smart transcript insertion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextInsertionContext {
+    /// Character immediately left of insertion/selection start.
+    pub left_char: Option<char>,
+    /// Nearest non-whitespace character to the left of insertion/selection start.
+    pub left_non_whitespace_char: Option<char>,
+    /// Character immediately right of insertion/selection end.
+    pub right_char: Option<char>,
+    /// Nearest non-whitespace character to the right of insertion/selection end.
+    pub right_non_whitespace_char: Option<char>,
+    /// True if insertion target currently has a non-empty selection.
+    pub has_selection: bool,
+}
+
 /// Result of an AI correction.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CorrectionResult {
@@ -48,4 +63,12 @@ pub fn replace_text_in_app(
     _replacement: &str,
 ) -> Result<(), String> {
     Err("Text replacement is only supported on macOS".to_string())
+}
+
+/// Stub for non-macOS platforms.
+#[cfg(not(target_os = "macos"))]
+pub fn capture_insertion_context(
+    _app_handle: &tauri::AppHandle,
+) -> Option<TextInsertionContext> {
+    None
 }

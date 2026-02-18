@@ -1,9 +1,10 @@
 use crate::input::{self, EnigoState};
 #[cfg(target_os = "linux")]
 use crate::settings::TypingTool;
+use crate::accessibility::TextInsertionContext;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
 use enigo::{Direction, Enigo, Key, Keyboard};
-use tracing::info;
+use tracing::{debug, info};
 
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -566,6 +567,288 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
     auto_submit && paste_method != PasteMethod::None
 }
 
+fn is_word_like(c: char) -> bool {
+    c.is_alphanumeric()
+}
+
+fn first_non_whitespace_char(text: &str) -> Option<char> {
+    text.chars().find(|c| !c.is_whitespace())
+}
+
+fn last_non_whitespace_char(text: &str) -> Option<char> {
+    text.chars().rev().find(|c| !c.is_whitespace())
+}
+
+fn first_alphabetic_char_index(text: &str) -> Option<(usize, char)> {
+    text.char_indices().find(|(_, c)| c.is_alphabetic())
+}
+
+fn replace_char_at(text: &str, index: usize, replacement: String) -> String {
+    let mut output = String::with_capacity(text.len() + replacement.len());
+    output.push_str(&text[..index]);
+    let original_len = text[index..]
+        .chars()
+        .next()
+        .map(|c| c.len_utf8())
+        .unwrap_or(0);
+    output.push_str(&replacement);
+    output.push_str(&text[index + original_len..]);
+    output
+}
+
+fn uppercase_first_alphabetic(text: &str) -> Option<String> {
+    let (index, first_char) = first_alphabetic_char_index(text)?;
+    if first_char.is_uppercase() {
+        return None;
+    }
+    Some(replace_char_at(
+        text,
+        index,
+        first_char.to_uppercase().collect(),
+    ))
+}
+
+fn lowercase_first_alphabetic(text: &str) -> Option<String> {
+    let (index, first_char) = first_alphabetic_char_index(text)?;
+    if first_char.is_lowercase() {
+        return None;
+    }
+    Some(replace_char_at(
+        text,
+        index,
+        first_char.to_lowercase().collect(),
+    ))
+}
+
+fn is_title_like_start(text: &str) -> bool {
+    let Some(token) = text.trim_start().split_whitespace().next() else {
+        return false;
+    };
+
+    let alpha_chars: Vec<char> = token.chars().filter(|c| c.is_alphabetic()).collect();
+    if alpha_chars.len() < 2 {
+        return false;
+    }
+
+    let starts_upper = alpha_chars[0].is_uppercase();
+    let rest_all_upper = alpha_chars[1..].iter().all(|c| c.is_uppercase());
+    let rest_has_lower = alpha_chars[1..].iter().any(|c| c.is_lowercase());
+
+    starts_upper && !rest_all_upper && rest_has_lower
+}
+
+fn is_sentence_start(context: &TextInsertionContext) -> bool {
+    match context.left_non_whitespace_char {
+        None => true,
+        Some(c) => matches!(c, '.' | '!' | '?'),
+    }
+}
+
+fn trailing_sentence_punctuation_char(text: &str) -> Option<char> {
+    let trimmed_end = text.trim_end_matches(|c: char| c.is_whitespace());
+    let last_char = trimmed_end.chars().next_back()?;
+    if matches!(last_char, '.' | '!' | '?') {
+        Some(last_char)
+    } else {
+        None
+    }
+}
+
+fn strip_single_trailing_sentence_punctuation(text: &str) -> String {
+    let trimmed_end = text.trim_end_matches(|c: char| c.is_whitespace());
+    let trailing_whitespace = &text[trimmed_end.len()..];
+    let Some(last_char) = trimmed_end.chars().next_back() else {
+        return text.to_string();
+    };
+    let end_without_last = trimmed_end.len().saturating_sub(last_char.len_utf8());
+
+    let mut output = String::with_capacity(text.len());
+    output.push_str(&trimmed_end[..end_without_last]);
+    output.push_str(trailing_whitespace);
+    output
+}
+
+fn has_abbreviation_like_internal_dots(text: &str) -> bool {
+    let Some(last_token) = text.trim_end().split_whitespace().last() else {
+        return false;
+    };
+
+    let token_without_trailing = last_token.trim_end_matches(|c: char| matches!(c, '.' | '!' | '?'));
+    token_without_trailing.contains('.')
+        && token_without_trailing.chars().any(|c| c.is_alphabetic())
+}
+
+fn sanitize_trailing_sentence_punctuation(
+    text: &str,
+    context: &TextInsertionContext,
+) -> (String, bool, &'static str) {
+    let Some(_candidate) = trailing_sentence_punctuation_char(text) else {
+        return (text.to_string(), false, "no_candidate_punctuation");
+    };
+
+    let Some(right_non_whitespace_char) = context.right_non_whitespace_char else {
+        return (text.to_string(), false, "no_right_continuation");
+    };
+
+    if has_abbreviation_like_internal_dots(text) {
+        return (text.to_string(), false, "abbreviation_guard");
+    }
+
+    if right_non_whitespace_char.is_lowercase() || right_non_whitespace_char.is_ascii_digit() {
+        let reason = if context.has_selection {
+            "selection_lowercase_or_digit_continuation"
+        } else {
+            "non_selection_lowercase_or_digit_continuation"
+        };
+        return (
+            strip_single_trailing_sentence_punctuation(text),
+            true,
+            reason,
+        );
+    }
+
+    (
+        text.to_string(),
+        false,
+        "right_continuation_not_lowercase_or_digit",
+    )
+}
+
+fn collapse_duplicate_boundary_sentence_punctuation(
+    text: &str,
+    context: &TextInsertionContext,
+) -> (String, bool, &'static str) {
+    let Some(inserted_mark) = trailing_sentence_punctuation_char(text) else {
+        return (
+            text.to_string(),
+            false,
+            "no_inserted_terminal_sentence_punctuation",
+        );
+    };
+
+    let Some(right_char) = context.right_char else {
+        return (text.to_string(), false, "no_right_boundary_char");
+    };
+
+    if right_char != inserted_mark {
+        return (text.to_string(), false, "right_boundary_mark_differs");
+    }
+
+    let reason = match inserted_mark {
+        '.' => "duplicate_period_boundary",
+        '?' => "duplicate_question_boundary",
+        '!' => "duplicate_exclamation_boundary",
+        _ => "duplicate_boundary",
+    };
+
+    (
+        strip_single_trailing_sentence_punctuation(text),
+        true,
+        reason,
+    )
+}
+
+fn prepare_text_for_paste(
+    text: &str,
+    smart_insertion_enabled: bool,
+    insertion_context: Option<TextInsertionContext>,
+) -> String {
+    if !smart_insertion_enabled {
+        return text.to_string();
+    }
+
+    let Some(context) = insertion_context else {
+        debug!(
+            context_available = false,
+            legacy_fallback = true,
+            "Smart insertion context unavailable; using legacy trailing-space fallback"
+        );
+        return format!("{} ", text);
+    };
+
+    let sentence_start = is_sentence_start(&context);
+    let (sanitized, punctuation_strip_applied, punctuation_strip_reason) =
+        sanitize_trailing_sentence_punctuation(text, &context);
+    let (
+        mut prepared,
+        duplicate_punctuation_collapse_applied,
+        duplicate_punctuation_collapse_reason,
+    ) = collapse_duplicate_boundary_sentence_punctuation(&sanitized, &context);
+    let mut casing_action = "none";
+
+    if sentence_start {
+        if let Some(capitalized) = uppercase_first_alphabetic(&prepared) {
+            prepared = capitalized;
+            casing_action = "capitalized";
+        }
+    } else if is_title_like_start(&prepared) {
+        if let Some(lowercased) = lowercase_first_alphabetic(&prepared) {
+            prepared = lowercased;
+            casing_action = "decapitalized";
+        }
+    }
+
+    let first_significant = first_non_whitespace_char(&prepared);
+    let last_significant = last_non_whitespace_char(&prepared);
+    let starts_with_whitespace = prepared
+        .chars()
+        .next()
+        .map(|c| c.is_whitespace())
+        .unwrap_or(false);
+
+    let needs_leading_space_word_boundary = context.left_char.map(is_word_like).unwrap_or(false)
+        && first_significant.map(is_word_like).unwrap_or(false)
+        && !starts_with_whitespace;
+    let needs_leading_space_sentence_boundary = context
+        .left_char
+        .map(|c| matches!(c, '.' | '!' | '?'))
+        .unwrap_or(false)
+        && first_significant.map(is_word_like).unwrap_or(false)
+        && !starts_with_whitespace;
+    let needs_leading_space =
+        needs_leading_space_word_boundary || needs_leading_space_sentence_boundary;
+
+    let leading_space_reason = if needs_leading_space_word_boundary {
+        "word_boundary"
+    } else if needs_leading_space_sentence_boundary {
+        "sentence_punctuation_boundary"
+    } else {
+        "none"
+    };
+
+    if needs_leading_space {
+        prepared.insert(0, ' ');
+    }
+
+    let needs_trailing_space = context.right_char.map(is_word_like).unwrap_or(false)
+        && last_significant.map(is_word_like).unwrap_or(false)
+        && !prepared
+            .chars()
+            .last()
+            .map(|c| c.is_whitespace())
+            .unwrap_or(false);
+    if needs_trailing_space {
+        prepared.push(' ');
+    }
+
+    debug!(
+        context_available = true,
+        has_selection = context.has_selection,
+        sentence_start,
+        casing_action,
+        punctuation_strip_applied,
+        punctuation_strip_reason,
+        duplicate_punctuation_collapse_applied,
+        duplicate_punctuation_collapse_reason,
+        leading_space_added = needs_leading_space,
+        leading_space_reason,
+        trailing_space_added = needs_trailing_space,
+        "Applied smart transcript insertion formatting"
+    );
+
+    prepared
+}
+
 #[derive(Debug, Clone)]
 pub struct PasteResult {
     pub pasted_text: String,
@@ -601,12 +884,12 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String>
     let paste_delay_ms = settings.paste_delay_ms;
     let paste_restore_delay_ms = settings.paste_restore_delay_ms;
 
-    // Append trailing space if setting is enabled
-    let text = if settings.append_trailing_space {
-        format!("{} ", text)
+    let insertion_context = if settings.append_trailing_space {
+        crate::accessibility::capture_insertion_context(&app_handle)
     } else {
-        text
+        None
     };
+    let text = prepare_text_for_paste(&text, settings.append_trailing_space, insertion_context);
 
     info!(
         "Using paste method: {:?}, delay: {}ms",
@@ -682,6 +965,23 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::accessibility::TextInsertionContext;
+
+    fn context(
+        left_char: Option<char>,
+        left_non_whitespace_char: Option<char>,
+        right_char: Option<char>,
+        right_non_whitespace_char: Option<char>,
+        has_selection: bool,
+    ) -> TextInsertionContext {
+        TextInsertionContext {
+            left_char,
+            left_non_whitespace_char,
+            right_char,
+            right_non_whitespace_char,
+            has_selection,
+        }
+    }
 
     #[test]
     fn auto_submit_requires_setting_enabled() {
@@ -700,5 +1000,241 @@ mod tests {
         assert!(should_send_auto_submit(true, PasteMethod::Direct));
         assert!(should_send_auto_submit(true, PasteMethod::CtrlShiftV));
         assert!(should_send_auto_submit(true, PasteMethod::ShiftInsert));
+    }
+
+    #[test]
+    fn mid_sentence_decapitalize() {
+        let output = prepare_text_for_paste(
+            "Word",
+            true,
+            Some(context(Some(' '), Some('e'), None, None, false)),
+        );
+        assert_eq!(output, "word");
+    }
+
+    #[test]
+    fn new_sentence_capitalize() {
+        let output = prepare_text_for_paste(
+            "hello",
+            true,
+            Some(context(Some(' '), Some('.'), None, None, false)),
+        );
+        assert_eq!(output, "Hello");
+    }
+
+    #[test]
+    fn leading_space_added_between_words() {
+        let output = prepare_text_for_paste(
+            "new",
+            true,
+            Some(context(Some('o'), Some('o'), None, None, false)),
+        );
+        assert_eq!(output, " new");
+    }
+
+    #[test]
+    fn trailing_space_added_between_words() {
+        let output = prepare_text_for_paste(
+            "new",
+            true,
+            Some(context(Some(' '), Some('o'), Some('w'), Some('w'), false)),
+        );
+        assert_eq!(output, "new ");
+    }
+
+    #[test]
+    fn no_space_before_punctuation() {
+        let output = prepare_text_for_paste(
+            ",",
+            true,
+            Some(context(Some('o'), Some('o'), Some('w'), Some('w'), false)),
+        );
+        assert_eq!(output, ",");
+    }
+
+    #[test]
+    fn acronym_preserved() {
+        let output = prepare_text_for_paste(
+            "NASA",
+            true,
+            Some(context(Some(' '), Some('e'), None, None, false)),
+        );
+        assert_eq!(output, "NASA");
+    }
+
+    #[test]
+    fn context_unavailable_legacy_fallback() {
+        let output = prepare_text_for_paste("hello", true, None);
+        assert_eq!(output, "hello ");
+    }
+
+    #[test]
+    fn setting_disabled_no_transform() {
+        let output = prepare_text_for_paste(
+            "Hello",
+            false,
+            Some(context(Some('o'), Some('o'), Some('w'), Some('w'), false)),
+        );
+        assert_eq!(output, "Hello");
+    }
+
+    #[test]
+    fn selection_strips_trailing_question_mark_on_lowercase_continuation() {
+        let output = prepare_text_for_paste(
+            "hello?",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('s'), true)),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn selection_mid_sentence_strips_trailing_period() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('s'), true)),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn selection_mid_sentence_strips_trailing_exclamation() {
+        let output = prepare_text_for_paste(
+            "hello!",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('s'), true)),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_punctuation_on_uppercase_continuation() {
+        let output = prepare_text_for_paste(
+            "hello?",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('S'), true)),
+        );
+        assert_eq!(output, "hello?");
+    }
+
+    #[test]
+    fn selection_preserves_abbreviation_like_internal_dot() {
+        let output = prepare_text_for_paste(
+            "e.g.",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('s'), true)),
+        );
+        assert_eq!(output, "e.g.");
+    }
+
+    #[test]
+    fn non_selection_strips_trailing_question_mark_on_lowercase_continuation() {
+        let output = prepare_text_for_paste(
+            "hello?",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('s'), false)),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn non_selection_strips_trailing_period_on_digit_continuation() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('2'), false)),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn non_selection_preserves_trailing_question_mark_on_uppercase_continuation() {
+        let output = prepare_text_for_paste(
+            "hello?",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('S'), false)),
+        );
+        assert_eq!(output, "hello?");
+    }
+
+    #[test]
+    fn non_selection_preserves_abbreviation_like_internal_dot() {
+        let output = prepare_text_for_paste(
+            "e.g.",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('s'), false)),
+        );
+        assert_eq!(output, "e.g.");
+    }
+
+    #[test]
+    fn collapse_duplicate_period_at_right_boundary() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context(Some(' '), Some('e'), Some('.'), Some('.'), false)),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn collapse_duplicate_question_mark_at_right_boundary() {
+        let output = prepare_text_for_paste(
+            "hello?",
+            true,
+            Some(context(Some(' '), Some('e'), Some('?'), Some('?'), false)),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn collapse_duplicate_exclamation_at_right_boundary() {
+        let output = prepare_text_for_paste(
+            "hello!",
+            true,
+            Some(context(Some(' '), Some('e'), Some('!'), Some('!'), false)),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn no_collapse_when_boundary_mark_differs() {
+        let output = prepare_text_for_paste(
+            "hello?",
+            true,
+            Some(context(Some(' '), Some('e'), Some('.'), Some('.'), false)),
+        );
+        assert_eq!(output, "hello?");
+    }
+
+    #[test]
+    fn leading_space_added_after_period_boundary() {
+        let output = prepare_text_for_paste(
+            "what",
+            true,
+            Some(context(Some('.'), Some('.'), None, None, false)),
+        );
+        assert_eq!(output, " What");
+    }
+
+    #[test]
+    fn leading_space_added_after_question_boundary() {
+        let output = prepare_text_for_paste(
+            "what",
+            true,
+            Some(context(Some('?'), Some('?'), None, None, false)),
+        );
+        assert_eq!(output, " What");
+    }
+
+    #[test]
+    fn leading_space_added_after_exclamation_boundary() {
+        let output = prepare_text_for_paste(
+            "what",
+            true,
+            Some(context(Some('!'), Some('!'), None, None, false)),
+        );
+        assert_eq!(output, " What");
     }
 }

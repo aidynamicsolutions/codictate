@@ -997,8 +997,8 @@
         "description": "Mute system audio during recording"
       },
       "appendTrailingSpace": {
-        "label": "Append Trailing Space",
-        "description": "Add a space after pasted transcription"
+        "label": "Smart Insertion",
+        "description": "Match sentence casing, clean trailing .?! when text continues, collapse duplicate boundary .?!, and add boundary spacing after words or .?!. Falls back to trailing space if context is unavailable."
       },
       "fillerWordFilter": {
         "label": "Remove Filler Words",
