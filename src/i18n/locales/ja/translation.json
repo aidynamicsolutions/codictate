@@ -448,7 +448,7 @@
       },
       "showTrayIcon": {
         "label": "トレイアイコンを表示",
-        "description": "システムトレイにHandyのアイコンを表示します。"
+        "description": "システムトレイにCodictateのアイコンを表示します。"
       },
       "overlay": {
         "title": "オーバーレイ位置",
@@ -670,8 +670,9 @@
         "description": "録音中にシステムオーディオをミュート"
       },
       "appendTrailingSpace": {
-        "label": "末尾にスペースを追加",
-        "description": "貼り付けた文字起こしの後にスペースを追加"
+        "label": "スマート挿入",
+        "description": "スマート挿入は、句読点・大文字小文字・スペースを整えます。",
+        "fallbackScopeNote": "より良い結果のために、普段使う言語を選んでください。自動検出・トルコ語・未対応言語では、Codictate は最小限の整形のみ行い、末尾にスペースを1つ追加するだけになる場合があります。"
       },
       "paths": {
         "appData": "アプリデータ:",

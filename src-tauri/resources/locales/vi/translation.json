@@ -354,8 +354,9 @@
         "description": "Tắt tiếng âm thanh hệ thống trong khi ghi âm"
       },
       "appendTrailingSpace": {
-        "label": "Thêm dấu cách cuối",
-        "description": "Thêm một dấu cách sau bản ghi đã dán"
+        "label": "Chèn thông minh",
+        "description": "Chèn thông minh cải thiện dấu câu, chữ hoa/chữ thường và khoảng trắng.",
+        "fallbackScopeNote": "Để có kết quả tốt nhất, hãy chọn ngôn ngữ chính bạn dùng. Ở chế độ Auto, tiếng Thổ Nhĩ Kỳ và các ngôn ngữ chưa hỗ trợ, Codictate chỉ định dạng tối thiểu và có thể chỉ thêm một dấu cách ở cuối."
       },
       "paths": {
         "appData": "Dữ liệu ứng dụng:",

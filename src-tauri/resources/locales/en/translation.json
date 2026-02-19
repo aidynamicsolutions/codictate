@@ -588,8 +588,9 @@
         "description": "Mute system audio during recording"
       },
       "appendTrailingSpace": {
-        "label": "Append Trailing Space",
-        "description": "Add a space after pasted transcription"
+        "label": "Smart Insertion",
+        "description": "Smart Insertion improves punctuation, capitalization, and spacing.",
+        "fallbackScopeNote": "For best results, choose your main language. In Auto, Turkish, and unsupported languages, Codictate uses minimal formatting and may only add a trailing space."
       },
       "paths": {
         "appData": "App Data:",

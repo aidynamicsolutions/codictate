@@ -354,8 +354,9 @@
         "description": "Silenciar el audio del sistema durante la grabación"
       },
       "appendTrailingSpace": {
-        "label": "Agregar Espacio Final",
-        "description": "Agregar un espacio después de la transcripción pegada"
+        "label": "Inserción inteligente",
+        "description": "La inserción inteligente mejora la puntuación, las mayúsculas y minúsculas y los espacios.",
+        "fallbackScopeNote": "Para obtener mejores resultados, elige tu idioma principal. En Auto, turco y idiomas no compatibles, Codictate aplica ajustes mínimos y puede que solo añada un espacio al final."
       },
       "paths": {
         "appData": "Datos de la Aplicación:",

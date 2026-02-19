@@ -448,7 +448,7 @@
       },
       "showTrayIcon": {
         "label": "Taskleistensymbol anzeigen",
-        "description": "Das Handy-Symbol in der Taskleiste anzeigen."
+        "description": "Das Codictate-Symbol in der Taskleiste anzeigen."
       },
       "overlay": {
         "title": "Overlay-Position",
@@ -670,8 +670,9 @@
         "description": "Systemaudio während der Aufnahme stummschalten"
       },
       "appendTrailingSpace": {
-        "label": "Leerzeichen anhängen",
-        "description": "Leerzeichen nach eingefügter Transkription hinzufügen"
+        "label": "Intelligentes Einfügen",
+        "description": "Smart Insertion verbessert Zeichensetzung, Groß- und Kleinschreibung sowie Abstände.",
+        "fallbackScopeNote": "Für die besten Ergebnisse wähle deine Hauptsprache. Bei Auto, Türkisch und nicht unterstützten Sprachen nimmt Codictate nur minimale Anpassungen vor und fügt eventuell nur ein Leerzeichen am Ende hinzu."
       },
       "paths": {
         "appData": "App-Daten:",

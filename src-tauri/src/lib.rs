@@ -22,6 +22,7 @@ mod permissions;
 mod settings;
 mod shortcut;
 mod signal_handle;
+mod smart_insertion;
 mod tracing_config;
 mod tray;
 mod tray_i18n;

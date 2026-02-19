@@ -448,7 +448,7 @@
       },
       "showTrayIcon": {
         "label": "Afficher l'icône de la barre",
-        "description": "Afficher l'icône de Handy dans la barre système."
+        "description": "Afficher l'icône de Codictate dans la barre système."
       },
       "overlay": {
         "title": "Position de la fenêtre d'enregistrement",
@@ -670,8 +670,9 @@
         "description": "Couper le son du système pendant l'enregistrement"
       },
       "appendTrailingSpace": {
-        "label": "Ajouter un espace final",
-        "description": "Ajouter un espace après la transcription collée"
+        "label": "Insertion intelligente",
+        "description": "L’insertion intelligente améliore la ponctuation, les majuscules/minuscules et les espaces.",
+        "fallbackScopeNote": "Pour de meilleurs résultats, choisissez votre langue principale. En mode Auto, en turc et pour les langues non prises en charge, Codictate applique un formatage minimal et peut seulement ajouter un espace final."
       },
       "paths": {
         "appData": "Données de l'application :",

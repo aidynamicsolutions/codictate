@@ -729,7 +729,7 @@
       },
       "showTrayIcon": {
         "label": "Show Tray Icon",
-        "description": "Display the Handy icon in the system tray."
+        "description": "Display the Codictate icon in the system tray."
       },
       "showUnloadModelInTray": {
         "label": "Show \"Unload Model\" in Tray",
@@ -998,7 +998,8 @@
       },
       "appendTrailingSpace": {
         "label": "Smart Insertion",
-        "description": "Match sentence casing, clean trailing .?! when text continues, collapse duplicate boundary .?!, and add boundary spacing after words or .?!. Falls back to trailing space if context is unavailable."
+        "description": "Smart Insertion improves punctuation, capitalization, and spacing.",
+        "fallbackScopeNote": "For best results, choose your main language. In Auto, Turkish, and unsupported languages, Codictate uses minimal formatting and may only add a trailing space."
       },
       "fillerWordFilter": {
         "label": "Remove Filler Words",

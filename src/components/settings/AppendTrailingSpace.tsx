@@ -14,6 +14,7 @@ export const AppendTrailingSpace: React.FC<AppendTrailingSpaceProps> =
     const { getSetting, updateSetting, isUpdating } = useSettings();
 
     const enabled = getSetting("append_trailing_space") ?? false;
+    const description = `${t("settings.debug.appendTrailingSpace.description")} ${t("settings.debug.appendTrailingSpace.fallbackScopeNote")}`.trim();
 
     return (
       <ToggleSwitch
@@ -21,7 +22,7 @@ export const AppendTrailingSpace: React.FC<AppendTrailingSpaceProps> =
         onChange={(enabled) => updateSetting("append_trailing_space", enabled)}
         isUpdating={isUpdating("append_trailing_space")}
         label={t("settings.debug.appendTrailingSpace.label")}
-        description={t("settings.debug.appendTrailingSpace.description")}
+        description={description}
         descriptionMode={descriptionMode}
         grouped={grouped}
       />

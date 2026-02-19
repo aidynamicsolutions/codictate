@@ -92,3 +92,8 @@ The function `filter_and_count_filler_words()` counts and removes all filler wor
 | Remove Repeated Words | `enable_hallucination_filter` | `true` |
 
 Both are persisted in the app settings store and take effect immediately on the next transcription.
+
+## Related Docs
+
+- `doc/test/smart-insertion-language-profiles-manual-test-checklist.md` for manual verification cases.
+- `doc/smart-insertion-notes.md` for smart-insertion implementation notes, validation history, and in-flight change tracking.

@@ -354,8 +354,9 @@
         "description": "Silenzia l'audio di sistema durante la registrazione"
       },
       "appendTrailingSpace": {
-        "label": "Aggiungi Spazio Finale",
-        "description": "Aggiungi uno spazio dopo la trascrizione incollata"
+        "label": "Inserimento intelligente",
+        "description": "L’inserimento intelligente migliora punteggiatura, maiuscole/minuscole e spazi.",
+        "fallbackScopeNote": "Per risultati migliori, scegli la tua lingua principale. In Auto, in turco e nelle lingue non supportate, Codictate applica modifiche minime e potrebbe aggiungere solo uno spazio finale."
       },
       "paths": {
         "appData": "Dati App:",

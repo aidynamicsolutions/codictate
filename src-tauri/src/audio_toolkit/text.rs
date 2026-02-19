@@ -381,7 +381,9 @@ fn apply_custom_words_to_hypothesis(
                 0.0
             );
 
-            result.push(format!("{}{}{}", prefix, corrected, suffix));
+            let normalized_suffix =
+                trim_duplicate_sentence_punctuation_suffix(&corrected, suffix);
+            result.push(format!("{}{}{}", prefix, corrected, normalized_suffix));
             i += consumed_words;
             matched = true;
         }
@@ -690,7 +692,9 @@ fn apply_custom_words_to_hypothesis(
                     best_score
                 );
 
-                result.push(format!("{}{}{}", prefix, corrected, suffix));
+                let normalized_suffix =
+                    trim_duplicate_sentence_punctuation_suffix(&corrected, suffix);
+                result.push(format!("{}{}{}", prefix, corrected, normalized_suffix));
                 i += consumed_words;
                 matched = true;
                 break;
@@ -783,6 +787,29 @@ fn should_preserve_literal_symbol_case(replacement: &str) -> bool {
     replacement
         .chars()
         .any(|c| !c.is_alphanumeric() && !c.is_whitespace())
+}
+
+fn is_sentence_punctuation_mark(c: char) -> bool {
+    matches!(c, '.' | '?' | '!' | '؟' | '？' | '！' | '。')
+}
+
+fn trim_duplicate_sentence_punctuation_suffix<'a>(corrected: &str, suffix: &'a str) -> &'a str {
+    let Some(last_significant) = corrected.chars().rev().find(|c| !c.is_whitespace()) else {
+        return suffix;
+    };
+    if !is_sentence_punctuation_mark(last_significant) {
+        return suffix;
+    }
+
+    let mut cut = 0usize;
+    for (idx, ch) in suffix.char_indices() {
+        if ch != last_significant {
+            break;
+        }
+        cut = idx + ch.len_utf8();
+    }
+
+    if cut > 0 { &suffix[cut..] } else { suffix }
 }
 
 /// Extracts punctuation prefix and suffix from a word
@@ -1211,6 +1238,30 @@ mod tests {
         let custom_words = vec![vocabulary_with_aliases("shadcn", &["shad c n"], "shadcn")];
         let result = apply_custom_words(text, &custom_words, 0.18);
         assert_eq!(result, "Please use shadcn?");
+    }
+
+    #[test]
+    fn test_exact_alias_replacement_deduplicates_terminal_period() {
+        let text = "start e g. step";
+        let custom_words = vec![exact_replacement_with_aliases("e.g.", &["e g"], "e.g.")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "start e.g. step");
+    }
+
+    #[test]
+    fn test_vocabulary_alias_replacement_deduplicates_terminal_period() {
+        let text = "start e g. step";
+        let custom_words = vec![vocabulary_with_aliases("e.g.", &["e g"], "e.g.")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "start e.g. step");
+    }
+
+    #[test]
+    fn test_alias_replacement_keeps_non_duplicate_suffix_punctuation() {
+        let text = "start e g? step";
+        let custom_words = vec![exact_replacement_with_aliases("e.g.", &["e g"], "e.g.")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "start e.g.? step");
     }
 
     #[test]

@@ -151,6 +151,8 @@ Handy is a cross-platform desktop speech-to-text app built with Tauri 2.x (Rust 
 
 All user-facing strings must use i18next translations. ESLint enforces this (no hardcoded strings in JSX).
 
+**Product naming:** In user-facing copy, always use the app name `Codictate` (not `Handy`) unless referencing legacy infrastructure names (for example, `blob.handy.computer`).
+
 **Adding new text:**
 
 1. Add key to `src/i18n/locales/en/translation.json`

@@ -354,8 +354,9 @@
         "description": "Wycisz dźwięk systemu podczas nagrywania"
       },
       "appendTrailingSpace": {
-        "label": "Dodaj spację na końcu",
-        "description": "Dodaj spację po wklejonej transkrypcji"
+        "label": "Inteligentne wstawianie",
+        "description": "Inteligentne wstawianie poprawia interpunkcję, wielkość liter i odstępy.",
+        "fallbackScopeNote": "Aby uzyskać najlepsze wyniki, wybierz swój główny język. W trybie Auto, dla tureckiego i nieobsługiwanych języków Codictate stosuje minimalne formatowanie i może dodać tylko spację na końcu."
       },
       "paths": {
         "appData": "Dane aplikacji:",

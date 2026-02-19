@@ -448,7 +448,7 @@
       },
       "showTrayIcon": {
         "label": "显示托盘图标",
-        "description": "在系统托盘中显示 Handy 图标。"
+        "description": "在系统托盘中显示 Codictate 图标。"
       },
       "overlay": {
         "title": "悬浮窗位置",
@@ -670,8 +670,9 @@
         "description": "录制期间静音系统音频"
       },
       "appendTrailingSpace": {
-        "label": "追加尾部空格",
-        "description": "在粘贴的转录后添加空格"
+        "label": "智能插入",
+        "description": "智能插入会优化标点、大小写和空格。",
+        "fallbackScopeNote": "想获得更好的效果，请选择你常用的语言。在“自动”、土耳其语和不受支持的语言中，Codictate 只做最少处理，可能只会在末尾加一个空格。"
       },
       "paths": {
         "appData": "应用数据:",
