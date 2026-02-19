@@ -2,6 +2,7 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::shortcut;
 use crate::ManagedToggleState;
+use crate::TranscriptionCoordinator;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -140,6 +141,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
     }
 
     // Cancel any ongoing recording
+    let recording_was_active = audio_manager.is_recording();
     audio_manager.cancel_recording();
     
     // Spawn a thread for the delay and cleanup to avoid blocking the main thread/event loop
@@ -158,6 +160,11 @@ pub fn cancel_current_operation(app: &AppHandle) {
 
         // Session is already cleared, but unload might be needed
         tm.maybe_unload_immediately("cancellation");
+
+        // Notify coordinator so it can keep lifecycle state coherent.
+        if let Some(coordinator) = app_clone.try_state::<TranscriptionCoordinator>() {
+            coordinator.notify_cancel(recording_was_active);
+        }
 
         info!("Cancellation completed");
     });

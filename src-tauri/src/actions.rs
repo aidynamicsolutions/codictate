@@ -11,8 +11,11 @@ use crate::settings::LOCAL_MLX_PROVIDER_ID;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
-use crate::utils::{self, show_recording_overlay, show_transcribing_overlay};
+use crate::utils::{
+    self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
+};
 use crate::ManagedToggleState;
+use crate::TranscriptionCoordinator;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
@@ -21,6 +24,17 @@ use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
 use tracing::{debug, error, info, info_span, warn};
+
+/// Drop guard that notifies the [`TranscriptionCoordinator`] when the
+/// transcription pipeline finishes — whether it completes normally or panics.
+struct FinishGuard(AppHandle);
+impl Drop for FinishGuard {
+    fn drop(&mut self) {
+        if let Some(c) = self.0.try_state::<TranscriptionCoordinator>() {
+            c.notify_processing_finished();
+        }
+    }
+}
 
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
@@ -31,6 +45,20 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+}
+
+/// Field name for structured output JSON schema
+const TRANSCRIPTION_FIELD: &str = "transcription";
+
+/// Strip invisible Unicode characters that some LLMs may insert
+fn strip_invisible_chars(s: &str) -> String {
+    s.replace(['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}'], "")
+}
+
+/// Build a system prompt from the user's prompt template.
+/// Removes `${output}` placeholder since the transcription is sent as the user message.
+fn build_system_prompt(prompt_template: &str) -> String {
+    prompt_template.replace("${output}", "").trim().to_string()
 }
 
 async fn post_process_transcription(
@@ -108,7 +136,7 @@ async fn post_process_transcription(
             }
 
             let token_limit = model.trim().parse::<i32>().unwrap_or(0);
-            return match apple_intelligence::process_text(&processed_prompt, token_limit) {
+            return match apple_intelligence::process_text_with_system_prompt("", &processed_prompt, token_limit) {
                 Ok(result) => {
                     if result.trim().is_empty() {
                         debug!("Apple Intelligence returned an empty response");
@@ -172,23 +200,137 @@ async fn post_process_transcription(
         };
     }
 
+
     let api_key = settings
         .post_process_api_keys
         .get(&provider.id)
         .cloned()
         .unwrap_or_default();
 
-    // Send the chat completion request
+    if provider.supports_structured_output {
+        debug!("Using structured outputs for provider '{}'", provider.id);
+
+        let system_prompt = build_system_prompt(&prompt);
+        let user_content = transcription.to_string();
+
+        // Handle Apple Intelligence separately since it uses native Swift APIs
+        if provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
+            #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+            {
+                if !apple_intelligence::check_apple_intelligence_availability() {
+                    debug!(
+                        "Apple Intelligence selected but not currently available on this device"
+                    );
+                    return None;
+                }
+
+                let token_limit = model.trim().parse::<i32>().unwrap_or(0);
+                return match apple_intelligence::process_text_with_system_prompt(
+                    &system_prompt,
+                    &user_content,
+                    token_limit,
+                ) {
+                    Ok(result) => {
+                        if result.trim().is_empty() {
+                            debug!("Apple Intelligence returned an empty response");
+                            None
+                        } else {
+                            let result = strip_invisible_chars(&result);
+                            debug!(
+                                "Apple Intelligence post-processing succeeded. Output length: {} chars",
+                                result.len()
+                            );
+                            Some(result)
+                        }
+                    }
+                    Err(err) => {
+                        error!("Apple Intelligence post-processing failed: {}", err);
+                        None
+                    }
+                };
+            }
+
+            #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+            {
+                debug!("Apple Intelligence provider selected on unsupported platform");
+                return None;
+            }
+        }
+
+        // Define JSON schema for transcription output
+        let json_schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                (TRANSCRIPTION_FIELD): {
+                    "type": "string",
+                    "description": "The cleaned and processed transcription text"
+                }
+            },
+            "required": [TRANSCRIPTION_FIELD],
+            "additionalProperties": false
+        });
+
+        match crate::llm_client::send_chat_completion_with_schema(
+            &provider,
+            api_key.clone(),
+            &model,
+            user_content,
+            Some(system_prompt),
+            Some(json_schema),
+        )
+        .await
+        {
+            Ok(Some(content)) => {
+                // Parse the JSON response to extract the transcription field
+                match serde_json::from_str::<serde_json::Value>(&content) {
+                    Ok(json) => {
+                        if let Some(transcription_value) =
+                            json.get(TRANSCRIPTION_FIELD).and_then(|t| t.as_str())
+                        {
+                            let result = strip_invisible_chars(transcription_value);
+                            debug!(
+                                "Structured output post-processing succeeded for provider '{}'. Output length: {} chars",
+                                provider.id,
+                                result.len()
+                            );
+                            return Some(result);
+                        } else {
+                            error!("Structured output response missing 'transcription' field");
+                            return Some(strip_invisible_chars(&content));
+                        }
+                    }
+                    Err(e) => {
+                        error!(
+                            "Failed to parse structured output JSON: {}. Returning raw content.",
+                            e
+                        );
+                        return Some(strip_invisible_chars(&content));
+                    }
+                }
+            }
+            Ok(None) => {
+                error!("LLM API response has no content");
+                return None;
+            }
+            Err(e) => {
+                warn!(
+                    "Structured output failed for provider '{}': {}. Falling back to legacy mode.",
+                    provider.id, e
+                );
+                // Fall through to legacy mode below
+            }
+        }
+    }
+
+    // Legacy mode: Replace ${output} variable in the prompt with the actual text
+    let processed_prompt = prompt.replace("${output}", transcription);
+    debug!("Processed prompt length: {} chars", processed_prompt.len());
+
     match crate::llm_client::send_chat_completion(&provider, api_key, &model, processed_prompt)
         .await
     {
         Ok(Some(content)) => {
-            // Strip invisible Unicode characters that some LLMs (e.g., Qwen) may insert
-            let content = content
-                .replace('\u{200B}', "") // Zero-Width Space
-                .replace('\u{200C}', "") // Zero-Width Non-Joiner
-                .replace('\u{200D}', "") // Zero-Width Joiner
-                .replace('\u{FEFF}', ""); // Byte Order Mark / Zero-Width No-Break Space
+            let content = strip_invisible_chars(&content);
             debug!(
                 "LLM post-processing succeeded for provider '{}'. Output length: {} chars",
                 provider.id,
@@ -484,6 +626,7 @@ impl ShortcutAction for TranscribeAction {
             let session_span = info_span!("session", session = %session_id);
             async move {
                 let _guard = session_span.enter();
+                let _finish_guard = FinishGuard(ah.clone());
                 let _stop_transition_guard = crate::undo::StopTransitionGuard::new(&ah);
                 let binding_id = binding_id.clone();
                 debug!(

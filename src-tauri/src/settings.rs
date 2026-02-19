@@ -4,7 +4,7 @@ use specta::Type;
 use std::collections::HashMap;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
@@ -93,6 +93,8 @@ pub struct PostProcessProvider {
     pub allow_base_url_edit: bool,
     #[serde(default)]
     pub models_endpoint: Option<String>,
+    #[serde(default)]
+    pub supports_structured_output: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -479,6 +481,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://api.openai.com/v1".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_structured_output: true,
         },
         PostProcessProvider {
             id: "openrouter".to_string(),
@@ -486,6 +489,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://openrouter.ai/api/v1".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_structured_output: true,
         },
         PostProcessProvider {
             id: "anthropic".to_string(),
@@ -493,6 +497,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://api.anthropic.com/v1".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_structured_output: false,
         },
         PostProcessProvider {
             id: "groq".to_string(),
@@ -500,6 +505,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://api.groq.com/openai/v1".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_structured_output: false,
         },
         PostProcessProvider {
             id: "cerebras".to_string(),
@@ -507,6 +513,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://api.cerebras.ai/v1".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_structured_output: true,
         },
     ];
 
@@ -522,6 +529,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "apple-intelligence://local".to_string(),
             allow_base_url_edit: false,
             models_endpoint: None,
+            supports_structured_output: true,
         });
 
         // MLX Local AI - runs local LLM models on Apple Silicon
@@ -531,6 +539,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "mlx://local".to_string(),
             allow_base_url_edit: false,
             models_endpoint: None, // Models are managed internally
+            supports_structured_output: false,
         });
     }
 
@@ -541,6 +550,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
         base_url: "http://localhost:11434/v1".to_string(),
         allow_base_url_edit: true,
         models_endpoint: Some("/models".to_string()),
+        supports_structured_output: false,
     });
 
     providers
@@ -587,13 +597,30 @@ fn default_typing_tool() -> TypingTool {
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
     for provider in default_post_process_providers() {
-        if settings
+        // Use match to do a single lookup - either sync existing or add new
+        match settings
             .post_process_providers
-            .iter()
-            .all(|existing| existing.id != provider.id)
+            .iter_mut()
+            .find(|p| p.id == provider.id)
         {
-            settings.post_process_providers.push(provider.clone());
-            changed = true;
+            Some(existing) => {
+                // Sync supports_structured_output field for existing providers (migration)
+                if existing.supports_structured_output != provider.supports_structured_output {
+                    debug!(
+                        "Updating supports_structured_output for provider '{}' from {} to {}",
+                        provider.id,
+                        existing.supports_structured_output,
+                        provider.supports_structured_output
+                    );
+                    existing.supports_structured_output = provider.supports_structured_output;
+                    changed = true;
+                }
+            }
+            None => {
+                // Provider doesn't exist, add it
+                settings.post_process_providers.push(provider.clone());
+                changed = true;
+            }
         }
 
         if !settings.post_process_api_keys.contains_key(&provider.id) {

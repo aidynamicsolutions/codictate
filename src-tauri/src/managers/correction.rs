@@ -326,7 +326,7 @@ impl CorrectionManager {
                     return Err("Apple Intelligence not available".to_string());
                 }
                 let token_limit = model.trim().parse::<i32>().unwrap_or(0);
-                return crate::apple_intelligence::process_text(prompt, token_limit)
+                return crate::apple_intelligence::process_text_with_system_prompt("", prompt, token_limit)
                     .map_err(|e| format!("Apple Intelligence failed: {}", e));
             }
             #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
