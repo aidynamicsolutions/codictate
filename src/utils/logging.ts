@@ -1,5 +1,5 @@
 /**
- * Unified logging utility for Handy frontend.
+ * Unified logging utility for Codictate frontend.
  * Routes logs through Tauri to appear in the unified log file
  * with session correlation.
  */

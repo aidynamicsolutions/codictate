@@ -2,7 +2,7 @@
 
 ## Overview
 
-`undo_last_transcript` is a strict global shortcut that undoes only the most recent Handy/Codictate-originated paste.
+`undo_last_transcript` is a strict global shortcut that undoes only the most recent Codictate-originated paste.
 
 Fast loop:
 1. Dictate

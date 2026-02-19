@@ -1,6 +1,6 @@
 # AI Prompt Testing Documentation
 
-This document outlines the procedure for testing and benchmarking AI correction prompts in Handy. The goal is to ensure high accuracy in correcting ASR errors while minimizing latency and token usage.
+This document outlines the procedure for testing and benchmarking AI correction prompts in Codictate. The goal is to ensure high accuracy in correcting ASR errors while minimizing latency and token usage.
 
 ## Objective
 - **Accuracy:** >90% on benchmark test set.

@@ -1,6 +1,6 @@
 # Aptabase Analytics Integration
 
-This document outlines how Aptabase is integrated into Handy for anonymous usage tracking.
+This document outlines how Aptabase is integrated into Codictate for anonymous usage tracking.
 
 ## Architecture
 -   **Plugin:** `tauri-plugin-aptabase` handles the communication with Aptabase servers.

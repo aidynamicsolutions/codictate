@@ -1,10 +1,10 @@
 # Model Management
 
-The **Models** page in Settings represents a unified hub for managing all AI models used by Handy. This includes both the speech-to-text (ASR) models for transcription and the text-to-text (LLM) models for post-processing.
+The **Models** page in Settings represents a unified hub for managing all AI models used by Codictate. This includes both the speech-to-text (ASR) models for transcription and the text-to-text (LLM) models for post-processing.
 
 ## Transcription Models
 
-These models convert your spoken audio into text. Handy supports a variety of Whisper and Parakeet models to balance speed and accuracy.
+These models convert your spoken audio into text. Codictate supports a variety of Whisper and Parakeet models to balance speed and accuracy.
 
 ### Features
 

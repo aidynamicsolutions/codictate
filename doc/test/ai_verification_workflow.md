@@ -1,6 +1,6 @@
 # AI Visual Verification for Tauri Apps
 
-This document outlines the best practices and recommended workflow for enabling AI agents (specifically Antigravity) to visually verify the Handy Tauri application.
+This document outlines the best practices and recommended workflow for enabling AI agents (specifically Antigravity) to visually verify the Codictate Tauri application.
 
 ## Core Strategy: Web-Based Verification
 
@@ -44,11 +44,11 @@ If mocks remain active when running the app natively (desktop mode), the app wil
 
 **Always end a verification session with a cleanup step.**
 
-### 4. Handling Specific Crashes (Case Study: Handy)
+### 4. Handling Specific Crashes (Case Study: Codictate)
 
 In this project, `src/i18n/index.ts` calls `commands.getAppSettings()` and `plugin-os` immediately on load. Without mocks, the app crashes with a white screen.
 
-**Required Mocks for Handy:**
+**Required Mocks for Codictate:**
 1.  **`get_app_settings`**: Must return a valid settings object or the i18n sync will fail.
 2.  **`plugin-os`**: Must mock `locale()` to prevent top-level await failures.
 

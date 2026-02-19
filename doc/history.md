@@ -1,6 +1,6 @@
 # History Feature
 
-The History feature in Handy provides a secure, local archive of all your dictations, optimized for handling large datasets (tested up to 100,000+ entries) without performance degradation.
+The History feature in Codictate provides a secure, local archive of all your dictations, optimized for handling large datasets (tested up to 100,000+ entries) without performance degradation.
 
 ## Storage
 - **Local Only:** All data (audio files and transcriptions) is stored locally on your device. Nothing is uploaded to the cloud.

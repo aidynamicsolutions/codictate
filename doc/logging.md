@@ -1,6 +1,6 @@
 # Unified Logging & Tracing
 
-Handy uses a unified tracing system where all components (Rust, Python, Frontend) write to a single log file.
+Codictate uses a unified tracing system where all components (Rust, Python, Frontend) write to a single log file.
 
 ## Quick Start
 

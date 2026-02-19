@@ -6,7 +6,7 @@
 # ]
 # ///
 """
-MLX Local AI Server for Handy
+MLX Local AI Server for Codictate
 
 A FastAPI server that provides local LLM inference using Apple's MLX framework
 via the mlx-lm library (https://github.com/ml-explore/mlx-lm).
@@ -209,7 +209,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="MLX Local AI Server",
-    description="Local LLM inference server for Handy using mlx-lm",
+    description="Local LLM inference server for Codictate using mlx-lm",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -401,7 +401,7 @@ async def unload_model():
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="MLX Local AI Server for Handy")
+    parser = argparse.ArgumentParser(description="MLX Local AI Server for Codictate")
     parser.add_argument("--port", type=int, default=5000, help="Port to run the server on")
     args = parser.parse_args()
     

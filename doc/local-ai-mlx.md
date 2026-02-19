@@ -1,6 +1,6 @@
 # Local AI with MLX
 
-Handy supports **on-device AI refinement** using Apple's MLX framework on Apple Silicon Macs. This feature allows you to enhance transcriptions locally without sending data to external APIs.
+Codictate supports **on-device AI refinement** using Apple's MLX framework on Apple Silicon Macs. This feature allows you to enhance transcriptions locally without sending data to external APIs.
 
 ## Overview
 
@@ -186,7 +186,7 @@ Recordings are automatically limited based on system RAM to prevent memory exhau
 ## Key Files
 
 ```
-Handy/
+Codictate/
 ├── python-backend/
 │   └── server.py              # FastAPI sidecar (mlx-lm)
 ├── src-tauri/

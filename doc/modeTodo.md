@@ -1,6 +1,6 @@
 # Modes Feature — Future Vision
 
-> This document captures the long-term vision for evolving Handy's "Refine" feature into a full **Modes** system, inspired by SuperWhisper.
+> This document captures the long-term vision for evolving Codictate's "Refine" feature into a full **Modes** system, inspired by SuperWhisper.
 
 ---
 

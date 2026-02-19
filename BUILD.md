@@ -1,6 +1,6 @@
 # Build Instructions
 
-This guide covers how to set up the development environment and build Handy from source across different platforms.
+This guide covers how to set up the development environment and build Codictate from source across different platforms.
 
 ## Prerequisites
 
@@ -53,7 +53,7 @@ This guide covers how to set up the development environment and build Handy from
 
 ```bash
 git clone git@github.com:cjpais/Handy.git
-cd Handy
+cd Codictate
 ```
 
 ### 2. Install Dependencies

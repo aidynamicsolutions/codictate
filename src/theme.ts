@@ -1,5 +1,5 @@
 /**
- * Centralized theme configuration for Handy.
+ * Centralized theme configuration for Codictate.
  *
  * This file contains all brand colors and theming constants.
  * To rebrand the app, update the colors here and in App.css.

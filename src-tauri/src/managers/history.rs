@@ -1033,7 +1033,7 @@ mod tests {
             "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
-                format!("handy-{}.wav", timestamp),
+                format!("codictate-{}.wav", timestamp),
                 timestamp,
                 false,
                 format!("Recording {}", timestamp),

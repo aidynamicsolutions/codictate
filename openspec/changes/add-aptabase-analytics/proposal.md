@@ -1,7 +1,7 @@
 # Change: Add Aptabase Analytics
 
 ## Why
-To make informed decisions about product development, we need to understand how users are interacting with Handy. Aptabase provides a privacy-first, anonymous way to gather usage insights (e.g., active versions, feature usage) without compromising user privacy or collecting PII.
+To make informed decisions about product development, we need to understand how users are interacting with Codictate. Aptabase provides a privacy-first, anonymous way to gather usage insights (e.g., active versions, feature usage) without compromising user privacy or collecting PII.
 
 ## What Changes
 - Add `tauri-plugin-aptabase` to the project.

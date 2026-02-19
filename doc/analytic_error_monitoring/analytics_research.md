@@ -1,7 +1,7 @@
 # Analytics & Error Tracking Research Report
 
 ## Executive Summary
-For a privacy-focused, open-source Tauri application like Handy, we recommend a split-stack approach:
+For a privacy-focused, open-source Tauri application like Codictate, we recommend a split-stack approach:
 -   **Error Tracking:** **Sentry** (Industry standard, robust Rust/JS support).
 -   **Usage Analytics:** **Aptabase** (Privacy-first, anonymous, lightweight).
 

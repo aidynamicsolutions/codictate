@@ -13,7 +13,7 @@ export { OutputDeviceSelector } from "./OutputDeviceSelector";
 export { AlwaysOnMicrophone } from "./AlwaysOnMicrophone";
 export { AudioFeedback } from "./AudioFeedback";
 export { ShowOverlay } from "./ShowOverlay";
-export { HandyShortcut } from "./GlobalShortcutInput";
+export { CodictateShortcut } from "./GlobalShortcutInput";
 export { ShortcutInput } from "./ShortcutInput";
 export { TranslateToEnglish } from "./TranslateToEnglish";
 export { PostProcessingToggle } from "./PostProcessingToggle";

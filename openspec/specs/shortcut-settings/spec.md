@@ -54,10 +54,10 @@ The backend SHALL provide commands to start/stop test mode and retrieve event co
 - **THEN** the current event count is returned and test mode is disabled
 
 ### Requirement: Strict Transcript Undo Shortcut
-The system SHALL provide a dedicated global shortcut action (`undo_last_transcript`) that reverts only the most recent tracked Handy-originated transcript paste.
+The system SHALL provide a dedicated global shortcut action (`undo_last_transcript`) that reverts only the most recent tracked Codictate-originated transcript paste.
 
 #### Scenario: Undo recent transcript paste
-- **WHEN** user triggers `undo_last_transcript` after Handy pasted transcript text
+- **WHEN** user triggers `undo_last_transcript` after Codictate pasted transcript text
 - **THEN** focused application receives exactly one platform-standard undo command
 - **AND** tracked slot is consumed
 - **AND** overlay feedback shows `Undo applied`
@@ -108,7 +108,7 @@ Undo feedback and discoverability hint SHALL be rendered through the shared over
 The system SHALL maintain a single in-memory tracked recent paste slot for strict undo correlation.
 
 #### Scenario: Track most recent paste only
-- **WHEN** Handy performs multiple tracked paste operations
+- **WHEN** Codictate performs multiple tracked paste operations
 - **THEN** only latest paste is stored
 - **AND** older tracked context is overwritten
 

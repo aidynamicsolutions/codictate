@@ -1,5 +1,5 @@
 import React from "react";
-import { HandyShortcut } from "./GlobalShortcutInput";
+import { CodictateShortcut } from "./GlobalShortcutInput";
 
 interface ShortcutInputProps {
   descriptionMode?: "inline" | "tooltip";
@@ -12,5 +12,5 @@ interface ShortcutInputProps {
  * Shortcut input component that uses the Tauri global shortcut implementation.
  */
 export const ShortcutInput: React.FC<ShortcutInputProps> = (props) => {
-  return <HandyShortcut {...props} />;
+  return <CodictateShortcut {...props} />;
 };

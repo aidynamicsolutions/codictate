@@ -1,6 +1,6 @@
 # Transcription Cleanup Filters
 
-Handy includes two toggleable filters that automatically clean up ASR (Automatic Speech Recognition) output. Both are **enabled by default** and can be independently toggled in **Settings → General**.
+Codictate includes two toggleable filters that automatically clean up ASR (Automatic Speech Recognition) output. Both are **enabled by default** and can be independently toggled in **Settings → General**.
 
 ## Remove Filler Words
 

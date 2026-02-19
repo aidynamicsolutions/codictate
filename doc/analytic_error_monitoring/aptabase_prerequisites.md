@@ -1,11 +1,11 @@
 # Aptabase Analytics Prerequisites
 
-To enable Aptabase analytics for Handy, you need to provide the App Key.
+To enable Aptabase analytics for Codictate, you need to provide the App Key.
 
 ## 1. Create an Aptabase Project
 1.  Log in to [Aptabase.com](https://aptabase.com/).
 2.  Create a new project.
-3.  Name the project `handy-app` (or similar).
+3.  Name the project `codictate-app` (or similar).
 4.  Select **Tauri** as the framework if asked (or just Generic).
 
 ## 2. Get the App Key

@@ -1,12 +1,12 @@
 # Sentry Integration Prerequisites
 
-To enable Sentry error monitoring for Handy, you need to provide the following credentials.
+To enable Sentry error monitoring for Codictate, you need to provide the following credentials.
 
 ## 1. Create a Sentry Project
 1.  Log in to [Sentry.io](https://sentry.io/).
 2.  Create a new project.
 3.  Choose **Browser (JavaScript)** or **Rust** (the generic project type works for both in this context, but Browser is often easier for the frontend config).
-4.  Name the project `handy-app` (or similar).
+4.  Name the project `codictate-app` (or similar).
 
 ## 2. Get the DSN (Data Source Name)
 1.  Go to **Project Settings** > **Client Keys (DSN)**.

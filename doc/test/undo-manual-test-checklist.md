@@ -1,7 +1,7 @@
 # Undo Stats Rollback Manual Test Checklist
 
 ## Session Setup
-- [ ] Step 0: Launch Handy and a target editor (TextEdit/Notes).
+- [ ] Step 0: Launch Codictate and a target editor (TextEdit/Notes).
 - [ ] Step 1: Open Home and record baseline stats in notes: `total_words`, `wpm`, `time_saved_minutes`, `streak_days`.
 - [ ] Step 2: Open Keyboard Shortcuts modal and confirm `undo_last_transcript` is present directly below `paste_last_transcript`.
 - [ ] Step 3: Confirm undo default is `control+command+z` on macOS (or platform default on Windows/Linux).

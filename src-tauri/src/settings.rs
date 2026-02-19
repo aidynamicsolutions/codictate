@@ -257,7 +257,7 @@ pub struct CustomWordEntry {
     pub is_replacement: bool,
 }
 
-/* still handy for composing the initial JSON in the store ------------- */
+/* still useful for composing the initial JSON in the store ------------ */
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
 pub struct AppSettings {
     pub bindings: HashMap<String, ShortcutBinding>,

@@ -30,8 +30,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 bun install
 
 # Run in development mode (different log levels)
-bun run tauri:dev          # Handy logs only (quietest, recommended)
-bun run tauri:dev:debug    # Handy DEBUG + suppress noisy deps
+bun run tauri:dev          # Codictate logs only (quietest, recommended)
+bun run tauri:dev:debug    # Codictate DEBUG + suppress noisy deps
 bun run tauri:dev:verbose  # All logs including deps (noisiest)
 
 # Legacy command (uses default RUST_LOG)
@@ -95,7 +95,7 @@ curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.compute
 
 ## Architecture Overview
 
-Handy is a cross-platform desktop speech-to-text app built with Tauri 2.x (Rust backend + React/TypeScript frontend).
+Codictate is a cross-platform desktop speech-to-text app built with Tauri 2.x (Rust backend + React/TypeScript frontend).
 
 ### Backend Structure (src-tauri/src/)
 

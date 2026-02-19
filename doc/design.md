@@ -1,6 +1,6 @@
-# Handy Design Documentation
+# Codictate Design Documentation
 
-This document outlines the design principles and component rules for the Handy application, ensuring a consistent, premium, and system-native user experience.
+This document outlines the design principles and component rules for the Codictate application, ensuring a consistent, premium, and system-native user experience.
 
 ## Core Aesthetic
 **"Clean, Minimal, System-Native"**

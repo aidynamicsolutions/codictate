@@ -1,6 +1,6 @@
 # Qwen3 Small Model Prompting Guide (4B, 4-bit)
 
-Best practices for prompting small/quantized Qwen3 models in Handy.
+Best practices for prompting small/quantized Qwen3 models in Codictate.
 
 ---
 
@@ -75,9 +75,9 @@ Convert number words to digits (twenty → 20)
 | Simple formatting | Non-thinking | Faster, more predictable |
 | Math/logic problems | Thinking | Use sparingly; adds latency |
 
-### How Handy Disables Thinking Mode
+### How Codictate Disables Thinking Mode
 
-Handy uses the **programmatic approach** via the chat template API:
+Codictate uses the **programmatic approach** via the chat template API:
 
 ```python
 # In server.py
@@ -176,7 +176,7 @@ Voice to text recognition speech app."""}
 ```
 **Better**: Everything in one user message. Task is clear, no role-playing needed.
 
-### How Handy Formats Messages
+### How Codictate Formats Messages
 
 ```python
 # In server.py

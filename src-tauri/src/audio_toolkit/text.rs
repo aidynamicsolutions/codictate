@@ -1195,10 +1195,13 @@ mod tests {
 
     #[test]
     fn test_exact_match_before_fuzzy() {
-        let text = "handy is a great app";
-        let custom_words = vec![vocabulary("Handy", "Handy"), vocabulary("Candy", "Candy")];
+        let text = "codictate is a great app";
+        let custom_words = vec![
+            vocabulary("Codictate", "Codictate"),
+            vocabulary("Candy", "Candy"),
+        ];
         let result = apply_custom_words(text, &custom_words, 0.5);
-        assert_eq!(result, "Handy is a great app");
+        assert_eq!(result, "Codictate is a great app");
     }
 
     #[test]

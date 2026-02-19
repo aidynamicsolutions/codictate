@@ -17,14 +17,14 @@ import {
   TooltipTrigger,
 } from "@/components/shared/ui/tooltip";
 
-interface HandyShortcutProps {
+interface CodictateShortcutProps {
   descriptionMode?: "inline" | "tooltip";
   grouped?: boolean;
   shortcutId: string;
   disabled?: boolean;
 }
 
-export const HandyShortcut: React.FC<HandyShortcutProps> = ({
+export const CodictateShortcut: React.FC<CodictateShortcutProps> = ({
   descriptionMode = "tooltip",
   shortcutId,
   disabled = false,

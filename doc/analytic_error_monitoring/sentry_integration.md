@@ -1,6 +1,6 @@
 # Sentry Error Monitoring Integration
 
-This document outlines how Sentry is integrated into Handy for error tracking.
+This document outlines how Sentry is integrated into Codictate for error tracking.
 
 ## Architecture
 We use `tauri-plugin-sentry` to provide a unified error tracking solution.
@@ -31,7 +31,7 @@ tauri_plugin_sentry::init(
 ```
 
 ## Privacy & PII
-Handy is a privacy-first application.
+Codictate is a privacy-first application.
 -   **No PII:** We do not track IP addresses or user-identifiable data by default.
 -   **Scrubbing:** The `before_send` hook in Rust is used to aggressively scrub potential sensitive data from error messages before they leave the device.
 -   **Consent:** (Future) We will add an opt-in/opt-out setting in the General Settings.
