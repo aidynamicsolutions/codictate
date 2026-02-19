@@ -44,8 +44,8 @@
 ## 8. Testing
 - [x] 8.1 Unit tests for `RecentPasteSlot` semantics
 - [x] 8.2 Unit tests for rollback source scope helper
-- [ ] 8.3 End-to-end test coverage for deferred rollback timing
-- [ ] 8.4 Manual verification across macOS/Windows/Linux
+- [x] 8.3 End-to-end test coverage for deferred rollback timing
+- [x] 8.4 Manual verification across macOS/Windows/Linux
 
 ## 9. Documentation
 - [x] 9.1 Update undo documentation for feedback-only behavior
