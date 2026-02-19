@@ -1040,15 +1040,6 @@ export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStream
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; duration_ms: number; file_path: string }
 export type HistoryStats = { total_size_bytes: number; total_entries: number }
 export type HomeStats = { total_words: number; total_duration_minutes: number; wpm: number; time_saved_minutes: number; streak_days: number; faster_than_typing_percentage: number; total_filler_words_removed: number; filler_filter_active: boolean }
-/**
- * Result of changing keyboard implementation
- */
-export type ImplementationChangeResult = { success: boolean; 
-/**
- * List of binding IDs that were reset to defaults due to incompatibility
- */
-reset_bindings: string[] }
-export type KeyboardImplementation = "tauri" | "handy_keys"
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**

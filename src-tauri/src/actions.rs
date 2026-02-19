@@ -12,7 +12,7 @@ use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID}
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
-    self, show_processing_overlay, show_recording_overlay, show_transcribing_overlay,
+    self, show_recording_overlay, show_transcribing_overlay,
 };
 use crate::ManagedToggleState;
 use crate::TranscriptionCoordinator;

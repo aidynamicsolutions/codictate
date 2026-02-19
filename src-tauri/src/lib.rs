@@ -77,17 +77,7 @@ pub type OnboardingPasteOverride = Mutex<bool>;
 // We use u8 to store the log::LevelFilter as a number
 pub static FILE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Debug as u8);
 
-fn level_filter_from_u8(value: u8) -> log::LevelFilter {
-    match value {
-        0 => log::LevelFilter::Off,
-        1 => log::LevelFilter::Error,
-        2 => log::LevelFilter::Warn,
-        3 => log::LevelFilter::Info,
-        4 => log::LevelFilter::Debug,
-        5 => log::LevelFilter::Trace,
-        _ => log::LevelFilter::Trace,
-    }
-}
+
 
 fn build_console_filter() -> env_filter::Filter {
     let mut builder = EnvFilterBuilder::new();
@@ -339,7 +329,7 @@ fn trigger_update_check(app: AppHandle) -> Result<(), String> {
 pub fn run(cli_args: CliArgs) {
     // Parse console logging directives from RUST_LOG, falling back to info-level logging
     // when the variable is unset
-    let console_filter = build_console_filter();
+    let _console_filter = build_console_filter();
 
     // On Apple Silicon macOS, include MLX commands
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]

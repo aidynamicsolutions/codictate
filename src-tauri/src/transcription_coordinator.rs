@@ -37,10 +37,6 @@ pub struct TranscriptionCoordinator {
     tx: Sender<Command>,
 }
 
-pub fn is_transcribe_binding(id: &str) -> bool {
-    id == "transcribe" || id == "transcribe_with_post_process"
-}
-
 impl TranscriptionCoordinator {
     pub fn new(app: AppHandle) -> Self {
         let (tx, rx) = mpsc::channel();
