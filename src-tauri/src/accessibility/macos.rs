@@ -731,7 +731,7 @@ pub fn replace_text_in_app(
     // 0. Re-select the original text via AX API to ensure correct replacement
     //    This handles the case where the user clicked elsewhere between
     //    triggering correction and accepting it.
-    if let Err(e) = select_text_in_app(original) {
+    if let Err(e) = select_text_in_app(app_handle, original) {
         warn!("Could not re-select original text via AX API: {}. Proceeding with current selection.", e);
         // Fall through — the current selection may still be correct
     }
@@ -786,7 +786,35 @@ pub fn replace_text_in_app(
 ///
 /// This allows the correction system to re-select the original text before
 /// pasting the replacement, even if the user moved the cursor.
-fn select_text_in_app(text_to_find: &str) -> Result<(), String> {
+pub fn select_text_in_app(
+    _app_handle: &tauri::AppHandle,
+    text_to_find: &str,
+) -> Result<(), String> {
+    select_text_in_app_with_start_policy(text_to_find, SelectionStartPolicy::FirstOccurrence)
+}
+
+/// Select the last occurrence of text in the focused application by setting
+/// `AXSelectedTextRange`.
+///
+/// This is used by refine-last to target the most recently inserted transcript
+/// text when duplicate phrases exist in the focused element.
+pub fn select_text_in_app_last_occurrence(
+    _app_handle: &tauri::AppHandle,
+    text_to_find: &str,
+) -> Result<(), String> {
+    select_text_in_app_with_start_policy(text_to_find, SelectionStartPolicy::LastOccurrence)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SelectionStartPolicy {
+    FirstOccurrence,
+    LastOccurrence,
+}
+
+fn select_text_in_app_with_start_policy(
+    text_to_find: &str,
+    start_policy: SelectionStartPolicy,
+) -> Result<(), String> {
     unsafe {
         let element = get_focused_element()?;
 
@@ -799,16 +827,14 @@ fn select_text_in_app(text_to_find: &str) -> Result<(), String> {
             }
         };
 
-        // Find the text to select
-        let Some(pos) = full_text.find(text_to_find) else {
-            CFRelease(element);
-            return Err(format!("Original text '{}' not found in element", text_to_find));
-        };
-
-        // Create the CFRange for the selection
-        let range = CFRange {
-            location: pos as i64,
-            length: text_to_find.len() as i64,
+        // AXSelectedTextRange expects UTF-16 units, so convert byte positions
+        // from Rust string search into UTF-16 CFRange offsets.
+        let range = match build_selection_range(&full_text, text_to_find, start_policy) {
+            Ok(range) => range,
+            Err(e) => {
+                CFRelease(element);
+                return Err(e);
+            }
         };
 
         // Create an AXValue from the range
@@ -838,9 +864,54 @@ fn select_text_in_app(text_to_find: &str) -> Result<(), String> {
         // Small delay for the selection to take effect
         std::thread::sleep(std::time::Duration::from_millis(30));
 
-        debug!(pos = pos, len = text_to_find.len(), "Re-selected text via AX API");
+        debug!(
+            location_utf16 = range.location,
+            len_utf16 = range.length,
+            ?start_policy,
+            "Re-selected text via AX API"
+        );
         Ok(())
     }
+}
+
+fn find_selection_start(
+    full_text: &str,
+    text_to_find: &str,
+    start_policy: SelectionStartPolicy,
+) -> Option<usize> {
+    if text_to_find.is_empty() {
+        return None;
+    }
+
+    match start_policy {
+        SelectionStartPolicy::FirstOccurrence => full_text.find(text_to_find),
+        SelectionStartPolicy::LastOccurrence => full_text.rfind(text_to_find),
+    }
+}
+
+fn build_selection_range(
+    full_text: &str,
+    text_to_find: &str,
+    start_policy: SelectionStartPolicy,
+) -> Result<CFRange, String> {
+    let start = find_selection_start(full_text, text_to_find, start_policy)
+        .ok_or_else(|| format!("Original text '{}' not found in element", text_to_find))?;
+    let end = start
+        .checked_add(text_to_find.len())
+        .ok_or_else(|| "Selection range overflow".to_string())?;
+
+    if !full_text.is_char_boundary(start) || !full_text.is_char_boundary(end) {
+        return Err("Selection bounds are not valid UTF-8 boundaries".to_string());
+    }
+
+    let location_utf16 = full_text[..start].encode_utf16().count();
+    let length_utf16 = text_to_find.encode_utf16().count();
+    let location = i64::try_from(location_utf16)
+        .map_err(|_| "Selection start exceeds supported AX range".to_string())?;
+    let length = i64::try_from(length_utf16)
+        .map_err(|_| "Selection length exceeds supported AX range".to_string())?;
+
+    Ok(CFRange { location, length })
 }
 
 // ─── Trait helper ───────────────────────────────────────────────────
@@ -1044,5 +1115,89 @@ mod tests {
             },
         );
         assert!(context.is_none());
+    }
+
+    #[test]
+    fn test_find_selection_start_uses_first_occurrence_when_requested() {
+        let full_text = "alpha beta alpha";
+        assert_eq!(
+            find_selection_start(full_text, "alpha", SelectionStartPolicy::FirstOccurrence),
+            Some(0)
+        );
+    }
+
+    #[test]
+    fn test_find_selection_start_uses_last_occurrence_when_requested() {
+        let full_text = "alpha beta alpha";
+        assert_eq!(
+            find_selection_start(full_text, "alpha", SelectionStartPolicy::LastOccurrence),
+            Some(11)
+        );
+    }
+
+    #[test]
+    fn test_find_selection_start_returns_none_when_missing() {
+        let full_text = "alpha beta";
+        assert_eq!(
+            find_selection_start(full_text, "gamma", SelectionStartPolicy::FirstOccurrence),
+            None
+        );
+    }
+
+    #[test]
+    fn test_find_selection_start_rejects_empty_target() {
+        let full_text = "alpha beta";
+        assert_eq!(
+            find_selection_start(full_text, "", SelectionStartPolicy::FirstOccurrence),
+            None
+        );
+    }
+
+    #[test]
+    fn test_build_selection_range_ascii_offsets_match_utf16() {
+        let range = build_selection_range(
+            "alpha beta",
+            "beta",
+            SelectionStartPolicy::FirstOccurrence,
+        )
+        .unwrap();
+        assert_eq!(range.location, 6);
+        assert_eq!(range.length, 4);
+    }
+
+    #[test]
+    fn test_build_selection_range_emoji_prefix_uses_utf16_location() {
+        let range = build_selection_range(
+            "🙂 alpha",
+            "alpha",
+            SelectionStartPolicy::FirstOccurrence,
+        )
+        .unwrap();
+        assert_eq!(range.location, 3);
+        assert_eq!(range.length, 5);
+    }
+
+    #[test]
+    fn test_build_selection_range_emoji_target_uses_utf16_length_for_last_occurrence() {
+        let range = build_selection_range("a🙂b🙂", "🙂", SelectionStartPolicy::LastOccurrence)
+            .unwrap();
+        assert_eq!(range.location, 4);
+        assert_eq!(range.length, 2);
+    }
+
+    #[test]
+    fn test_build_selection_range_emoji_target_uses_utf16_length_for_first_occurrence() {
+        let range = build_selection_range("a🙂b🙂", "🙂", SelectionStartPolicy::FirstOccurrence)
+            .unwrap();
+        assert_eq!(range.location, 1);
+        assert_eq!(range.length, 2);
+    }
+
+    #[test]
+    fn test_build_selection_range_returns_error_when_target_missing() {
+        let err =
+            build_selection_range("alpha beta", "gamma", SelectionStartPolicy::FirstOccurrence)
+                .unwrap_err();
+        assert!(err.contains("not found"));
     }
 }

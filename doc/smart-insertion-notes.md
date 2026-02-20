@@ -2,6 +2,60 @@
 
 This document is a maintainer-facing reference for smart insertion behavior changes and validation status.
 
+## Session Update (2026-02-20) - Refine Replace Fallback + UTF-16 Selection Safety
+
+### Scope Completed
+
+1. Refine-last replacement on macOS is now best-effort instead of hard-fail:
+   - if `inserted_text` exists, Codictate attempts AX re-selection before paste.
+   - if re-selection fails (or `inserted_text` is unavailable), refine paste still proceeds at current cursor/selection.
+2. Refine history persistence is now aligned to actual paste success:
+   - refine output commit to history row now requires `did_paste = true`.
+   - skipped/failed refine paste no longer mutates `post_processed_text`/`inserted_text`.
+3. AX text selection range conversion now uses UTF-16-safe offsets:
+   - byte offsets from Rust string search are converted to UTF-16 code units before `AXSelectedTextRange` write.
+   - prevents mis-selection for multibyte text (emoji/CJK/accents) in re-selection path.
+4. Added regression tests covering UTF-16 selection range behavior and refine history commit gating.
+
+### Verification Completed
+
+- `cargo test --manifest-path src-tauri/Cargo.toml actions::tests`
+- `cargo test --manifest-path src-tauri/Cargo.toml accessibility::macos::tests`
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+
+## Session Update (2026-02-20) - Post-Process Punctuation Artifact Sanitizer
+
+### Scope Completed
+
+1. Added shared punctuation-artifact cleanup helper used by post-processing output normalization:
+   - `collapse_spaced_punctuation_artifacts(...)` in smart insertion module.
+2. Sanitizer now runs only when source text contains spoken punctuation cues:
+   - `comma`, `period`, `question mark`, `full stop`,
+   - `exclamation mark`, `exclamation point`,
+   - `semicolon`, `colon`,
+   - `hyphen`, `dash`, `en dash`, `em dash`.
+3. Sanitizer is applied from shared post-processing paths (transcribe auto-refine and refine-last), while non-post-processed transcribe flows are unchanged.
+4. Added cleanup coverage for spaced duplicate punctuation tokens, including dash variants:
+   - sentence-vs-clause cleanup (for example `. ,` -> `,`)
+   - spaced duplicate sentence punctuation (for example `. .` -> `.`)
+   - spaced duplicate dash tokens (for example `- -` -> `-`, `– –` -> `–`, `— —` -> `—`).
+5. Added guard coverage to avoid unsafe regressions:
+   - preserve negative-number expressions (`x - -1`)
+   - preserve CLI flags (`--help`)
+   - avoid cue false positives in non-cue words (`dashboard`).
+
+### Residual Low-Risk Note
+
+1. Spaced ellipsis forms (for example `. . .`) are currently normalized down to a single period by the duplicate-period collapse rule.
+2. This behavior is accepted as low-risk for now because the sanitizer is only cue-gated for spoken punctuation conversion cases.
+3. If product direction requires preserving spaced ellipsis in refine output, add an explicit ellipsis guard before period dedupe.
+
+### Verification Completed
+
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests`
+- `cargo test --manifest-path src-tauri/Cargo.toml clipboard::tests`
+- `cargo test --manifest-path src-tauri/Cargo.toml`
+
 ## Session Update (2026-02-19)
 
 ### Scope Completed
@@ -74,7 +128,7 @@ This document is a maintainer-facing reference for smart insertion behavior chan
    - `inserted_text` -> `post_processed_text` -> `transcription_text`.
 3. Raw ASR text is preserved as `raw_text` and shown on demand via inline `Original transcript` disclosure.
 4. Transcribe flow now persists `inserted_text` from the exact `PasteResult.pasted_text` payload for the exact saved row id when paste succeeds.
-5. Refine-last flow continues to use raw ASR input, updates refine output on the same latest row id, and updates `inserted_text` only when refine paste succeeds.
+5. Refine-last flow uses latest non-empty refined text (`post_processed_text`) as input when available, falls back to raw ASR for first-pass refine, and updates row `post_processed_text`/`inserted_text` only when refine paste succeeds.
 6. Paste-last flow now reuses `effective_text` so re-paste behavior matches what users most recently got inserted.
 7. Search now matches both primary effective text and raw ASR text.
 8. Migration remains additive (`ALTER TABLE ... ADD COLUMN inserted_text TEXT`) with no destructive history rewrites.

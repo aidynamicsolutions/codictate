@@ -454,5 +454,11 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "refineLastTranscript": {
+    "noHistory": "Aucun historique de transcription à affiner",
+    "disabled": "L'affinage est désactivé. Activez-le dans les réglages d'affinage.",
+    "failed": "Impossible d'affiner le texte. Vérifiez les réglages d'affinage et réessayez.",
+    "replaceUnavailable": "Impossible de sélectionner automatiquement la transcription précédente. Nous collons à l'emplacement du curseur."
   }
 }

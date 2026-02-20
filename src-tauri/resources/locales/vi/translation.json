@@ -454,5 +454,11 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "refineLastTranscript": {
+    "noHistory": "Không có lịch sử phiên âm để tinh chỉnh",
+    "disabled": "Tinh chỉnh đang tắt. Hãy bật trong phần cài đặt Tinh chỉnh.",
+    "failed": "Không thể tinh chỉnh văn bản. Hãy kiểm tra cài đặt Tinh chỉnh rồi thử lại.",
+    "replaceUnavailable": "Không thể tự động chọn bản phiên âm trước đó. Sẽ dán tại vị trí con trỏ hiện tại."
   }
 }

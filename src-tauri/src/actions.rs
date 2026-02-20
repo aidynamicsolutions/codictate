@@ -17,6 +17,7 @@ use crate::utils::{
 use crate::ManagedToggleState;
 use crate::TranscriptionCoordinator;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
+use regex::Regex;
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock};
 use std::time::Instant;
@@ -50,6 +51,14 @@ struct TranscribeAction {
 /// Field name for structured output JSON schema
 const TRANSCRIPTION_FIELD: &str = "transcription";
 
+/// Spoken punctuation cues that are commonly dictated in ASR output.
+static SPOKEN_PUNCTUATION_CUE_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b(?:comma|period|question mark|full stop|exclamation mark|exclamation point|semicolon|colon|hyphen|dash|en dash|em dash)\b",
+    )
+    .expect("valid spoken punctuation cue regex")
+});
+
 /// Strip invisible Unicode characters that some LLMs may insert
 fn strip_invisible_chars(s: &str) -> String {
     s.replace(['\u{200B}', '\u{200C}', '\u{200D}', '\u{FEFF}'], "")
@@ -59,6 +68,20 @@ fn strip_invisible_chars(s: &str) -> String {
 /// Removes `${output}` placeholder since the transcription is sent as the user message.
 fn build_system_prompt(prompt_template: &str) -> String {
     prompt_template.replace("${output}", "").trim().to_string()
+}
+
+fn contains_spoken_punctuation_cue(text: &str) -> bool {
+    SPOKEN_PUNCTUATION_CUE_RE.is_match(text)
+}
+
+/// Applies deterministic punctuation cleanup for refine outputs that were likely
+/// transformed from spoken punctuation commands.
+fn sanitize_refine_punctuation_artifacts(source_text: &str, refined_text: &str) -> String {
+    if !contains_spoken_punctuation_cue(source_text) {
+        return refined_text.to_string();
+    }
+
+    crate::smart_insertion::collapse_spaced_punctuation_artifacts(refined_text)
 }
 
 async fn post_process_transcription(
@@ -146,7 +169,7 @@ async fn post_process_transcription(
                             "Apple Intelligence post-processing succeeded. Output length: {} chars",
                             result.len()
                         );
-                        Some(result)
+                        Some(sanitize_refine_punctuation_artifacts(transcription, &result))
                     }
                 }
                 Err(err) => {
@@ -188,7 +211,7 @@ async fn post_process_transcription(
                         "MLX Local AI post-processing succeeded. Output length: {} chars",
                         result.len()
                     );
-                    Some(result)
+                    Some(sanitize_refine_punctuation_artifacts(transcription, &result))
                 }
             }
             Err(e) => {
@@ -240,7 +263,7 @@ async fn post_process_transcription(
                                 "Apple Intelligence post-processing succeeded. Output length: {} chars",
                                 result.len()
                             );
-                            Some(result)
+                            Some(sanitize_refine_punctuation_artifacts(transcription, &result))
                         }
                     }
                     Err(err) => {
@@ -293,10 +316,17 @@ async fn post_process_transcription(
                                 provider.id,
                                 result.len()
                             );
-                            return Some(result);
+                            return Some(sanitize_refine_punctuation_artifacts(
+                                transcription,
+                                &result,
+                            ));
                         } else {
                             error!("Structured output response missing 'transcription' field");
-                            return Some(strip_invisible_chars(&content));
+                            let fallback_content = strip_invisible_chars(&content);
+                            return Some(sanitize_refine_punctuation_artifacts(
+                                transcription,
+                                &fallback_content,
+                            ));
                         }
                     }
                     Err(e) => {
@@ -304,7 +334,11 @@ async fn post_process_transcription(
                             "Failed to parse structured output JSON: {}. Returning raw content.",
                             e
                         );
-                        return Some(strip_invisible_chars(&content));
+                        let fallback_content = strip_invisible_chars(&content);
+                        return Some(sanitize_refine_punctuation_artifacts(
+                            transcription,
+                            &fallback_content,
+                        ));
                     }
                 }
             }
@@ -336,7 +370,7 @@ async fn post_process_transcription(
                 provider.id,
                 content.len()
             );
-            Some(content)
+            Some(sanitize_refine_punctuation_artifacts(transcription, &content))
         }
         Ok(None) => {
             error!("LLM API response has no content");
@@ -431,8 +465,21 @@ fn paste_last_preparation_mode(
     }
 }
 
-fn select_raw_text_for_refine(entry: &HistoryEntry) -> String {
-    entry.raw_text.clone()
+fn select_text_for_refine_input(entry: &HistoryEntry) -> String {
+    entry
+        .post_processed_text
+        .as_ref()
+        .filter(|text| !text.trim().is_empty())
+        .cloned()
+        .unwrap_or_else(|| entry.raw_text.clone())
+}
+
+fn select_inserted_text_for_refine_replace(entry: &HistoryEntry) -> Option<String> {
+    entry
+        .inserted_text
+        .as_ref()
+        .filter(|text| !text.trim().is_empty())
+        .cloned()
 }
 
 fn maybe_inserted_text_from_paste_result(
@@ -443,6 +490,12 @@ fn maybe_inserted_text_from_paste_result(
     } else {
         None
     }
+}
+
+fn should_commit_refine_history_from_paste_result(
+    paste_result: &crate::clipboard::PasteResult,
+) -> bool {
+    paste_result.did_paste
 }
 
 fn selected_refine_prompt_snapshot(settings: &AppSettings) -> Option<String> {
@@ -1123,9 +1176,13 @@ impl ShortcutAction for RefineLastTranscriptAction {
                 return;
             };
 
-            // Refinement input MUST stay raw ASR text
-            let raw_text = select_raw_text_for_refine(&latest_entry);
-            if raw_text.is_empty() {
+            #[cfg(target_os = "macos")]
+            let replace_target_text = select_inserted_text_for_refine_replace(&latest_entry);
+
+            // For repeated refine passes, use latest refined output when available.
+            // Fall back to raw ASR text for the first refine pass.
+            let refine_source_text = select_text_for_refine_input(&latest_entry);
+            if refine_source_text.is_empty() {
                 debug!("Refine last transcript skipped: transcription text is empty");
                 return;
             }
@@ -1141,12 +1198,13 @@ impl ShortcutAction for RefineLastTranscriptAction {
             }
 
             debug!(
-                chars = raw_text.len(),
+                chars = refine_source_text.len(),
                 "Starting refinement of last transcript"
             );
 
             // Run post-processing
-            let refined_text = post_process_transcription(&app_clone, &settings, &raw_text).await;
+            let refined_text =
+                post_process_transcription(&app_clone, &settings, &refine_source_text).await;
 
             // Hide processing overlay
             crate::utils::hide_overlay_after_transcription(&app_clone);
@@ -1160,18 +1218,8 @@ impl ShortcutAction for RefineLastTranscriptAction {
                 crate::notification::show_info(&app_clone, "refineLastTranscript.failed");
                 return;
             };
-
-            if let Err(e) = history_manager.update_refine_output_by_id(
-                latest_entry.id,
-                final_text.clone(),
-                selected_refine_prompt_snapshot(&settings),
-            ) {
-                error!(
-                    "Failed to update refined text for history entry {}: {}",
-                    latest_entry.id,
-                    e
-                );
-            }
+            let final_text_for_history = final_text.clone();
+            let refine_prompt_snapshot = selected_refine_prompt_snapshot(&settings);
 
             // Add a delay before pasting to allow the user to release the hotkey modifiers
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1181,8 +1229,33 @@ impl ShortcutAction for RefineLastTranscriptAction {
             let app_for_paste = app_clone.clone();
             let app_for_undo_slot = app_clone.clone();
             let final_text_for_paste = final_text;
-            let raw_text_for_undo = raw_text;
+            let suggestion_text_for_undo = refine_source_text;
+            #[cfg(target_os = "macos")]
+            let replace_target_text_for_select = replace_target_text;
             let run_main_thread_result = app_clone.run_on_main_thread(move || {
+                #[cfg(target_os = "macos")]
+                {
+                    if let Some(replace_target_text) = replace_target_text_for_select.as_deref() {
+                        if let Err(e) = crate::accessibility::select_text_in_app_last_occurrence(
+                            &app_for_paste,
+                            replace_target_text,
+                        ) {
+                            warn!(
+                                "Failed to select original inserted transcript text before refine paste: {}. Proceeding with current selection.",
+                                e
+                            );
+                            crate::notification::show_info(
+                                &app_for_paste,
+                                "refineLastTranscript.replaceUnavailable",
+                            );
+                        }
+                    } else {
+                        debug!(
+                            "No inserted transcript text recorded for latest row; skipping AX re-selection before refine paste"
+                        );
+                    }
+                }
+
                 let paste_result = match crate::utils::paste(final_text_for_paste, app_for_paste) {
                     Ok(result) => {
                         info!("Pasted refined transcript successfully");
@@ -1193,7 +1266,7 @@ impl ShortcutAction for RefineLastTranscriptAction {
                                 None,
                                 true,
                                 result,
-                                raw_text_for_undo,
+                                suggestion_text_for_undo,
                             );
                             crate::undo::register_successful_paste(
                                 &app_for_undo_slot,
@@ -1225,16 +1298,35 @@ impl ShortcutAction for RefineLastTranscriptAction {
             };
 
             if let Some(paste_result) = paste_result {
-                if let Some(inserted_text) = maybe_inserted_text_from_paste_result(&paste_result) {
-                    if let Err(e) = history_manager
-                        .update_inserted_text_by_id(latest_entry.id, inserted_text)
-                    {
+                if should_commit_refine_history_from_paste_result(&paste_result) {
+                    if let Err(e) = history_manager.update_refine_output_by_id(
+                        latest_entry.id,
+                        final_text_for_history,
+                        refine_prompt_snapshot,
+                    ) {
                         error!(
-                            "Failed to update inserted text for refined history entry {}: {}",
+                            "Failed to update refined text for history entry {}: {}",
                             latest_entry.id,
                             e
                         );
                     }
+
+                    if let Some(inserted_text) = maybe_inserted_text_from_paste_result(&paste_result)
+                    {
+                        if let Err(e) = history_manager
+                            .update_inserted_text_by_id(latest_entry.id, inserted_text)
+                        {
+                            error!(
+                                "Failed to update inserted text for refined history entry {}: {}",
+                                latest_entry.id,
+                                e
+                            );
+                        }
+                    }
+                } else {
+                    info!(
+                        "Refine paste was skipped by current paste method; not updating refine history row"
+                    );
                 }
             }
         });
@@ -1372,8 +1464,9 @@ pub static ACTION_MAP: LazyLock<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy
 mod tests {
     use super::{
         auto_refined_from_post_processed_text, build_undo_paste_capture,
-        maybe_inserted_text_from_paste_result, paste_last_preparation_mode,
-        select_raw_text_for_refine, select_text_for_paste_last,
+        maybe_inserted_text_from_paste_result, paste_last_preparation_mode, select_inserted_text_for_refine_replace,
+        sanitize_refine_punctuation_artifacts, select_text_for_paste_last, select_text_for_refine_input,
+        should_commit_refine_history_from_paste_result,
     };
     use crate::clipboard::PastePreparationMode;
     use crate::managers::history::HistoryEntry;
@@ -1456,9 +1549,46 @@ mod tests {
     }
 
     #[test]
-    fn refine_uses_raw_text_input() {
+    fn refine_input_uses_post_processed_text_when_available() {
         let entry = sample_history_entry();
-        assert_eq!(select_raw_text_for_refine(&entry), "raw asr");
+        assert_eq!(select_text_for_refine_input(&entry), "refined");
+    }
+
+    #[test]
+    fn refine_input_falls_back_to_raw_text_without_post_processed_text() {
+        let mut entry = sample_history_entry();
+        entry.post_processed_text = None;
+        assert_eq!(select_text_for_refine_input(&entry), "raw asr");
+    }
+
+    #[test]
+    fn refine_input_falls_back_to_raw_text_when_post_processed_is_whitespace() {
+        let mut entry = sample_history_entry();
+        entry.post_processed_text = Some("   ".to_string());
+        assert_eq!(select_text_for_refine_input(&entry), "raw asr");
+    }
+
+    #[test]
+    fn refine_replace_target_uses_inserted_text_only() {
+        let entry = sample_history_entry();
+        assert_eq!(
+            select_inserted_text_for_refine_replace(&entry).as_deref(),
+            Some("inserted")
+        );
+    }
+
+    #[test]
+    fn refine_replace_target_is_none_without_inserted_text() {
+        let mut entry = sample_history_entry();
+        entry.inserted_text = None;
+        assert_eq!(select_inserted_text_for_refine_replace(&entry), None);
+    }
+
+    #[test]
+    fn refine_replace_target_is_none_for_whitespace_inserted_text() {
+        let mut entry = sample_history_entry();
+        entry.inserted_text = Some("   ".to_string());
+        assert_eq!(select_inserted_text_for_refine_replace(&entry), None);
     }
 
     #[test]
@@ -1476,6 +1606,70 @@ mod tests {
         assert_eq!(
             maybe_inserted_text_from_paste_result(&succeeded).as_deref(),
             Some("transformed")
+        );
+    }
+
+    #[test]
+    fn refine_history_commit_requires_successful_paste() {
+        let failed = crate::clipboard::PasteResult {
+            pasted_text: "transformed".to_string(),
+            did_paste: false,
+        };
+        let succeeded = crate::clipboard::PasteResult {
+            pasted_text: "transformed".to_string(),
+            did_paste: true,
+        };
+
+        assert!(!should_commit_refine_history_from_paste_result(&failed));
+        assert!(should_commit_refine_history_from_paste_result(&succeeded));
+    }
+
+    #[test]
+    fn refine_punctuation_sanitizer_applies_when_source_has_spoken_punctuation_cues() {
+        let source = "Today there are five hundred things I want to do. Comma, let's try to make it a good day. Full stop.";
+        let refined =
+            "Today there are 500 things I want to do. , let's try to make it a good day. .";
+
+        assert_eq!(
+            sanitize_refine_punctuation_artifacts(source, refined),
+            "Today there are 500 things I want to do, let's try to make it a good day."
+        );
+    }
+
+    #[test]
+    fn refine_punctuation_sanitizer_skips_when_source_has_no_spoken_punctuation_cues() {
+        let source = "Yesterday I spent ten dollars.";
+        let refined = "Yesterday I spent $10. .";
+        assert_eq!(sanitize_refine_punctuation_artifacts(source, refined), refined);
+    }
+
+    #[test]
+    fn refine_punctuation_sanitizer_applies_for_dash_cues() {
+        let source = "alpha dash beta";
+        let refined = "alpha - - beta";
+        assert_eq!(
+            sanitize_refine_punctuation_artifacts(source, refined),
+            "alpha - beta"
+        );
+    }
+
+    #[test]
+    fn refine_punctuation_sanitizer_preserves_negative_number_expression() {
+        let source = "x dash minus one";
+        let refined = "x - -1";
+        assert_eq!(
+            sanitize_refine_punctuation_artifacts(source, refined),
+            "x - -1"
+        );
+    }
+
+    #[test]
+    fn refine_punctuation_sanitizer_ignores_dash_substring_in_non_cue_word() {
+        let source = "dashboard status updated";
+        let refined = "alpha - - beta";
+        assert_eq!(
+            sanitize_refine_punctuation_artifacts(source, refined),
+            "alpha - - beta"
         );
     }
 }

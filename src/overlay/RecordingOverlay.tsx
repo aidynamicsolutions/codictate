@@ -397,6 +397,7 @@ const RecordingOverlay: React.FC = () => {
 
   const overlayMessageText = undoCard ? undoCardMessage : stateMessage;
   const discoverabilityActive = undoCard?.kind === "discoverability_hint";
+  const marqueeEligible = discoverabilityActive;
 
   const usesCancelSlot =
     !undoCard &&
@@ -406,14 +407,13 @@ const RecordingOverlay: React.FC = () => {
       state === "connecting" ||
       state === "cancelling");
   const usesCorrectionPlaceholder = !undoCard && state === "correcting";
-  const shouldRenderSlots = usesCancelSlot || usesCorrectionPlaceholder;
   const pointerCursorActive =
     nativeCursorIntent === "pointer" || isPointerOverAction;
 
   const recomputeMarquee = useCallback(() => {
     const viewport = marqueeViewportRef.current;
     const text = marqueeTextRef.current;
-    if (!viewport || !text || !overlayMessageText) {
+    if (!marqueeEligible || !viewport || !text || !overlayMessageText) {
       setMarqueeMetrics((current) =>
         current.overflow || current.distancePx !== 0 || current.durationSec !== 0
           ? { overflow: false, distancePx: 0, durationSec: 0 }
@@ -451,14 +451,17 @@ const RecordingOverlay: React.FC = () => {
         durationSec,
       };
     });
-  }, [overlayMessageText]);
+  }, [marqueeEligible, overlayMessageText]);
 
   useEffect(() => {
     recomputeMarquee();
   }, [overlayMessageText, isVisible, recomputeMarquee]);
 
   const marqueeShouldPause =
-    isVisible && marqueeMetrics.overflow && (pointerLaneHover || nativeLaneHover);
+    isVisible &&
+    marqueeEligible &&
+    marqueeMetrics.overflow &&
+    (pointerLaneHover || nativeLaneHover);
 
   useEffect(() => {
     if (isMarqueePaused === marqueeShouldPause) {
@@ -486,7 +489,7 @@ const RecordingOverlay: React.FC = () => {
   }, [recomputeMarquee]);
 
   const marqueeStyle =
-    marqueeMetrics.overflow && overlayMessageText
+    marqueeEligible && marqueeMetrics.overflow && overlayMessageText
       ? ({
           "--marquee-distance": `-${marqueeMetrics.distancePx}px`,
           "--marquee-duration": `${marqueeMetrics.durationSec}s`,
@@ -804,15 +807,19 @@ const RecordingOverlay: React.FC = () => {
   // in Rust (fn_key_monitor.rs CGEventTap) because the overlay panel is
   // no_activate and cannot receive keyboard events directly.
 
-  const sideSlotWidths = discoverabilityActive
-    ? {
-        left: 0,
-        right: 0,
-      }
-    : {
-        left: DEFAULT_SLOT_WIDTH_PX,
-        right: DEFAULT_SLOT_WIDTH_PX,
-      };
+  // Left slot is only needed to keep symmetric layouts (recording bars/correction views).
+  // For status-text states with a right-side cancel button, remove left slot to maximize text room.
+  const shouldKeepSymmetricLeftSlot = state === "recording" || state === "correcting";
+  const sideSlotWidths = {
+    left:
+      !discoverabilityActive && shouldKeepSymmetricLeftSlot
+        ? DEFAULT_SLOT_WIDTH_PX
+        : 0,
+    right:
+      !discoverabilityActive && (usesCancelSlot || usesCorrectionPlaceholder)
+        ? DEFAULT_SLOT_WIDTH_PX
+        : 0,
+  };
 
   const cancelTooltipText = t("overlay.cancel", "Cancel");
 
@@ -853,45 +860,49 @@ const RecordingOverlay: React.FC = () => {
     message: string,
     ariaLive = false,
     tone: "status" | "undo" = "status",
-  ) => (
-    <div
-      className="connecting-container"
-      role={ariaLive ? "status" : undefined}
-      aria-live={ariaLive ? "polite" : undefined}
-    >
+    enableMarquee = false,
+  ) => {
+    const laneMarqueeActive = enableMarquee && marqueeMetrics.overflow;
+    return (
       <div
-        ref={marqueeViewportRef}
-        className={`overlay-message-viewport ${marqueeMetrics.overflow ? "marquee-active" : ""}`}
-        tabIndex={marqueeMetrics.overflow ? 0 : -1}
-        onPointerEnter={() => {
-          setPointerLaneHover(true);
-        }}
-        onPointerLeave={() => {
-          setPointerLaneHover(false);
-        }}
+        className="connecting-container"
+        role={ariaLive ? "status" : undefined}
+        aria-live={ariaLive ? "polite" : undefined}
       >
         <div
-          className={`overlay-message-track ${marqueeMetrics.overflow ? "marquee-running" : ""} ${isMarqueePaused ? "marquee-paused" : ""}`}
-          style={marqueeStyle}
+          ref={marqueeViewportRef}
+          className={`overlay-message-viewport ${laneMarqueeActive ? "marquee-active" : ""}`}
+          tabIndex={laneMarqueeActive ? 0 : -1}
+          onPointerEnter={() => {
+            setPointerLaneHover(true);
+          }}
+          onPointerLeave={() => {
+            setPointerLaneHover(false);
+          }}
         >
-          <span
-            ref={marqueeTextRef}
-            className={`${tone === "undo" ? "undo-message-text" : "connecting-text"} overlay-message-text`}
+          <div
+            className={`overlay-message-track ${laneMarqueeActive ? "marquee-running" : ""} ${laneMarqueeActive && isMarqueePaused ? "marquee-paused" : ""}`}
+            style={laneMarqueeActive ? marqueeStyle : undefined}
           >
-            {message}
-          </span>
-          {marqueeMetrics.overflow && (
             <span
-              aria-hidden
-              className={`${tone === "undo" ? "undo-message-text" : "connecting-text"} overlay-message-text overlay-message-text-clone`}
+              ref={marqueeTextRef}
+              className={`${tone === "undo" ? "undo-message-text" : "connecting-text"} overlay-message-text`}
             >
               {message}
             </span>
-          )}
+            {laneMarqueeActive && (
+              <span
+                aria-hidden
+                className={`${tone === "undo" ? "undo-message-text" : "connecting-text"} overlay-message-text overlay-message-text-clone`}
+              >
+                {message}
+              </span>
+            )}
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <>
@@ -935,14 +946,14 @@ const RecordingOverlay: React.FC = () => {
         }
       >
         <div className="overlay-left">
-          {shouldRenderSlots ? (
+          {sideSlotWidths.left > 0 ? (
             <div className="overlay-slot-placeholder" aria-hidden />
           ) : null}
         </div>
 
         <div className="overlay-middle">
           {undoCard ? (
-            renderMessageLane(undoCardMessage, true, "undo")
+            renderMessageLane(undoCardMessage, true, "undo", discoverabilityActive)
           ) : (
             <>
               {state === "recording" && (

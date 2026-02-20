@@ -1,4 +1,6 @@
 use crate::accessibility::TextInsertionContext;
+use regex::Regex;
+use std::sync::LazyLock;
 use tracing::debug;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,9 +54,10 @@ fn resolve_smart_insertion_profile(
     normalized_language: &str,
 ) -> (SmartInsertionProfile, &'static str) {
     match normalized_language {
-        "en" | "es" | "fr" | "de" | "it" | "pt" | "pl" | "cs" | "ru" | "uk" | "vi" => {
-            (SmartInsertionProfile::CasedWhitespace, "cased_whitespace_allowlist")
-        }
+        "en" | "es" | "fr" | "de" | "it" | "pt" | "pl" | "cs" | "ru" | "uk" | "vi" => (
+            SmartInsertionProfile::CasedWhitespace,
+            "cased_whitespace_allowlist",
+        ),
         "ar" | "fa" | "ur" | "he" | "ko" => (
             SmartInsertionProfile::UncasedWhitespace,
             "uncased_whitespace_allowlist",
@@ -116,6 +119,80 @@ fn is_clause_boundary_punctuation(c: char, profile: SmartInsertionProfile) -> bo
         }
         SmartInsertionProfile::NoBoundarySpacing | SmartInsertionProfile::Conservative => false,
     }
+}
+
+/// Collapses punctuation artifacts that can emerge from spoken punctuation
+/// conversion (e.g., ". ," -> "," and ". ." -> ".").
+static SENTENCE_TO_CLAUSE_PUNCTUATION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[.!?]\s+([,;:])").expect("valid sentence-to-clause regex"));
+static SPACED_DUPLICATE_COMMA_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r",(?:\s+,)+").expect("valid duplicate comma regex"));
+static SPACED_DUPLICATE_PERIOD_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\.(?:\s+\.)+").expect("valid duplicate period regex"));
+static SPACED_DUPLICATE_SEMICOLON_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r";(?:\s+;)+").expect("valid duplicate semicolon regex"));
+static SPACED_DUPLICATE_COLON_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r":(?:\s+:)+").expect("valid duplicate colon regex"));
+static SPACED_DUPLICATE_EXCLAMATION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"!(?:\s+!)+").expect("valid duplicate exclamation regex"));
+static SPACED_DUPLICATE_QUESTION_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\?(?:\s+\?)+").expect("valid duplicate question regex"));
+static SPACED_DUPLICATE_HYPHEN_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(^|\s)-\s-(\s|$)").expect("valid duplicate hyphen regex"));
+static SPACED_DUPLICATE_EN_DASH_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(^|\s)–\s–(\s|$)").expect("valid duplicate en dash regex"));
+static SPACED_DUPLICATE_EM_DASH_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(^|\s)—\s—(\s|$)").expect("valid duplicate em dash regex"));
+static SPACED_CONFLICTING_SENTENCE_PUNCTUATION_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[.!?]\s+([.!?])").expect("valid conflicting sentence punctuation regex")
+});
+
+pub(crate) fn collapse_spaced_punctuation_artifacts(text: &str) -> String {
+    let mut cleaned = text.to_string();
+
+    // Iterate to a small fixed point to handle cascaded artifacts.
+    for _ in 0..3 {
+        let previous = cleaned.clone();
+        cleaned = SENTENCE_TO_CLAUSE_PUNCTUATION_RE
+            .replace_all(&cleaned, "$1")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_COMMA_RE
+            .replace_all(&cleaned, ",")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_PERIOD_RE
+            .replace_all(&cleaned, ".")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_SEMICOLON_RE
+            .replace_all(&cleaned, ";")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_COLON_RE
+            .replace_all(&cleaned, ":")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_EXCLAMATION_RE
+            .replace_all(&cleaned, "!")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_QUESTION_RE
+            .replace_all(&cleaned, "?")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_HYPHEN_RE
+            .replace_all(&cleaned, "$1-$2")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_EN_DASH_RE
+            .replace_all(&cleaned, "$1–$2")
+            .into_owned();
+        cleaned = SPACED_DUPLICATE_EM_DASH_RE
+            .replace_all(&cleaned, "$1—$2")
+            .into_owned();
+        cleaned = SPACED_CONFLICTING_SENTENCE_PUNCTUATION_RE
+            .replace_all(&cleaned, "$1")
+            .into_owned();
+
+        if cleaned == previous {
+            break;
+        }
+    }
+
+    cleaned
 }
 
 fn continuation_allows_punctuation_strip(
@@ -320,7 +397,11 @@ fn collapse_duplicate_boundary_sentence_punctuation(
                 Some(SentenceMarkKind::PeriodLike)
             ) && has_abbreviation_like_internal_dots(text, profile)
             {
-                return (text.to_string(), false, "clause_boundary_abbreviation_guard");
+                return (
+                    text.to_string(),
+                    false,
+                    "clause_boundary_abbreviation_guard",
+                );
             }
 
             return (
@@ -382,8 +463,7 @@ fn is_cjk_han(c: char) -> bool {
 fn is_cjk_punctuation(c: char) -> bool {
     matches!(
         c,
-        '。'
-            | '！'
+        '。' | '！'
             | '？'
             | '，'
             | '、'
@@ -440,20 +520,7 @@ fn is_ascii_token_char(c: char) -> bool {
     c.is_ascii_alphanumeric()
         || matches!(
             c,
-            '_'
-                | '-'
-                | '.'
-                | '/'
-                | '\\'
-                | ':'
-                | '@'
-                | '#'
-                | '+'
-                | '='
-                | '~'
-                | '%'
-                | '&'
-                | '$'
+            '_' | '-' | '.' | '/' | '\\' | ':' | '@' | '#' | '+' | '=' | '~' | '%' | '&' | '$'
         )
 }
 
@@ -714,9 +781,9 @@ pub(crate) fn prepare_text_for_paste(
         && !starts_with_whitespace;
     let needs_leading_space_sentence_boundary = spacing_enabled
         && context
-        .left_char
-        .map(|c| is_sentence_terminator(c, profile))
-        .unwrap_or(false)
+            .left_char
+            .map(|c| is_sentence_terminator(c, profile))
+            .unwrap_or(false)
         && first_significant.map(is_word_like).unwrap_or(false)
         && !starts_with_whitespace;
     let needs_leading_space =
@@ -832,6 +899,69 @@ mod tests {
             insertion_context,
             selected_language,
         )
+    }
+
+    #[test]
+    fn collapse_spaced_punctuation_artifacts_fixes_sentence_to_comma() {
+        let output = collapse_spaced_punctuation_artifacts(
+            "Today there are five hundred things I want to do. , let's try to make it a good day.",
+        );
+        assert_eq!(
+            output,
+            "Today there are five hundred things I want to do, let's try to make it a good day."
+        );
+    }
+
+    #[test]
+    fn collapse_spaced_punctuation_artifacts_fixes_duplicate_full_stop() {
+        let output = collapse_spaced_punctuation_artifacts("Let's try to make it a good day. .");
+        assert_eq!(output, "Let's try to make it a good day.");
+    }
+
+    #[test]
+    fn collapse_spaced_punctuation_artifacts_keeps_regular_text_unchanged() {
+        let input = "Yesterday I spent $10. Today is better.";
+        assert_eq!(collapse_spaced_punctuation_artifacts(input), input);
+    }
+
+    #[test]
+    fn collapse_spaced_punctuation_artifacts_fixes_duplicate_hyphen_dash_variants() {
+        let hyphen_output = collapse_spaced_punctuation_artifacts("alpha - - beta");
+        let en_dash_output = collapse_spaced_punctuation_artifacts("alpha – – beta");
+        let em_dash_output = collapse_spaced_punctuation_artifacts("alpha — — beta");
+
+        assert_eq!(hyphen_output, "alpha - beta");
+        assert_eq!(en_dash_output, "alpha – beta");
+        assert_eq!(em_dash_output, "alpha — beta");
+    }
+
+    #[test]
+    fn collapse_spaced_punctuation_artifacts_preserves_negative_number_expression() {
+        let input = "x - -1";
+        assert_eq!(collapse_spaced_punctuation_artifacts(input), input);
+    }
+
+    #[test]
+    fn collapse_spaced_punctuation_artifacts_preserves_cli_double_dash() {
+        let input = "run --help";
+        assert_eq!(collapse_spaced_punctuation_artifacts(input), input);
+    }
+
+    #[test]
+    fn collapse_spaced_punctuation_artifacts_handles_start_of_text_dash_duplicate() {
+        let input = "- - alpha";
+        assert_eq!(collapse_spaced_punctuation_artifacts(input), "- alpha");
+    }
+
+    #[test]
+    fn collapse_spaced_punctuation_artifacts_handles_end_of_text_dash_duplicate() {
+        let hyphen_output = collapse_spaced_punctuation_artifacts("alpha - -");
+        let en_dash_output = collapse_spaced_punctuation_artifacts("alpha – –");
+        let em_dash_output = collapse_spaced_punctuation_artifacts("alpha — —");
+
+        assert_eq!(hyphen_output, "alpha -");
+        assert_eq!(en_dash_output, "alpha –");
+        assert_eq!(em_dash_output, "alpha —");
     }
 
     #[test]
@@ -1283,7 +1413,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "世界",
             true,
-            Some(context(Some('你'), Some('你'), Some('好'), Some('好'), false)),
+            Some(context(
+                Some('你'),
+                Some('你'),
+                Some('好'),
+                Some('好'),
+                false,
+            )),
             "zh",
         );
         assert_eq!(output, "世界");
@@ -1305,7 +1441,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "是 請",
             true,
-            Some(context(Some('你'), Some('你'), Some('好'), Some('好'), false)),
+            Some(context(
+                Some('你'),
+                Some('你'),
+                Some('好'),
+                Some('好'),
+                false,
+            )),
             "zh",
         );
         assert_eq!(output, "是請");
@@ -1316,7 +1458,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "是 請",
             true,
-            Some(context(Some('你'), Some('你'), Some('好'), Some('好'), false)),
+            Some(context(
+                Some('你'),
+                Some('你'),
+                Some('好'),
+                Some('好'),
+                false,
+            )),
             "zh-Hant",
         );
         assert_eq!(output, "是請");
@@ -1327,7 +1475,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "係 唔係",
             true,
-            Some(context(Some('你'), Some('你'), Some('好'), Some('好'), false)),
+            Some(context(
+                Some('你'),
+                Some('你'),
+                Some('好'),
+                Some('好'),
+                false,
+            )),
             "yue-HK",
         );
         assert_eq!(output, "係唔係");
@@ -1338,7 +1492,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "你好。 再见",
             true,
-            Some(context(Some('你'), Some('你'), Some('好'), Some('好'), false)),
+            Some(context(
+                Some('你'),
+                Some('你'),
+                Some('好'),
+                Some('好'),
+                false,
+            )),
             "zh-Hans",
         );
         assert_eq!(output, "你好。再见");
@@ -1349,7 +1509,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "Open AI",
             true,
-            Some(context(Some('你'), Some('你'), Some('好'), Some('好'), false)),
+            Some(context(
+                Some('你'),
+                Some('你'),
+                Some('好'),
+                Some('好'),
+                false,
+            )),
             "zh",
         );
         assert_eq!(output, "Open AI");
@@ -1360,7 +1526,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "cdn example.com",
             true,
-            Some(context(Some('你'), Some('你'), Some('好'), Some('好'), false)),
+            Some(context(
+                Some('你'),
+                Some('你'),
+                Some('好'),
+                Some('好'),
+                false,
+            )),
             "zh",
         );
         assert_eq!(output, "cdn example.com");
@@ -1492,7 +1664,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "你好。",
             true,
-            Some(context(Some(' '), Some('好'), Some('。'), Some('。'), false)),
+            Some(context(
+                Some(' '),
+                Some('好'),
+                Some('。'),
+                Some('。'),
+                false,
+            )),
             "zh-Hans",
         );
         assert_eq!(output, "你好");
@@ -1558,7 +1736,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "你好。",
             true,
-            Some(context(Some('你'), Some('你'), Some('，'), Some('，'), false)),
+            Some(context(
+                Some('你'),
+                Some('你'),
+                Some('，'),
+                Some('，'),
+                false,
+            )),
             "zh-Hans",
         );
         assert_eq!(output, "你好。");
@@ -1569,7 +1753,13 @@ mod tests {
         let output = prepare_text_for_paste_with_language(
             "你好？",
             true,
-            Some(context(Some(' '), Some('好'), Some('。'), Some('。'), false)),
+            Some(context(
+                Some(' '),
+                Some('好'),
+                Some('。'),
+                Some('。'),
+                false,
+            )),
             "zh-Hans",
         );
         assert_eq!(output, "你好？");

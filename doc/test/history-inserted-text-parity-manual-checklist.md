@@ -81,9 +81,14 @@ Expected:
 
 Expected:
 - Same row is updated (latest-only semantics).
-- Refine input is still based on raw ASR.
+- Repeated refine uses latest non-empty refined text from that row (`post_processed_text`); first-pass refine falls back to raw ASR.
 - Primary now reflects latest inserted refined output when paste succeeded.
 - Raw panel still shows original ASR transcript.
+- On macOS, if auto re-selection of prior inserted text fails, refine still pastes at current cursor/selection and shows an informational fallback notice.
+- If paste is skipped/blocked (`did_paste = false`), refine does not commit a new refined output to that row.
+
+Low-risk caveat to note during manual checks:
+- In spoken-punctuation cue cases, spaced ellipsis-like output (`. . .`) may normalize to a single period as part of punctuation artifact cleanup.
 
 ## H. Failure/Skip Safety
 - [ ] Temporarily set paste method to `None` and run a transcription.

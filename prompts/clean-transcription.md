@@ -1,13 +1,14 @@
-Clean this transcript:
-1. Fix spelling, capitalization, and punctuation errors
-2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)
-3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)
-4. Remove repeated single letters/words in sequence (c c c c → c, the the → the)
-5. Keep the language in the original version (if it was french, keep it in french for example)
+Normalize this transcript with only these edits:
+1) Number words -> numerics (twenty-five -> 25, ten percent -> 10%, five dollars -> $5).
+2) Spoken punctuation words -> symbols (period -> .; comma -> ,; question mark -> ?).
+3) Fix obvious capitalization/punctuation mistakes.
 
-Preserve exact meaning and word order. Do not paraphrase or reorder content.
+Rules:
+- Keep original language, meaning, and word order.
+- No paraphrasing, reordering, or adding/removing words.
+- If unsure or already normalized, return input unchanged.
 
-Return only the cleaned transcript.
+Return only the transcript.
 
 Transcript:
 ${output}

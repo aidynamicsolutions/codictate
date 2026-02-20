@@ -167,6 +167,16 @@ Flow prerequisites (important):
 | [ ] | FLOW-03 | `English` | Seed `. |`, latest history primary is `there` | `paste_last_transcript` (adaptive setting ON) | `. There` (adaptive mode applies sentence-start capitalization) |
 | [ ] | FLOW-04 | `English` | Seed `. |`, latest row raw text is `there` | `refine_last_transcript` (pass-through refine prompt) | `. There` (refine path remains adaptive) |
 
+## Refine Punctuation Artifact Checks
+Use these rows for refine-only punctuation cleanup behavior validation.
+
+| Done | ID | Language | Scenario | Trigger | Expected result |
+|---|---|---|---|---|---|
+| [ ] | RPA-01 | `English` | Latest row raw includes spoken punctuation words, refine output contains `. ,` artifact | `refine_last_transcript` | Artifact is normalized (for example `there. , world` -> `there, world`) |
+| [ ] | RPA-02 | `English` | Latest row spoken punctuation cue includes dash, refine output contains `- -` artifact | `refine_last_transcript` | Artifact is normalized (`alpha - - beta` -> `alpha - beta`) |
+| [ ] | RPA-03 | `English` | Refine output includes `x - -1` in a dash-cue session | `refine_last_transcript` | Negative-number expression remains unchanged (`x - -1`) |
+| [ ] | RPA-04 | `English` | Refine output includes spaced ellipsis `. . .` in spoken-punctuation-cue session | `refine_last_transcript` | Current behavior: may collapse to a single period (`.`); record observed output for regression tracking |
+
 ## History Inserted-Text Parity
 Validate that History primary content reflects what was inserted into the target app, while raw ASR remains available for verification.
 
@@ -176,6 +186,8 @@ Validate that History primary content reflects what was inserted into the target
 | [ ] | HST-02 | `English` | Raw and inserted differ | In the same row, click `Original transcript` | Inline panel expands and shows raw ASR text; primary line stays unchanged. |
 | [ ] | HST-03 | `English` | Search match exists only in raw | Search by a raw-only token while row is collapsed | Row appears in results and shows hint `Matched in original transcript`; click hint expands raw panel. |
 | [ ] | HST-04 | `English` | Refine-last updates same row | Run `refine_last_transcript` on latest entry, then reopen History | Same latest row updates with refined primary text; raw panel still shows original ASR for that recording. |
+| [ ] | HST-05 | `English` (macOS) | Refine re-selection fallback | Force a re-selection miss (move cursor to a different field) and run `refine_last_transcript` | Info notice appears about auto-selection fallback; refine still pastes at current cursor/selection instead of hard-failing. |
+| [ ] | HST-06 | `English` | Refine paste skipped | Set paste method to `None`, run `refine_last_transcript`, then reopen History | Latest row does not commit a new refined output for that attempt (`did_paste=false` path). |
 
 ## Optional Advanced Cases
 Use these only if you want extra confidence beyond standard UI paths.
@@ -203,6 +215,7 @@ If you run with debug logs, verify smart insertion reasons are emitted as expect
 - [ ] Cased/uncased/no-boundary behaviors still match profile expectations.
 - [ ] When sentence punctuation conflicts at a cursor boundary in whitespace profiles, Codictate keeps the existing right-boundary punctuation.
 - [ ] In whitespace profiles, sentence punctuation before clause punctuation is cleaned up (for example `there.,` -> `there,`) while abbreviation periods remain intact (`e.g.,`).
+- [ ] In refine spoken-punctuation-cue sessions, spaced ellipsis (`. . .`) behavior is tracked and understood: current implementation may collapse to a single period.
 - [ ] Japanese dictation output does not keep ASR artifact spaces at Japanese boundaries (`Japanese↔Japanese`, `ASCII↔Japanese`) while preserving intentional `ASCII↔ASCII` spacing.
 - [ ] `paste_last_transcript` is deterministic/literal by default, and matches adaptive smart insertion behavior only when `Adapt Paste Last to Cursor` is enabled.
 - [ ] If any test fails, record ID, observed output, expected output, app version/commit, and timestamp.

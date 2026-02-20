@@ -689,5 +689,11 @@
   },
   "pasteLastTranscript": {
     "noHistory": "No transcription history to paste"
+  },
+  "refineLastTranscript": {
+    "noHistory": "No transcription history to refine",
+    "disabled": "Refine is turned off. Turn it on in Refine settings.",
+    "failed": "Refine didn't work. Check your Refine settings and try again.",
+    "replaceUnavailable": "Couldn't select the previous transcript automatically. Pasting where your cursor is instead."
   }
 }

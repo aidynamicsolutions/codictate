@@ -454,5 +454,11 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "refineLastTranscript": {
+    "noHistory": "No hay historial de transcripciones para refinar",
+    "disabled": "Refinar está desactivado. Actívalo en los ajustes de Refinar.",
+    "failed": "No se pudo refinar el texto. Revisa los ajustes de Refinar y vuelve a intentarlo.",
+    "replaceUnavailable": "No pudimos seleccionar automáticamente la transcripción anterior. Pegaremos donde esté el cursor."
   }
 }

@@ -100,9 +100,9 @@ Undo feedback and discoverability hint SHALL be rendered through the shared over
 - **THEN** it is rendered via shared overlay message lane and auto-dismisses
 
 #### Scenario: Overflow marquee behavior
-- **WHEN** overlay message text exceeds lane width
-- **THEN** marquee scrolling is enabled
-- **AND** short messages remain centered and static
+- **WHEN** discoverability hint text exceeds lane width
+- **THEN** marquee scrolling is enabled for discoverability hint only
+- **AND** operational overlay states (`Transcribing`, `Processing`, `Connecting`, `Cancelling`) remain centered and static
 
 ### Requirement: Recent Paste Tracking Model
 The system SHALL maintain a single in-memory tracked recent paste slot for strict undo correlation.
@@ -145,4 +145,3 @@ The system SHALL provide platform defaults for `undo_last_transcript`.
 #### Scenario: Linux default
 - **WHEN** defaults initialize on Linux
 - **THEN** binding is `ctrl+alt+z`
-

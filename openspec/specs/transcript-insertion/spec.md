@@ -107,6 +107,23 @@ The system SHALL apply smart insertion formatting to transcript paste flows that
 - **WHEN** `refine_last_transcript` flow pastes text
 - **THEN** shared smart insertion formatter is used
 
+#### Scenario: Repeated refine uses latest refined history text
+- **WHEN** `refine_last_transcript` is triggered for the latest history row
+- **AND** that row has a non-empty `post_processed_text`
+- **THEN** refine input uses that `post_processed_text`
+- **AND** if no non-empty `post_processed_text` exists, refine input falls back to `raw_text`
+
+#### Scenario: macOS refine replacement re-selection is best-effort
+- **WHEN** `refine_last_transcript` runs on macOS
+- **AND** latest row has non-empty `inserted_text`
+- **THEN** system attempts AX re-selection of that `inserted_text` before paste
+- **AND** if AX re-selection fails (or `inserted_text` is unavailable), refine paste continues at current cursor/selection with user feedback
+
+#### Scenario: Refine history commit requires successful paste
+- **WHEN** `refine_last_transcript` produces refined output
+- **AND** paste is skipped or fails (`did_paste = false` or paste error)
+- **THEN** latest row `post_processed_text` and `inserted_text` are not updated by that refine attempt
+
 #### Scenario: Undo capture stores actual pasted text
 - **WHEN** a transcript paste succeeds through the shared paste utility
 - **THEN** the registered undo payload uses the `pasted_text` returned by that paste operation
@@ -122,4 +139,3 @@ The system SHALL provide a user setting to control whether `paste_last_transcrip
 #### Scenario: User enables adaptive mode
 - **WHEN** user enables the paste-last smart insertion setting
 - **THEN** subsequent `paste_last_transcript` actions use adaptive smart insertion preparation
-

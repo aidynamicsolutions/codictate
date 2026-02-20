@@ -67,6 +67,24 @@ pub fn replace_text_in_app(
 
 /// Stub for non-macOS platforms.
 #[cfg(not(target_os = "macos"))]
+pub fn select_text_in_app(
+    _app_handle: &tauri::AppHandle,
+    _text_to_find: &str,
+) -> Result<(), String> {
+    Err("Text selection is only supported on macOS".to_string())
+}
+
+/// Stub for non-macOS platforms.
+#[cfg(not(target_os = "macos"))]
+pub fn select_text_in_app_last_occurrence(
+    _app_handle: &tauri::AppHandle,
+    _text_to_find: &str,
+) -> Result<(), String> {
+    Err("Text selection is only supported on macOS".to_string())
+}
+
+/// Stub for non-macOS platforms.
+#[cfg(not(target_os = "macos"))]
 pub fn capture_insertion_context(
     _app_handle: &tauri::AppHandle,
 ) -> Option<TextInsertionContext> {
