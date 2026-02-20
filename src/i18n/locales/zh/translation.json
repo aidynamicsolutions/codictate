@@ -490,6 +490,10 @@
           "none": "无"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "按光标上下文调整“粘贴最后转录”",
+        "description": "开启后，“粘贴最后转录”会根据光标位置自动调整大小写和空格。关闭后，将严格粘贴历史记录中显示的文本。"
+      },
       "typingTool": {
         "title": "输入工具",
         "description": "选择在直接粘贴方式下使用的 Linux 输入工具。Auto 会自动检测并使用系统中可用的最佳工具。",

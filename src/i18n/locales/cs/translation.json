@@ -264,6 +264,10 @@
           "none": "Žádné"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "Přizpůsobit „Vložit poslední přepis“ kurzoru",
+        "description": "Když je zapnuto, Vložit poslední přepis upraví velká písmena a mezery podle kontextu kurzoru. Když je vypnuto, vloží přesně text z Historie."
+      },
       "typingTool": {
         "title": "Nástroj pro psaní",
         "description": "Vyberte, který linuxový nástroj pro psaní použít pro metodu přímého vložení. Auto automaticky zjistí a použije nejlepší dostupný nástroj pro váš systém.",

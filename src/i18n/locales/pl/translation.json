@@ -490,6 +490,10 @@
           "none": "Brak"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "Dopasuj „Wklej ostatnią transkrypcję” do kursora",
+        "description": "Po włączeniu „Wklej ostatnią transkrypcję” dopasowuje wielkość liter i odstępy do kontekstu kursora. Po wyłączeniu wkleja dokładnie to, co widać w Historii."
+      },
       "typingTool": {
         "title": "Narzędzie do wpisywania",
         "description": "Wybierz, którego narzędzia do wpisywania w Linuxie użyć dla metody bezpośredniego wklejania. Auto automatycznie wykryje i użyje najlepszego dostępnego narzędzia dla Twojego systemu.",

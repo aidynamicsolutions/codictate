@@ -490,6 +490,10 @@
           "none": "Keine"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "„Letzte Transkription einfügen“ am Cursor ausrichten",
+        "description": "Wenn aktiviert, passt „Letzte Transkription einfügen“ Groß-/Kleinschreibung und Abstände an den Cursor-Kontext an. Wenn deaktiviert, wird genau das eingefügt, was im Verlauf steht."
+      },
       "typingTool": {
         "title": "Eingabetool",
         "description": "Wählen Sie, welches Linux-Eingabetool für die Direkt-Einfügen-Methode verwendet werden soll. Auto erkennt und verwendet automatisch das beste verfügbare Tool für Ihr System.",

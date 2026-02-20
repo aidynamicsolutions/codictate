@@ -264,6 +264,10 @@
           "none": "Yok"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "\"Son metni yapıştır\"ı imlece göre uyarlama",
+        "description": "Açıkken Son metni yapıştır, imleç bağlamına göre büyük/küçük harf ve boşlukları ayarlar. Kapalıyken Geçmiş'te görünen metni olduğu gibi yapıştırır."
+      },
       "typingTool": {
         "title": "Yazma Aracı",
         "description": "Doğrudan yapıştırma yöntemi için hangi Linux yazma aracının kullanılacağını seçin. Auto, sisteminiz için mevcut en iyi aracı otomatik olarak algılar ve kullanır.",

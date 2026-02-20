@@ -490,6 +490,10 @@
           "none": "Không có"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "Điều chỉnh “Dán bản gần nhất” theo con trỏ",
+        "description": "Khi bật, Dán bản gần nhất sẽ điều chỉnh viết hoa và khoảng trắng theo ngữ cảnh con trỏ. Khi tắt, ứng dụng dán đúng nội dung đang hiển thị trong Lịch sử."
+      },
       "typingTool": {
         "title": "Công cụ gõ",
         "description": "Chọn công cụ gõ trên Linux cho phương thức dán trực tiếp. Auto sẽ tự động phát hiện và dùng công cụ tốt nhất có sẵn cho hệ thống của bạn.",

@@ -337,6 +337,8 @@ pub struct AppSettings {
     pub mute_while_recording: bool,
     #[serde(default = "default_append_trailing_space")]
     pub append_trailing_space: bool,
+    #[serde(default = "default_paste_last_use_smart_insertion")]
+    pub paste_last_use_smart_insertion: bool,
     #[serde(default = "default_app_language")]
     pub app_language: String,
 
@@ -453,6 +455,10 @@ fn default_post_process_enabled() -> bool {
 
 fn default_append_trailing_space() -> bool {
     true
+}
+
+fn default_paste_last_use_smart_insertion() -> bool {
+    false
 }
 
 fn default_app_language() -> String {
@@ -855,6 +861,7 @@ pub fn get_default_settings() -> AppSettings {
         auto_refine_enabled: false,
         mute_while_recording: false,
         append_trailing_space: true,
+        paste_last_use_smart_insertion: false,
         app_language: default_app_language(),
         enable_filler_word_filter: true,
         enable_hallucination_filter: true,
@@ -1026,5 +1033,19 @@ mod tests {
         let settings = get_default_settings();
         assert!(!settings.auto_submit);
         assert_eq!(settings.auto_submit_key, AutoSubmitKey::Enter);
+        assert!(!settings.paste_last_use_smart_insertion);
+    }
+
+    #[test]
+    fn missing_paste_last_use_smart_insertion_field_defaults_to_false() {
+        let mut serialized = serde_json::to_value(get_default_settings())
+            .expect("serialize default settings");
+        if let Some(obj) = serialized.as_object_mut() {
+            obj.remove("paste_last_use_smart_insertion");
+        }
+
+        let parsed: AppSettings =
+            serde_json::from_value(serialized).expect("deserialize settings without new field");
+        assert!(!parsed.paste_last_use_smart_insertion);
     }
 }

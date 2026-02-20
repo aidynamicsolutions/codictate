@@ -490,6 +490,10 @@
           "none": "Nessuno"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "Adatta “Incolla ultimo testo” al cursore",
+        "description": "Se attivo, Incolla ultimo testo adatta maiuscole e spazi al contesto del cursore. Se disattivo, incolla esattamente ciò che vedi nella Cronologia."
+      },
       "typingTool": {
         "title": "Strumento di digitazione",
         "description": "Scegli quale strumento di digitazione Linux usare per il metodo di incolla diretto. Auto rileverà e userà automaticamente lo strumento migliore disponibile per il tuo sistema.",

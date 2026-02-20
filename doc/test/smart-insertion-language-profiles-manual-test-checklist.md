@@ -152,20 +152,20 @@ Use these to validate BCP47 tag normalization behavior when those variants are a
 | [ ] | LNG-06 | `Auto` | ON | `Hi |, there` | `team` | Conservative behavior (no pre-punctuation space) |
 | [ ] | LNG-07 | `Turkish` / `tr` | ON | `Merhaba |, dünya` | `takım` | Conservative behavior |
 
-## Shared Paste Flow Parity
-Run the same scenario through each flow to ensure all shared paste entry points behave identically.
+## Shared Paste Flow Checks
+Verify each flow with its intended behavior. `paste_last_transcript` now defaults to deterministic literal replay and no longer has to match transcribe/refine output in every context.
 
 Flow prerequisites (important):
-- Before `FLOW-01` and `FLOW-02`, disable auto-refine/post-processing so history text is not rewritten.
-- Prime history with a fresh transcript that is exactly `there` right before running `FLOW-02`.
-- `FLOW-03` uses AI refine output, which can vary by provider/model. For deterministic parity, re-enable post-processing and configure a pass-through refine prompt that returns input unchanged.
+- Before `FLOW-01` to `FLOW-03`, disable auto-refine/post-processing so history text is stable.
+- Prime history with a fresh transcript where the primary/effective text is exactly `there`.
+- For `FLOW-03`, enable `Advanced -> Adapt Paste Last to Cursor`.
 
 | Done | ID | Language | Scenario | Trigger | Expected result |
 |---|---|---|---|---|---|
-| [ ] | FLOW-01 | `Auto` | Use seed `Hello |, world`, transcript `there` | `transcribe` | `Hello there, world` |
-| [ ] | FLOW-02 | `Auto` | Use seed `Hello |, world`, transcript `there` | `paste_last_transcript` | `Hello there, world` |
-| [ ] | FLOW-03 | `Auto` | Use seed `Hello |, world`, transcript `there` | `refine_last_transcript` | `Hello there, world` |
-| [ ] | FLOW-04 | `English` | Use seed `. |`, transcript `hello` | all three flows | Same output across all flows |
+| [ ] | FLOW-01 | `English` | Seed `. |`, transcript `there` | `transcribe` | `. There` (adaptive smart insertion still applies) |
+| [ ] | FLOW-02 | `English` | Seed `. |`, latest history primary is `there` | `paste_last_transcript` (default setting) | `. there` (literal replay, no forced capitalization) |
+| [ ] | FLOW-03 | `English` | Seed `. |`, latest history primary is `there` | `paste_last_transcript` (adaptive setting ON) | `. There` (adaptive mode applies sentence-start capitalization) |
+| [ ] | FLOW-04 | `English` | Seed `. |`, latest row raw text is `there` | `refine_last_transcript` (pass-through refine prompt) | `. There` (refine path remains adaptive) |
 
 ## History Inserted-Text Parity
 Validate that History primary content reflects what was inserted into the target app, while raw ASR remains available for verification.
@@ -204,5 +204,5 @@ If you run with debug logs, verify smart insertion reasons are emitted as expect
 - [ ] When sentence punctuation conflicts at a cursor boundary in whitespace profiles, Codictate keeps the existing right-boundary punctuation.
 - [ ] In whitespace profiles, sentence punctuation before clause punctuation is cleaned up (for example `there.,` -> `there,`) while abbreviation periods remain intact (`e.g.,`).
 - [ ] Japanese dictation output does not keep ASR artifact spaces at Japanese boundaries (`Japanese↔Japanese`, `ASCII↔Japanese`) while preserving intentional `ASCII↔ASCII` spacing.
-- [ ] All three paste flows produce the same smart insertion result for identical inputs when flow prerequisites are applied.
+- [ ] `paste_last_transcript` is deterministic/literal by default, and matches adaptive smart insertion behavior only when `Adapt Paste Last to Cursor` is enabled.
 - [ ] If any test fails, record ID, observed output, expected output, app version/commit, and timestamp.

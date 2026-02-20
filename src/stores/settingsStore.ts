@@ -131,6 +131,8 @@ const settingUpdaters: {
     commands.changeMuteWhileRecordingSetting(value as boolean),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
+  paste_last_use_smart_insertion: (value) =>
+    commands.changePasteLastUseSmartInsertionSetting(value as boolean),
   enable_filler_word_filter: (value) =>
     commands.changeFillerWordFilterSetting(value as boolean),
   enable_hallucination_filter: (value) =>

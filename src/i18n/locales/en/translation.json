@@ -771,6 +771,10 @@
           "none": "None"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "Adapt Paste Last to Cursor",
+        "description": "When enabled, Paste Last Transcript adjusts capitalization and spacing to fit your cursor context. When disabled, it pastes exactly what History shows."
+      },
       "typingTool": {
         "title": "Typing Tool",
         "description": "Choose which Linux typing tool to use for Direct paste method. Auto will automatically detect and use the best available tool for your system.",

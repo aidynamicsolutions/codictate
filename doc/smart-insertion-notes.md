@@ -79,6 +79,22 @@ This document is a maintainer-facing reference for smart insertion behavior chan
 7. Search now matches both primary effective text and raw ASR text.
 8. Migration remains additive (`ALTER TABLE ... ADD COLUMN inserted_text TEXT`) with no destructive history rewrites.
 
+## Session Update (2026-02-20) - Deterministic Paste-Last Mode
+
+### Scope Completed
+
+1. `paste_last_transcript` now defaults to literal replay: it pastes exactly History primary text (`effective_text`) without a second smart-insertion transform pass.
+2. Added optional setting `paste_last_use_smart_insertion` to re-enable adaptive smart insertion for paste-last only.
+3. Added Settings UI toggle in Advanced (near Paste Method) with user-facing copy explaining literal vs adaptive behavior.
+4. Kept transcribe/refine paste behavior unchanged (still using adaptive smart insertion through shared paste flow).
+5. Added backend tests for mode resolution, smart-vs-literal text preparation, and backward-compatible settings defaults.
+
+### Behavior Notes
+
+1. Default UX is deterministic replay for trust and predictability.
+2. Adaptive paste-last remains available for users who prefer context-aware capitalization/spacing at insertion time.
+3. If global Smart Insertion is disabled, adaptive paste-last falls back to non-transform behavior naturally.
+
 ## Maintenance Guidance
 
 1. Keep this file for implementation notes and validation history.

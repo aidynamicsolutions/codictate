@@ -86,37 +86,40 @@ The system SHALL use context-aware insertion on macOS and preserve legacy behavi
 - **THEN** transcript text is pasted without smart casing/spacing transformation
 
 ### Requirement: Shared Paste Flow Coverage
-The system SHALL apply smart insertion formatting to all transcript paste flows that route through the shared paste utility, register transformed paste payloads for undo, and persist transformed inserted text for the exact associated history row when applicable.
+The system SHALL apply smart insertion formatting to transcript paste flows that use adaptive preparation, while supporting literal replay for `paste_last_transcript` by default, and SHALL register the exact pasted payload for undo.
 
-#### Scenario: Live transcription paste
+#### Scenario: Live transcription paste remains adaptive
 - **WHEN** `transcribe` flow pastes transcript output
 - **THEN** shared smart insertion formatter is used
 
-#### Scenario: Paste-last-transcript shortcut
-- **WHEN** `paste_last_transcript` flow pastes text
-- **THEN** shared smart insertion formatter is used
+#### Scenario: Paste-last-transcript default is literal replay
+- **WHEN** `paste_last_transcript` is triggered
+- **AND** `paste_last_use_smart_insertion` is disabled or missing
+- **THEN** shared paste utility uses literal preparation for paste-last
+- **AND** pasted text equals History primary text (`effective_text`) exactly
 
-#### Scenario: Refine-last-transcript shortcut
+#### Scenario: Paste-last-transcript adaptive mode is opt-in
+- **WHEN** `paste_last_transcript` is triggered
+- **AND** `paste_last_use_smart_insertion` is enabled
+- **THEN** shared smart insertion formatter is used for paste-last
+
+#### Scenario: Refine-last-transcript remains adaptive
 - **WHEN** `refine_last_transcript` flow pastes text
 - **THEN** shared smart insertion formatter is used
 
-#### Scenario: Undo capture stores transformed pasted text
+#### Scenario: Undo capture stores actual pasted text
 - **WHEN** a transcript paste succeeds through the shared paste utility
-- **THEN** the registered undo payload uses the transformed `pasted_text` value returned by the paste operation
-- **AND** triggering configured `undo_last_transcript` reverses that transformed paste as a single operation
+- **THEN** the registered undo payload uses the `pasted_text` returned by that paste operation
+- **AND** triggering configured `undo_last_transcript` reverses that exact paste as a single operation
 
-#### Scenario: Transcribe persists inserted text by exact row id
-- **WHEN** `transcribe` saves a history entry and paste succeeds (`did_paste = true`)
-- **THEN** transformed `PasteResult.pasted_text` is stored in `inserted_text` for that exact saved entry id
-- **AND** implementation does not rely on latest-row lookup heuristics
+### Requirement: Paste-Last Formatting Mode Setting
+The system SHALL provide a user setting to control whether `paste_last_transcript` uses literal replay or adaptive smart insertion formatting.
 
-#### Scenario: Refine-last keeps raw input and updates same row
-- **WHEN** `refine_last_transcript` runs on latest history entry
-- **THEN** refine input is latest row raw ASR text
-- **AND** refine output updates `post_processed_text` for that same row id
+#### Scenario: New and existing users default to literal mode
+- **WHEN** settings are initialized or loaded from older versions where this setting does not exist
+- **THEN** `paste_last_use_smart_insertion` defaults to `false`
 
-#### Scenario: Refine-last inserted text update is paste-success-only
-- **WHEN** `refine_last_transcript` paste succeeds (`did_paste = true`)
-- **THEN** transformed `PasteResult.pasted_text` updates `inserted_text` for the same row id
-- **AND** if paste is skipped or fails, `inserted_text` is not overwritten
+#### Scenario: User enables adaptive mode
+- **WHEN** user enables the paste-last smart insertion setting
+- **THEN** subsequent `paste_last_transcript` actions use adaptive smart insertion preparation
 

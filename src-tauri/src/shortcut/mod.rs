@@ -1024,6 +1024,19 @@ pub fn change_append_trailing_space_setting(app: AppHandle, enabled: bool) -> Re
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_paste_last_use_smart_insertion_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.paste_last_use_smart_insertion = enabled;
+    settings::write_settings(&app, settings);
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_filler_word_filter_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.enable_filler_word_filter = enabled;

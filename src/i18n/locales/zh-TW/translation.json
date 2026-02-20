@@ -264,6 +264,10 @@
           "none": "無"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "依游標情境調整「貼上最後轉錄」",
+        "description": "啟用後，「貼上最後轉錄」會依游標位置自動調整大小寫與空格。停用後，會原樣貼上歷史記錄中顯示的文字。"
+      },
       "typingTool": {
         "title": "輸入工具",
         "description": "選擇在直接貼上方式下使用的 Linux 輸入工具。選擇自動會自動偵測並使用系統中可用的最佳工具",

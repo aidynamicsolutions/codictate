@@ -563,7 +563,35 @@ fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Result<(), Str
 }
 
 fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool {
-    auto_submit && paste_method != PasteMethod::None
+    auto_submit && paste_method_performs_paste(paste_method)
+}
+
+fn paste_method_performs_paste(paste_method: PasteMethod) -> bool {
+    paste_method != PasteMethod::None
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PastePreparationMode {
+    Adaptive,
+    Literal,
+}
+
+fn prepare_paste_text_with_mode(
+    text: &str,
+    smart_insertion_enabled: bool,
+    insertion_context: Option<crate::accessibility::TextInsertionContext>,
+    selected_language: &str,
+    preparation_mode: PastePreparationMode,
+) -> String {
+    match preparation_mode {
+        PastePreparationMode::Adaptive => crate::smart_insertion::prepare_text_for_paste(
+            text,
+            smart_insertion_enabled,
+            insertion_context,
+            selected_language,
+        ),
+        PastePreparationMode::Literal => text.to_string(),
+    }
 }
 
 
@@ -574,6 +602,14 @@ pub struct PasteResult {
 }
 
 pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String> {
+    paste_with_mode(text, app_handle, PastePreparationMode::Adaptive)
+}
+
+pub fn paste_with_mode(
+    text: String,
+    app_handle: AppHandle,
+    preparation_mode: PastePreparationMode,
+) -> Result<PasteResult, String> {
     if text.trim().is_empty() {
         info!("Skipping paste because text is empty after trimming");
         return Ok(PasteResult {
@@ -607,11 +643,12 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String>
     } else {
         None
     };
-    let text = crate::smart_insertion::prepare_text_for_paste(
+    let prepared_text = prepare_paste_text_with_mode(
         &text,
         settings.append_trailing_space,
         insertion_context,
         &settings.selected_language,
+        preparation_mode,
     );
 
     info!(
@@ -647,7 +684,7 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String>
         PasteMethod::Direct => {
             paste_direct(
                 enigo,
-                &text,
+                &prepared_text,
                 #[cfg(target_os = "linux")]
                 settings.typing_tool,
             )?;
@@ -656,7 +693,7 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String>
         PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert => {
             paste_via_clipboard(
                 enigo,
-                &text,
+                &prepared_text,
                 &app_handle,
                 &paste_method,
                 paste_delay_ms,
@@ -675,12 +712,12 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String>
     if settings.clipboard_handling == ClipboardHandling::CopyToClipboard {
         let clipboard = app_handle.clipboard();
         clipboard
-            .write_text(&text)
+            .write_text(&prepared_text)
             .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
     }
 
     Ok(PasteResult {
-        pasted_text: text,
+        pasted_text: prepared_text,
         did_paste,
     })
 }
@@ -688,6 +725,49 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteResult, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn sentence_start_context() -> crate::accessibility::TextInsertionContext {
+        crate::accessibility::TextInsertionContext {
+            left_char: None,
+            left_non_whitespace_char: None,
+            right_char: None,
+            right_non_whitespace_char: None,
+            has_selection: false,
+        }
+    }
+
+    #[test]
+    fn adaptive_mode_can_capitalize_sentence_start() {
+        let output = prepare_paste_text_with_mode(
+            "there",
+            true,
+            Some(sentence_start_context()),
+            "en",
+            PastePreparationMode::Adaptive,
+        );
+
+        assert_eq!(output, "There");
+    }
+
+    #[test]
+    fn literal_mode_preserves_original_text() {
+        let output = prepare_paste_text_with_mode(
+            "there",
+            true,
+            Some(sentence_start_context()),
+            "en",
+            PastePreparationMode::Literal,
+        );
+
+        assert_eq!(output, "there");
+    }
+
+    #[test]
+    fn paste_method_none_does_not_perform_paste() {
+        assert!(!paste_method_performs_paste(PasteMethod::None));
+        assert!(paste_method_performs_paste(PasteMethod::CtrlV));
+        assert!(paste_method_performs_paste(PasteMethod::Direct));
+    }
 
     #[test]
     fn auto_submit_requires_setting_enabled() {

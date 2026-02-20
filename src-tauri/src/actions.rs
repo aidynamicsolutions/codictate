@@ -421,6 +421,16 @@ fn select_text_for_paste_last(entry: &HistoryEntry) -> (String, String) {
     (entry.effective_text.clone(), entry.raw_text.clone())
 }
 
+fn paste_last_preparation_mode(
+    use_smart_insertion: bool,
+) -> crate::clipboard::PastePreparationMode {
+    if use_smart_insertion {
+        crate::clipboard::PastePreparationMode::Adaptive
+    } else {
+        crate::clipboard::PastePreparationMode::Literal
+    }
+}
+
 fn select_raw_text_for_refine(entry: &HistoryEntry) -> String {
     entry.raw_text.clone()
 }
@@ -1005,6 +1015,15 @@ impl ShortcutAction for PasteLastTranscriptAction {
             // If we have text, paste it on the main thread
             if let Some((text_to_paste, suggestion_text)) = text {
                 if !text_to_paste.is_empty() {
+                    let settings = get_settings(&app_clone);
+                    let preparation_mode =
+                        paste_last_preparation_mode(settings.paste_last_use_smart_insertion);
+                    debug!(
+                        chars = text_to_paste.len(),
+                        mode = ?preparation_mode,
+                        "Paste last transcript preparation mode selected"
+                    );
+
                     // Add a delay before pasting to allow the user to release the hotkey modifiers.
                     // When pressing e.g. Ctrl+Cmd+V, those keys are still held when we try to
                     // simulate Cmd+V. Without this delay, the target app would receive Ctrl+Cmd+V
@@ -1015,7 +1034,11 @@ impl ShortcutAction for PasteLastTranscriptAction {
                     let app_for_undo_slot = app_clone.clone();
                     if let Err(e) =
                         app_clone.run_on_main_thread(move || {
-                            match crate::utils::paste(text_to_paste, app_for_paste) {
+                            match crate::utils::paste_with_mode(
+                                text_to_paste,
+                                app_for_paste,
+                                preparation_mode,
+                            ) {
                                 Ok(result) => {
                                     info!("Pasted last transcript successfully");
                                     if result.did_paste {
@@ -1349,9 +1372,10 @@ pub static ACTION_MAP: LazyLock<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy
 mod tests {
     use super::{
         auto_refined_from_post_processed_text, build_undo_paste_capture,
-        maybe_inserted_text_from_paste_result, select_raw_text_for_refine,
-        select_text_for_paste_last,
+        maybe_inserted_text_from_paste_result, paste_last_preparation_mode,
+        select_raw_text_for_refine, select_text_for_paste_last,
     };
+    use crate::clipboard::PastePreparationMode;
     use crate::managers::history::HistoryEntry;
 
     fn sample_history_entry() -> HistoryEntry {
@@ -1413,6 +1437,22 @@ mod tests {
 
         assert_eq!(text_to_paste, "inserted");
         assert_eq!(suggestion_text, "raw asr");
+    }
+
+    #[test]
+    fn paste_last_defaults_to_literal_mode() {
+        assert_eq!(
+            paste_last_preparation_mode(false),
+            PastePreparationMode::Literal
+        );
+    }
+
+    #[test]
+    fn paste_last_uses_adaptive_mode_when_enabled() {
+        assert_eq!(
+            paste_last_preparation_mode(true),
+            PastePreparationMode::Adaptive
+        );
     }
 
     #[test]

@@ -497,6 +497,10 @@
           "none": "Nenhum"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "Adaptar “Colar último texto” ao cursor",
+        "description": "Quando ativado, Colar último texto ajusta maiúsculas e espaços ao contexto do cursor. Quando desativado, cola exatamente o que aparece no Histórico."
+      },
       "typingTool": {
         "title": "Ferramenta de digitação",
         "description": "Escolha qual ferramenta de digitação do Linux usar para o método de colagem direta. Auto detectará e usará automaticamente a melhor ferramenta disponível para o seu sistema.",

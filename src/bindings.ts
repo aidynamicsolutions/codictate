@@ -285,6 +285,14 @@ async changeAppendTrailingSpaceSetting(enabled: boolean) : Promise<Result<null, 
     else return { status: "error", error: e  as any };
 }
 },
+async changePasteLastUseSmartInsertionSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_paste_last_use_smart_insertion_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeFillerWordFilterSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_filler_word_filter_setting", { enabled }) };
@@ -1021,7 +1029,7 @@ export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding
  * When true, all transcriptions are automatically refined (adds delay).
  * When false (default), user must manually trigger refinement with hotkey.
  */
-auto_refine_enabled?: boolean; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; 
+auto_refine_enabled?: boolean; mute_while_recording?: boolean; append_trailing_space?: boolean; paste_last_use_smart_insertion?: boolean; app_language?: string; 
 /**
  * When true, removes filler words (um, uh, hmm, etc.) from transcriptions.
  */

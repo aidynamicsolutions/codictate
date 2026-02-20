@@ -490,6 +490,10 @@
           "none": "Aucun"
         }
       },
+      "pasteLastSmartInsertion": {
+        "label": "Adapter « Coller le dernier texte » au curseur",
+        "description": "Activé : « Coller le dernier texte » ajuste les majuscules et les espaces selon le contexte du curseur. Désactivé : colle exactement ce qui est affiché dans l’historique."
+      },
       "typingTool": {
         "title": "Outil de frappe",
         "description": "Choisissez quel outil de frappe Linux utiliser pour la méthode de collage direct. Auto détectera et utilisera automatiquement le meilleur outil disponible pour votre système.",
