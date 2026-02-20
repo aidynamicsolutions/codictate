@@ -21,6 +21,7 @@ import {
   Trash2,
   Loader2,
   Sparkles,
+  FileText,
 } from "lucide-react";
 import { AudioPlayer } from "@/components/ui/AudioPlayer";
 import { useTranslation } from "react-i18next";
@@ -39,6 +40,13 @@ import {
 } from "@/utils/dictionaryAliasSuggestion";
 import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settingsStore";
+import {
+  getHistoryCopyText,
+  getHistoryPrimaryText,
+  getHistoryRawText,
+  isRawOnlyHistoryMatch,
+  shouldShowOriginalTranscript,
+} from "@/components/shared/historyDisplayUtils";
 
 interface HistoryListProps {
   loading: boolean;
@@ -117,7 +125,7 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(
 
       for (const entry of flattenedEntries) {
         const suggestion = suggestAliasFromTranscript(
-          entry.transcription_text,
+          getHistoryRawText(entry),
           dictionaryEntries,
         );
         if (suggestion) {
@@ -296,7 +304,7 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(
           <TimelineItem
             entry={entry}
             onToggleSaved={() => onToggleSaved(entry.id)}
-            onCopyText={() => copyToClipboard(entry.transcription_text)}
+            onCopyText={() => copyToClipboard(getHistoryCopyText(entry))}
             deleteAudio={onDelete}
             searchQuery={searchQuery}
             aliasSuggestion={aliasSuggestion}
@@ -416,6 +424,19 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
     const { t, i18n } = useTranslation();
     const [showCopied, setShowCopied] = useState(false);
     const [isDeleting, setIsDeleting] = useState(false);
+    const [showOriginalTranscript, setShowOriginalTranscript] = useState(false);
+
+    const primaryText = getHistoryPrimaryText(entry);
+    const rawText = getHistoryRawText(entry);
+    const canToggleOriginalTranscript = shouldShowOriginalTranscript(entry);
+    const rawOnlyMatch = isRawOnlyHistoryMatch(entry, searchQuery);
+    const originalTranscriptTooltip = showOriginalTranscript
+      ? t("settings.history.hideOriginalTranscript")
+      : t("settings.history.showOriginalTranscript");
+
+    useEffect(() => {
+      setShowOriginalTranscript(false);
+    }, [entry.id]);
 
     // Platform-specific audio loading strategy
     const audioProps = useMemo(() => {
@@ -507,8 +528,32 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
         {/* Content Column */}
         <div className="flex-1 min-w-0 space-y-3">
           <p className="text-sm leading-relaxed text-foreground/90 select-text cursor-text break-words">
-            {highlightText(entry.transcription_text, searchQuery)}
+            {highlightText(primaryText, searchQuery)}
           </p>
+          {rawOnlyMatch && !showOriginalTranscript && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px] text-muted-foreground border border-border/60 bg-muted/30 hover:bg-muted/60"
+              onClick={() => setShowOriginalTranscript(true)}
+            >
+              {t("settings.history.matchInOriginalTranscript")}
+            </Button>
+          )}
+          {canToggleOriginalTranscript && showOriginalTranscript && (
+            <div
+              id={`history-original-${entry.id}`}
+              className="rounded-md border border-border/60 bg-muted/40 px-3 py-2"
+            >
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {t("settings.history.originalTranscript")}
+              </p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground break-words">
+                {highlightText(rawText, searchQuery)}
+              </p>
+            </div>
+          )}
           {(audioProps.src || audioProps.onLoadRequest) && (
             <AudioPlayer {...audioProps} className="w-full" />
           )}
@@ -519,25 +564,27 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
           {aliasSuggestion && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-sky-500/80 hover:text-sky-600 hover:bg-sky-500/10"
-                  onClick={() => void handleAddAliasSuggestion()}
-                  disabled={isAddingAliasSuggestion}
-                >
-                  {isAddingAliasSuggestion ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-4 h-4" />
-                  )}
-                  <span className="sr-only">
-                    {t(
-                      "settings.history.aliasAction.button",
-                      "Add suggested alias",
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-sky-500/80 hover:text-sky-600 hover:bg-sky-500/10"
+                    onClick={() => void handleAddAliasSuggestion()}
+                    disabled={isAddingAliasSuggestion}
+                  >
+                    {isAddingAliasSuggestion ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-4 h-4" />
                     )}
-                  </span>
-                </Button>
+                    <span className="sr-only">
+                      {t(
+                        "settings.history.aliasAction.button",
+                        "Add suggested alias",
+                      )}
+                    </span>
+                  </Button>
+                </span>
               </TooltipTrigger>
               <TooltipContent>
                 <p>
@@ -559,23 +606,58 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
             </Tooltip>
           )}
 
+          {canToggleOriginalTranscript && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={`h-8 w-8 ${
+                      showOriginalTranscript
+                        ? "text-foreground bg-accent/60"
+                        : "text-muted-foreground/70 hover:text-foreground"
+                    }`}
+                    title={originalTranscriptTooltip}
+                    aria-label={originalTranscriptTooltip}
+                    aria-expanded={showOriginalTranscript}
+                    aria-controls={`history-original-${entry.id}`}
+                    onClick={() =>
+                      setShowOriginalTranscript((currentValue) => !currentValue)
+                    }
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span className="sr-only">{originalTranscriptTooltip}</span>
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8} collisionPadding={8}>
+                <p>
+                  {originalTranscriptTooltip}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={handleCopyText}
-              >
-                {showCopied ? (
-                  <Check className="w-4 h-4 text-green-500" />
-                ) : (
-                  <Copy className="w-4 h-4" />
-                )}
-                <span className="sr-only">
-                  {t("settings.history.copyToClipboard")}
-                </span>
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={handleCopyText}
+                >
+                  {showCopied ? (
+                    <Check className="w-4 h-4 text-green-500" />
+                  ) : (
+                    <Copy className="w-4 h-4" />
+                  )}
+                  <span className="sr-only">
+                    {t("settings.history.copyToClipboard")}
+                  </span>
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent>
               <p>
@@ -588,24 +670,26 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={`h-8 w-8 ${
-                  entry.saved ? "text-yellow-500 hover:text-yellow-600" : ""
-                }`}
-                onClick={onToggleSaved}
-              >
-                <Star
-                  className="w-4 h-4"
-                  fill={entry.saved ? "currentColor" : "none"}
-                />
-                <span className="sr-only">
-                  {entry.saved
-                    ? t("settings.history.unsave")
-                    : t("settings.history.save")}
-                </span>
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={`h-8 w-8 ${
+                    entry.saved ? "text-yellow-500 hover:text-yellow-600" : ""
+                  }`}
+                  onClick={onToggleSaved}
+                >
+                  <Star
+                    className="w-4 h-4"
+                    fill={entry.saved ? "currentColor" : "none"}
+                  />
+                  <span className="sr-only">
+                    {entry.saved
+                      ? t("settings.history.unsave")
+                      : t("settings.history.save")}
+                  </span>
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent>
               <p>
@@ -618,20 +702,22 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 hover:text-destructive hover:bg-destructive/10"
-                onClick={handleDeleteEntry}
-                disabled={isDeleting}
-              >
-                {isDeleting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-                <span className="sr-only">{t("settings.history.delete")}</span>
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 hover:text-destructive hover:bg-destructive/10"
+                  onClick={handleDeleteEntry}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                  <span className="sr-only">{t("settings.history.delete")}</span>
+                </Button>
+              </span>
             </TooltipTrigger>
             <TooltipContent>
               <p>{t("settings.history.delete")}</p>

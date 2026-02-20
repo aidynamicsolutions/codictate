@@ -167,6 +167,16 @@ Flow prerequisites (important):
 | [ ] | FLOW-03 | `Auto` | Use seed `Hello |, world`, transcript `there` | `refine_last_transcript` | `Hello there, world` |
 | [ ] | FLOW-04 | `English` | Use seed `. |`, transcript `hello` | all three flows | Same output across all flows |
 
+## History Inserted-Text Parity
+Validate that History primary content reflects what was inserted into the target app, while raw ASR remains available for verification.
+
+| Done | ID | Language | Scenario | Action | Expected result |
+|---|---|---|---|---|---|
+| [ ] | HST-01 | `English` | Boundary punctuation changes final inserted text (`Hello |, world` + transcript `there.`) | Trigger `transcribe`, then open History | History primary text matches inserted result (`there,` boundary behavior reflected in full line), not the raw ASR token with trailing period. |
+| [ ] | HST-02 | `English` | Raw and inserted differ | In the same row, click `Original transcript` | Inline panel expands and shows raw ASR text; primary line stays unchanged. |
+| [ ] | HST-03 | `English` | Search match exists only in raw | Search by a raw-only token while row is collapsed | Row appears in results and shows hint `Matched in original transcript`; click hint expands raw panel. |
+| [ ] | HST-04 | `English` | Refine-last updates same row | Run `refine_last_transcript` on latest entry, then reopen History | Same latest row updates with refined primary text; raw panel still shows original ASR for that recording. |
+
 ## Optional Advanced Cases
 Use these only if you want extra confidence beyond standard UI paths.
 

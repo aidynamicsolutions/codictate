@@ -634,7 +634,11 @@
       "save": "Guardar transcripción",
       "unsave": "Eliminar de guardados",
       "delete": "Eliminar entrada",
-      "deleteError": "Error al eliminar la entrada. Por favor, intenta de nuevo."
+      "deleteError": "Error al eliminar la entrada. Por favor, intenta de nuevo.",
+      "originalTranscript": "Transcripción original",
+      "showOriginalTranscript": "Mostrar transcripción original",
+      "hideOriginalTranscript": "Ocultar transcripción original",
+      "matchInOriginalTranscript": "Coincidencia en la transcripción original"
     },
     "debug": {
       "title": "Depuración",

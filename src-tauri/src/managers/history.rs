@@ -32,6 +32,7 @@ static MIGRATIONS: &[M] = &[
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN duration_ms INTEGER DEFAULT 0;"),
+    M::up("ALTER TABLE transcription_history ADD COLUMN inserted_text TEXT;"),
     M::up(
         "CREATE TABLE IF NOT EXISTS user_stats (
             id INTEGER PRIMARY KEY DEFAULT 1,
@@ -56,6 +57,9 @@ pub struct HistoryEntry {
     pub title: String,
     pub transcription_text: String,
     pub post_processed_text: Option<String>,
+    pub inserted_text: Option<String>,
+    pub effective_text: String,
+    pub raw_text: String,
     pub post_process_prompt: Option<String>,
     pub duration_ms: i64,
     pub file_path: String,
@@ -88,10 +92,60 @@ pub struct StatsContribution {
     pub date_key: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, Type, PartialEq, Eq)]
+pub struct SavedTranscription {
+    pub entry_id: i64,
+    pub contribution: StatsContribution,
+}
+
 pub struct HistoryManager {
     app_handle: AppHandle,
     recordings_dir: PathBuf,
     db_path: PathBuf,
+}
+
+fn compute_effective_text(
+    inserted_text: Option<&str>,
+    post_processed_text: Option<&str>,
+    transcription_text: &str,
+) -> String {
+    inserted_text
+        .or(post_processed_text)
+        .unwrap_or(transcription_text)
+        .to_string()
+}
+
+fn map_history_entry(
+    row: &rusqlite::Row<'_>,
+    recordings_dir: &PathBuf,
+) -> rusqlite::Result<HistoryEntry> {
+    let transcription_text: String = row.get("transcription_text")?;
+    let post_processed_text: Option<String> = row.get("post_processed_text")?;
+    let inserted_text: Option<String> = row.get("inserted_text")?;
+    let effective_text = compute_effective_text(
+        inserted_text.as_deref(),
+        post_processed_text.as_deref(),
+        &transcription_text,
+    );
+
+    Ok(HistoryEntry {
+        id: row.get("id")?,
+        file_name: row.get("file_name")?,
+        timestamp: row.get("timestamp")?,
+        saved: row.get("saved")?,
+        title: row.get("title")?,
+        raw_text: transcription_text.clone(),
+        transcription_text,
+        post_processed_text,
+        inserted_text,
+        effective_text,
+        post_process_prompt: row.get("post_process_prompt")?,
+        duration_ms: row.get("duration_ms")?,
+        file_path: recordings_dir
+            .join(row.get::<_, String>("file_name")?)
+            .to_string_lossy()
+            .to_string(),
+    })
 }
 
 impl HistoryManager {
@@ -128,6 +182,11 @@ impl HistoryManager {
         // tauri-plugin-sql used _sqlx_migrations table, rusqlite_migration uses user_version pragma
         self.migrate_from_tauri_plugin_sql(&conn)?;
 
+        // Some upgraded databases can have schema columns already present while user_version
+        // is behind (for example from legacy/manual migration paths). Reconcile this first to
+        // avoid duplicate-column migration failures without touching existing data.
+        Self::reconcile_legacy_schema_state(&conn)?;
+
         // Create migrations object and run to latest version
         let migrations = Migrations::new(MIGRATIONS.to_vec());
 
@@ -157,6 +216,159 @@ impl HistoryManager {
 
         // Initialize user stats if needed
         self.initialize_user_stats(&conn)?;
+
+        Ok(())
+    }
+
+    fn table_exists(conn: &Connection, table_name: &str) -> Result<bool> {
+        Ok(conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type='table' AND name=?1",
+                params![table_name],
+                |row| row.get(0),
+            )
+            .unwrap_or(false))
+    }
+
+    /// Check whether a column exists in a given table.
+    ///
+    /// # Safety
+    /// `table_name` MUST be a hardcoded literal — PRAGMA does not support parameterized identifiers.
+    fn column_exists(conn: &Connection, table_name: &str, column_name: &str) -> Result<bool> {
+        let pragma = format!("PRAGMA table_info({})", table_name);
+        let mut stmt = conn.prepare(&pragma)?;
+        let mut rows = stmt.query([])?;
+
+        while let Some(row) = rows.next()? {
+            let existing_column_name: String = row.get(1)?;
+            if existing_column_name == column_name {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
+    /// Idempotently add a column to a table if it does not already exist.
+    ///
+    /// # Safety
+    /// All arguments MUST be hardcoded literals — `ALTER TABLE` does not support
+    /// parameterized identifiers. Never pass user-supplied input.
+    fn ensure_column_exists(
+        conn: &Connection,
+        table_name: &str,
+        column_name: &str,
+        column_definition: &str,
+    ) -> Result<bool> {
+        if Self::column_exists(conn, table_name, column_name)? {
+            return Ok(false);
+        }
+
+        let alter = format!(
+            "ALTER TABLE {} ADD COLUMN {} {}",
+            table_name, column_name, column_definition
+        );
+        conn.execute(&alter, [])?;
+        info!(
+            "Reconciled legacy schema: added missing column '{}.{}'",
+            table_name, column_name
+        );
+        Ok(true)
+    }
+
+    fn reconcile_legacy_schema_state(conn: &Connection) -> Result<()> {
+        let current_version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        if current_version == 0 {
+            // Fresh databases should follow normal migration flow.
+            return Ok(());
+        }
+
+        let mut schema_changed = false;
+
+        if !Self::table_exists(conn, "transcription_history")? {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS transcription_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    file_name TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    saved BOOLEAN NOT NULL DEFAULT 0,
+                    title TEXT NOT NULL,
+                    transcription_text TEXT NOT NULL
+                );",
+            )?;
+            schema_changed = true;
+            info!("Reconciled legacy schema: created missing table 'transcription_history'");
+        }
+
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "transcription_history",
+            "post_processed_text",
+            "TEXT",
+        )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "transcription_history",
+            "post_process_prompt",
+            "TEXT",
+        )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "transcription_history",
+            "duration_ms",
+            "INTEGER DEFAULT 0",
+        )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "transcription_history",
+            "inserted_text",
+            "TEXT",
+        )?;
+
+        if !Self::table_exists(conn, "user_stats")? {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS user_stats (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    total_words INTEGER DEFAULT 0,
+                    total_duration_ms INTEGER DEFAULT 0,
+                    total_transcriptions INTEGER DEFAULT 0,
+                    first_transcription_date INTEGER,
+                    last_transcription_date INTEGER,
+                    transcription_dates TEXT DEFAULT '[]'
+                );",
+            )?;
+            schema_changed = true;
+            info!("Reconciled legacy schema: created missing table 'user_stats'");
+        }
+
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "user_stats",
+            "total_filler_words_removed",
+            "INTEGER DEFAULT 0",
+        )?;
+
+        let history_complete = Self::table_exists(conn, "transcription_history")?
+            && Self::column_exists(conn, "transcription_history", "post_processed_text")?
+            && Self::column_exists(conn, "transcription_history", "post_process_prompt")?
+            && Self::column_exists(conn, "transcription_history", "duration_ms")?
+            && Self::column_exists(conn, "transcription_history", "inserted_text")?;
+        let stats_complete = Self::table_exists(conn, "user_stats")?
+            && Self::column_exists(conn, "user_stats", "total_filler_words_removed")?;
+
+        let target_version = MIGRATIONS.len() as i32;
+        if history_complete && stats_complete && current_version < target_version {
+            conn.pragma_update(None, "user_version", target_version)?;
+            info!(
+                "Reconciled migration state from version {} to {} (schema already satisfied)",
+                current_version, target_version
+            );
+        } else if schema_changed {
+            debug!(
+                "Legacy schema reconciliation changed tables/columns but migration version remained {}",
+                current_version
+            );
+        }
 
         Ok(())
     }
@@ -240,6 +452,76 @@ impl HistoryManager {
         Ok(Connection::open(&self.db_path)?)
     }
 
+    fn update_inserted_text_by_id_with_conn(
+        conn: &Connection,
+        id: i64,
+        inserted_text: String,
+    ) -> Result<()> {
+        conn.execute(
+            "UPDATE transcription_history SET inserted_text = ?1 WHERE id = ?2",
+            params![inserted_text, id],
+        )?;
+
+        Ok(())
+    }
+
+    /// Update the refine output for a specific history entry.
+    ///
+    /// Does NOT modify `inserted_text` — per the transcript-insertion spec,
+    /// `inserted_text` is only updated on paste success so that `effective_text`
+    /// continues to reflect the last text actually pasted into the target app.
+    fn update_refine_output_by_id_with_conn(
+        conn: &Connection,
+        id: i64,
+        post_processed_text: String,
+        post_process_prompt: Option<String>,
+    ) -> Result<()> {
+        conn.execute(
+            "UPDATE transcription_history SET post_processed_text = ?1, post_process_prompt = ?2 WHERE id = ?3",
+            params![post_processed_text, post_process_prompt, id],
+        )?;
+
+        Ok(())
+    }
+
+    pub fn update_inserted_text_by_id(&self, id: i64, inserted_text: String) -> Result<()> {
+        let conn = self.get_connection()?;
+        Self::update_inserted_text_by_id_with_conn(&conn, id, inserted_text)?;
+
+        if let Err(e) = self.app_handle.emit("history-updated", ()) {
+            error!(
+                "Failed to emit history-updated event after inserted_text update: {}",
+                e
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn update_refine_output_by_id(
+        &self,
+        id: i64,
+        post_processed_text: String,
+        post_process_prompt: Option<String>,
+    ) -> Result<()> {
+        let conn = self.get_connection()?;
+        Self::update_refine_output_by_id_with_conn(
+            &conn,
+            id,
+            post_processed_text,
+            post_process_prompt,
+        )?;
+
+        if let Err(e) = self.app_handle.emit("history-updated", ()) {
+            error!(
+                "Failed to emit history-updated event after refine output update: {}",
+                e
+            );
+        }
+
+        Ok(())
+    }
+
     /// Save a transcription to history (both database and WAV file)
     pub async fn save_transcription(
         &self,
@@ -249,7 +531,7 @@ impl HistoryManager {
         post_process_prompt: Option<String>,
         duration_ms: i64,
         filler_words_removed: i64,
-    ) -> Result<StatsContribution> {
+    ) -> Result<SavedTranscription> {
         let timestamp = Utc::now().timestamp();
         let file_name = format!("codictate-{}.wav", timestamp);
         let title = self.format_timestamp_title(timestamp);
@@ -294,7 +576,7 @@ impl HistoryManager {
         post_process_prompt: Option<String>,
         duration_ms: i64,
         filler_words_removed: i64,
-    ) -> Result<StatsContribution> {
+    ) -> Result<SavedTranscription> {
         let mut conn = self.get_connection()?;
         let tx = conn.transaction()?;
 
@@ -303,6 +585,7 @@ impl HistoryManager {
             "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![file_name, timestamp, false, title, transcription_text, post_processed_text, post_process_prompt, duration_ms],
         )?;
+        let entry_id = tx.last_insert_rowid();
 
         // 2. Update user_stats
         // Calculate word count
@@ -364,15 +647,18 @@ impl HistoryManager {
         tx.commit()?;
 
         debug!("Saved transcription to database and updated stats (filler_words_removed: {})", filler_words_removed);
-        Ok(StatsContribution {
-            word_count,
-            effective_duration_ms,
-            filler_words_removed,
-            date_added_to_streak_list,
-            date_key: if let Some(dt) = DateTime::from_timestamp(timestamp, 0) {
-                dt.with_timezone(&Local).format("%Y-%m-%d").to_string()
-            } else {
-                "1970-01-01".to_string()
+        Ok(SavedTranscription {
+            entry_id,
+            contribution: StatsContribution {
+                word_count,
+                effective_duration_ms,
+                filler_words_removed,
+                date_added_to_streak_list,
+                date_key: if let Some(dt) = DateTime::from_timestamp(timestamp, 0) {
+                    dt.with_timezone(&Local).format("%Y-%m-%d").to_string()
+                } else {
+                    "1970-01-01".to_string()
+                },
             },
         })
     }
@@ -647,7 +933,7 @@ impl HistoryManager {
     ) -> Result<Vec<HistoryEntry>> {
         let conn = self.get_connection()?;
         let mut query = String::from(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms 
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, inserted_text, post_process_prompt, duration_ms 
              FROM transcription_history"
         );
 
@@ -657,10 +943,23 @@ impl HistoryManager {
 
         if let Some(query_str) = search_query {
             if !query_str.trim().is_empty() {
-                query.push_str(" WHERE transcription_text LIKE ?");
+                // Escape LIKE wildcards so literal '%' and '_' in user input
+                // don't act as SQL pattern characters.
+                let escaped = query_str.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+                let like_query = format!("%{}%", escaped);
+                query.push_str(
+                    " WHERE (COALESCE(inserted_text, post_processed_text, transcription_text) LIKE ?",
+                );
                 query.push_str(&param_index.to_string());
-                params.push(Box::new(format!("%{}%", query_str)));
+                query.push_str(" ESCAPE '\\'");
+                params.push(Box::new(like_query.clone()));
                 param_index += 1;
+                query.push_str(" OR transcription_text LIKE ?");
+                query.push_str(&param_index.to_string());
+                query.push_str(" ESCAPE '\\'");
+                params.push(Box::new(like_query));
+                param_index += 1;
+                query.push(')');
                 has_where = true;
             }
         }
@@ -703,18 +1002,7 @@ impl HistoryManager {
         let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
         let rows = stmt.query_map(rusqlite::params_from_iter(params_refs), |row| {
-            Ok(HistoryEntry {
-                id: row.get("id")?,
-                file_name: row.get("file_name")?,
-                timestamp: row.get("timestamp")?,
-                saved: row.get("saved")?,
-                title: row.get("title")?,
-                transcription_text: row.get("transcription_text")?,
-                post_processed_text: row.get("post_processed_text")?,
-                post_process_prompt: row.get("post_process_prompt")?,
-                duration_ms: row.get("duration_ms")?,
-                file_path: self.recordings_dir.join(row.get::<_, String>("file_name")?).to_string_lossy().to_string(),
-            })
+            map_history_entry(row, &self.recordings_dir)
         })?;
 
         let mut entries = Vec::new();
@@ -732,7 +1020,7 @@ impl HistoryManager {
 
     fn get_latest_entry_with_conn(conn: &Connection, recordings_dir: &PathBuf) -> Result<Option<HistoryEntry>> {
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, inserted_text, post_process_prompt, duration_ms
              FROM transcription_history
              ORDER BY timestamp DESC
              LIMIT 1",
@@ -740,18 +1028,7 @@ impl HistoryManager {
 
         let entry = stmt
             .query_row([], |row| {
-                Ok(HistoryEntry {
-                    id: row.get("id")?,
-                    file_name: row.get("file_name")?,
-                    timestamp: row.get("timestamp")?,
-                    saved: row.get("saved")?,
-                    title: row.get("title")?,
-                    transcription_text: row.get("transcription_text")?,
-                    post_processed_text: row.get("post_processed_text")?,
-                    post_process_prompt: row.get("post_process_prompt")?,
-                    duration_ms: row.get("duration_ms")?,
-                    file_path: recordings_dir.join(row.get::<_, String>("file_name")?).to_string_lossy().to_string(),
-                })
+                map_history_entry(row, recordings_dir)
             })
             .optional()?;
 
@@ -792,24 +1069,13 @@ impl HistoryManager {
     pub async fn get_entry_by_id(&self, id: i64) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, inserted_text, post_process_prompt, duration_ms
              FROM transcription_history WHERE id = ?1",
         )?;
 
         let entry = stmt
             .query_row([id], |row| {
-                Ok(HistoryEntry {
-                    id: row.get("id")?,
-                    file_name: row.get("file_name")?,
-                    timestamp: row.get("timestamp")?,
-                    saved: row.get("saved")?,
-                    title: row.get("title")?,
-                    transcription_text: row.get("transcription_text")?,
-                    post_processed_text: row.get("post_processed_text")?,
-                    post_process_prompt: row.get("post_process_prompt")?,
-                    duration_ms: row.get("duration_ms")?,
-                    file_path: self.recordings_dir.join(row.get::<_, String>("file_name")?).to_string_lossy().to_string(),
-                })
+                map_history_entry(row, &self.recordings_dir)
             })
             .optional()?;
 
@@ -990,6 +1256,7 @@ impl HistoryManager {
 mod tests {
     use super::*;
     use rusqlite::{params, Connection};
+    use rusqlite_migration::Migrations;
 
     fn setup_conn() -> Connection {
         let conn = Connection::open_in_memory().expect("open in-memory db");
@@ -1002,6 +1269,7 @@ mod tests {
                 title TEXT NOT NULL,
                 transcription_text TEXT NOT NULL,
                 post_processed_text TEXT,
+                inserted_text TEXT,
                 post_process_prompt TEXT,
                 duration_ms INTEGER DEFAULT 0
             );
@@ -1028,10 +1296,16 @@ mod tests {
         conn
     }
 
-    fn insert_entry(conn: &Connection, timestamp: i64, text: &str, post_processed: Option<&str>) {
+    fn insert_entry(
+        conn: &Connection,
+        timestamp: i64,
+        text: &str,
+        post_processed: Option<&str>,
+        inserted: Option<&str>,
+    ) {
         conn.execute(
-            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, inserted_text, post_process_prompt, duration_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 format!("codictate-{}.wav", timestamp),
                 timestamp,
@@ -1039,6 +1313,7 @@ mod tests {
                 format!("Recording {}", timestamp),
                 text,
                 post_processed,
+                inserted,
                 Option::<String>::None,
                 0 // duration_ms
             ],
@@ -1057,8 +1332,8 @@ mod tests {
     #[test]
     fn get_latest_entry_returns_newest_entry() {
         let conn = setup_conn();
-        insert_entry(&conn, 100, "first", None);
-        insert_entry(&conn, 200, "second", Some("processed"));
+        insert_entry(&conn, 100, "first", None, None);
+        insert_entry(&conn, 200, "second", Some("processed"), Some("inserted"));
 
         let dummy_path = std::path::PathBuf::from("/tmp");
         let entry = HistoryManager::get_latest_entry_with_conn(&conn, &dummy_path)
@@ -1068,6 +1343,458 @@ mod tests {
         assert_eq!(entry.timestamp, 200);
         assert_eq!(entry.transcription_text, "second");
         assert_eq!(entry.post_processed_text.as_deref(), Some("processed"));
+        assert_eq!(entry.inserted_text.as_deref(), Some("inserted"));
+        assert_eq!(entry.effective_text, "inserted");
+        assert_eq!(entry.raw_text, "second");
+    }
+
+    #[test]
+    fn effective_text_uses_inserted_text_first() {
+        assert_eq!(
+            compute_effective_text(Some("inserted"), Some("processed"), "raw"),
+            "inserted"
+        );
+    }
+
+    #[test]
+    fn effective_text_falls_back_to_post_processed() {
+        assert_eq!(
+            compute_effective_text(None, Some("processed"), "raw"),
+            "processed"
+        );
+    }
+
+    #[test]
+    fn effective_text_falls_back_to_raw() {
+        assert_eq!(compute_effective_text(None, None, "raw"), "raw");
+    }
+
+    #[test]
+    fn update_inserted_text_updates_exact_row_id() {
+        let conn = setup_conn();
+        insert_entry(&conn, 100, "one", Some("processed one"), None);
+        insert_entry(&conn, 200, "two", Some("processed two"), None);
+
+        let id_to_update: i64 = conn
+            .query_row(
+                "SELECT id FROM transcription_history WHERE timestamp = 100",
+                [],
+                |row| row.get(0),
+            )
+            .expect("row id to update");
+
+        HistoryManager::update_inserted_text_by_id_with_conn(
+            &conn,
+            id_to_update,
+            "inserted one".to_string(),
+        )
+        .expect("update inserted text");
+
+        let inserted_first: Option<String> = conn
+            .query_row(
+                "SELECT inserted_text FROM transcription_history WHERE timestamp = 100",
+                [],
+                |row| row.get(0),
+            )
+            .expect("first inserted");
+        let inserted_second: Option<String> = conn
+            .query_row(
+                "SELECT inserted_text FROM transcription_history WHERE timestamp = 200",
+                [],
+                |row| row.get(0),
+            )
+            .expect("second inserted");
+
+        assert_eq!(inserted_first.as_deref(), Some("inserted one"));
+        assert_eq!(inserted_second, None);
+    }
+
+    #[test]
+    fn update_refine_output_updates_exact_row_id() {
+        let conn = setup_conn();
+        insert_entry(&conn, 100, "one", None, None);
+        insert_entry(&conn, 200, "two", Some("processed two"), None);
+
+        let id_to_update: i64 = conn
+            .query_row(
+                "SELECT id FROM transcription_history WHERE timestamp = 100",
+                [],
+                |row| row.get(0),
+            )
+            .expect("row id to update");
+
+        HistoryManager::update_refine_output_by_id_with_conn(
+            &conn,
+            id_to_update,
+            "processed one".to_string(),
+            Some("prompt".to_string()),
+        )
+        .expect("update refine output");
+
+        let (post_processed_first, prompt_first): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT post_processed_text, post_process_prompt FROM transcription_history WHERE timestamp = 100",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("updated row");
+        let post_processed_second: Option<String> = conn
+            .query_row(
+                "SELECT post_processed_text FROM transcription_history WHERE timestamp = 200",
+                [],
+                |row| row.get(0),
+            )
+            .expect("untouched row");
+
+        assert_eq!(post_processed_first.as_deref(), Some("processed one"));
+        assert_eq!(prompt_first.as_deref(), Some("prompt"));
+        assert_eq!(post_processed_second.as_deref(), Some("processed two"));
+    }
+
+    #[test]
+    fn update_refine_output_preserves_existing_inserted_text() {
+        let conn = setup_conn();
+        insert_entry(&conn, 100, "raw asr", Some("old processed"), Some("previously pasted"));
+
+        let id: i64 = conn
+            .query_row(
+                "SELECT id FROM transcription_history WHERE timestamp = 100",
+                [],
+                |row| row.get(0),
+            )
+            .expect("row id");
+
+        // Simulate a refine that updates post_processed_text but paste fails,
+        // so update_inserted_text_by_id is never called.
+        HistoryManager::update_refine_output_by_id_with_conn(
+            &conn,
+            id,
+            "new refined output".to_string(),
+            Some("new prompt".to_string()),
+        )
+        .expect("update refine output");
+
+        let (post_processed, inserted): (Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT post_processed_text, inserted_text FROM transcription_history WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read row after refine");
+
+        assert_eq!(post_processed.as_deref(), Some("new refined output"));
+        // inserted_text must be preserved — spec requires it is only updated on paste success
+        assert_eq!(inserted.as_deref(), Some("previously pasted"));
+    }
+
+    #[test]
+    fn migration_adds_inserted_text_without_mutating_existing_rows() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE transcription_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                saved BOOLEAN NOT NULL DEFAULT 0,
+                title TEXT NOT NULL,
+                transcription_text TEXT NOT NULL,
+                post_processed_text TEXT,
+                post_process_prompt TEXT,
+                duration_ms INTEGER DEFAULT 0
+            );
+            CREATE TABLE user_stats (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                total_words INTEGER DEFAULT 0,
+                total_duration_ms INTEGER DEFAULT 0,
+                total_transcriptions INTEGER DEFAULT 0,
+                first_transcription_date INTEGER,
+                last_transcription_date INTEGER,
+                transcription_dates TEXT DEFAULT '[]'
+            );
+            INSERT INTO user_stats (id, total_words, total_duration_ms, total_transcriptions, transcription_dates)
+            VALUES (1, 0, 0, 0, '[]');
+            INSERT INTO transcription_history (
+                file_name,
+                timestamp,
+                saved,
+                title,
+                transcription_text,
+                post_processed_text,
+                post_process_prompt,
+                duration_ms
+            ) VALUES (
+                'codictate-1.wav',
+                42,
+                0,
+                'Legacy row',
+                'legacy raw',
+                'legacy processed',
+                'legacy prompt',
+                123
+            );",
+        )
+        .expect("create legacy schema");
+
+        conn.pragma_update(None, "user_version", 4_i32)
+            .expect("set legacy version");
+
+        let migrations = Migrations::new(MIGRATIONS.to_vec());
+        migrations.to_latest(&mut conn).expect("run migrations");
+
+        let inserted: Option<String> = conn
+            .query_row(
+                "SELECT inserted_text FROM transcription_history WHERE timestamp = 42",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read inserted_text after migration");
+        let (raw, processed, prompt, duration): (String, Option<String>, Option<String>, i64) =
+            conn.query_row(
+                "SELECT transcription_text, post_processed_text, post_process_prompt, duration_ms
+                 FROM transcription_history WHERE timestamp = 42",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read existing row data");
+
+        assert_eq!(inserted, None);
+        assert_eq!(raw, "legacy raw");
+        assert_eq!(processed.as_deref(), Some("legacy processed"));
+        assert_eq!(prompt.as_deref(), Some("legacy prompt"));
+        assert_eq!(duration, 123);
+    }
+
+    #[test]
+    fn reconcile_legacy_schema_handles_duplicate_filler_column_state_safely() {
+        let mut conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE transcription_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                saved BOOLEAN NOT NULL DEFAULT 0,
+                title TEXT NOT NULL,
+                transcription_text TEXT NOT NULL,
+                post_processed_text TEXT,
+                inserted_text TEXT,
+                post_process_prompt TEXT,
+                duration_ms INTEGER DEFAULT 0
+            );
+            CREATE TABLE user_stats (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                total_words INTEGER DEFAULT 0,
+                total_duration_ms INTEGER DEFAULT 0,
+                total_transcriptions INTEGER DEFAULT 0,
+                first_transcription_date INTEGER,
+                last_transcription_date INTEGER,
+                transcription_dates TEXT DEFAULT '[]',
+                total_filler_words_removed INTEGER DEFAULT 0
+            );
+            INSERT INTO transcription_history (
+                file_name,
+                timestamp,
+                saved,
+                title,
+                transcription_text,
+                post_processed_text,
+                inserted_text,
+                post_process_prompt,
+                duration_ms
+            ) VALUES (
+                'codictate-legacy.wav',
+                100,
+                0,
+                'Legacy row',
+                'legacy raw',
+                'legacy processed',
+                'legacy inserted',
+                'legacy prompt',
+                321
+            );
+            INSERT INTO user_stats (
+                id,
+                total_words,
+                total_duration_ms,
+                total_transcriptions,
+                transcription_dates,
+                total_filler_words_removed
+            ) VALUES (
+                1,
+                12,
+                3456,
+                2,
+                '[\"2026-02-19\"]',
+                7
+            );",
+        )
+        .expect("seed fully-migrated schema");
+
+        // Simulate stale migration tracking: schema already has the column but version is behind.
+        conn.pragma_update(None, "user_version", 6_i32)
+            .expect("set stale version");
+
+        HistoryManager::reconcile_legacy_schema_state(&conn)
+            .expect("reconcile legacy schema state");
+
+        let version_after_reconcile: i32 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .expect("read version after reconcile");
+        assert_eq!(version_after_reconcile, MIGRATIONS.len() as i32);
+
+        // Verify migrations no longer fail with duplicate-column error.
+        let migrations = Migrations::new(MIGRATIONS.to_vec());
+        migrations.to_latest(&mut conn).expect("to_latest after reconcile");
+
+        let (raw, inserted, filler_removed): (String, Option<String>, i64) = conn
+            .query_row(
+                "SELECT transcription_text, inserted_text, (SELECT total_filler_words_removed FROM user_stats WHERE id = 1)
+                 FROM transcription_history WHERE timestamp = 100",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("verify preserved data");
+
+        assert_eq!(raw, "legacy raw");
+        assert_eq!(inserted.as_deref(), Some("legacy inserted"));
+        assert_eq!(filler_removed, 7);
+    }
+
+    #[test]
+    fn reconcile_legacy_schema_adds_missing_filler_column_without_data_loss() {
+        let conn = Connection::open_in_memory().expect("open in-memory db");
+        conn.execute_batch(
+            "CREATE TABLE transcription_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                file_name TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                saved BOOLEAN NOT NULL DEFAULT 0,
+                title TEXT NOT NULL,
+                transcription_text TEXT NOT NULL,
+                post_processed_text TEXT,
+                post_process_prompt TEXT,
+                duration_ms INTEGER DEFAULT 0
+            );
+            CREATE TABLE user_stats (
+                id INTEGER PRIMARY KEY DEFAULT 1,
+                total_words INTEGER DEFAULT 0,
+                total_duration_ms INTEGER DEFAULT 0,
+                total_transcriptions INTEGER DEFAULT 0,
+                first_transcription_date INTEGER,
+                last_transcription_date INTEGER,
+                transcription_dates TEXT DEFAULT '[]'
+            );
+            INSERT INTO transcription_history (
+                file_name,
+                timestamp,
+                saved,
+                title,
+                transcription_text,
+                post_processed_text,
+                post_process_prompt,
+                duration_ms
+            ) VALUES (
+                'codictate-old.wav',
+                42,
+                0,
+                'Old row',
+                'old raw',
+                'old processed',
+                'old prompt',
+                111
+            );
+            INSERT INTO user_stats (
+                id,
+                total_words,
+                total_duration_ms,
+                total_transcriptions,
+                transcription_dates
+            ) VALUES (
+                1,
+                100,
+                9999,
+                4,
+                '[\"2026-02-18\"]'
+            );",
+        )
+        .expect("seed pre-filler schema");
+
+        conn.pragma_update(None, "user_version", 6_i32)
+            .expect("set old version");
+
+        HistoryManager::reconcile_legacy_schema_state(&conn)
+            .expect("reconcile pre-filler schema");
+
+        let has_filler = HistoryManager::column_exists(&conn, "user_stats", "total_filler_words_removed")
+            .expect("check filler column exists");
+        assert!(has_filler);
+
+        let (raw, processed, filler_removed): (String, Option<String>, i64) = conn
+            .query_row(
+                "SELECT
+                    transcription_text,
+                    post_processed_text,
+                    (SELECT total_filler_words_removed FROM user_stats WHERE id = 1)
+                 FROM transcription_history WHERE timestamp = 42",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("verify row preserved");
+
+        assert_eq!(raw, "old raw");
+        assert_eq!(processed.as_deref(), Some("old processed"));
+        assert_eq!(filler_removed, 0);
+    }
+
+    fn search_matching_entry_ids(conn: &Connection, query: &str) -> Vec<i64> {
+        let like_query = format!("%{}%", query);
+        let mut stmt = conn
+            .prepare(
+                "SELECT id
+                 FROM transcription_history
+                 WHERE (
+                   COALESCE(inserted_text, post_processed_text, transcription_text) LIKE ?1
+                   OR transcription_text LIKE ?1
+                 )
+                 ORDER BY timestamp DESC",
+            )
+            .expect("prepare search query");
+
+        let rows = stmt
+            .query_map(params![like_query], |row| row.get::<_, i64>(0))
+            .expect("run search query");
+
+        rows.map(|row| row.expect("row"))
+            .collect::<Vec<i64>>()
+    }
+
+    #[test]
+    fn search_matches_effective_text_when_inserted_text_present() {
+        let conn = setup_conn();
+        insert_entry(
+            &conn,
+            100,
+            "raw text that should not match",
+            Some("processed"),
+            Some("final inserted output"),
+        );
+
+        let ids = search_matching_entry_ids(&conn, "inserted output");
+        assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn search_matches_raw_text_even_when_effective_text_differs() {
+        let conn = setup_conn();
+        insert_entry(
+            &conn,
+            100,
+            "raw-only-token",
+            Some("processed content"),
+            Some("final inserted output"),
+        );
+
+        let ids = search_matching_entry_ids(&conn, "raw-only-token");
+        assert_eq!(ids.len(), 1);
     }
 
     fn read_stats(conn: &Connection) -> (i64, i64, i64, String, i64) {

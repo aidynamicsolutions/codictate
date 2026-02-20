@@ -364,7 +364,11 @@
       "save": "حفظ التفريغ",
       "unsave": "إزالة من المحفوظات",
       "delete": "حذف الإدخال",
-      "deleteError": ".فشل حذف الإدخال. يرجى المحاولة مرة أخرى"
+      "deleteError": ".فشل حذف الإدخال. يرجى المحاولة مرة أخرى",
+      "originalTranscript": "النص الأصلي",
+      "showOriginalTranscript": "إظهار النص الأصلي",
+      "hideOriginalTranscript": "إخفاء النص الأصلي",
+      "matchInOriginalTranscript": "مطابقة في النص الأصلي"
     },
     "debug": {
       "title": "تصحيح الأخطاء",

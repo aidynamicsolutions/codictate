@@ -634,7 +634,11 @@
       "save": "Transkription speichern",
       "unsave": "Aus Gespeicherten entfernen",
       "delete": "Eintrag löschen",
-      "deleteError": "Eintrag konnte nicht gelöscht werden. Bitte versuche es erneut."
+      "deleteError": "Eintrag konnte nicht gelöscht werden. Bitte versuche es erneut.",
+      "originalTranscript": "Ursprüngliches Transkript",
+      "showOriginalTranscript": "Ursprüngliches Transkript anzeigen",
+      "hideOriginalTranscript": "Ursprüngliches Transkript ausblenden",
+      "matchInOriginalTranscript": "Treffer im ursprünglichen Transkript"
     },
     "debug": {
       "title": "Debug",

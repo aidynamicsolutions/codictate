@@ -386,7 +386,11 @@
       "save": "변환된 텍스트 저장",
       "unsave": "저장에서 제거",
       "delete": "항목 삭제",
-      "deleteError": "항목 삭제에 실패했습니다. 다시 시도해주세요."
+      "deleteError": "항목 삭제에 실패했습니다. 다시 시도해주세요.",
+      "originalTranscript": "원본 받아쓰기",
+      "showOriginalTranscript": "원본 받아쓰기 보기",
+      "hideOriginalTranscript": "원본 받아쓰기 숨기기",
+      "matchInOriginalTranscript": "원본 받아쓰기에서 일치"
     },
     "debug": {
       "title": "디버그",

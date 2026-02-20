@@ -634,7 +634,11 @@
       "save": "Enregistrer la transcription",
       "unsave": "Retirer des favoris",
       "delete": "Supprimer l'entrée",
-      "deleteError": "Échec de la suppression de l'entrée. Veuillez réessayer."
+      "deleteError": "Échec de la suppression de l'entrée. Veuillez réessayer.",
+      "originalTranscript": "Transcription d’origine",
+      "showOriginalTranscript": "Afficher la transcription d’origine",
+      "hideOriginalTranscript": "Masquer la transcription d’origine",
+      "matchInOriginalTranscript": "Correspondance dans la transcription d’origine"
     },
     "debug": {
       "title": "Débogage",

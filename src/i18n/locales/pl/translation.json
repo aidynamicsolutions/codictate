@@ -634,7 +634,11 @@
       "save": "Zapisz transkrypcję",
       "unsave": "Usuń z zapisanych",
       "delete": "Usuń wpis",
-      "deleteError": "Nie udało się usunąć wpisu. Spróbuj ponownie."
+      "deleteError": "Nie udało się usunąć wpisu. Spróbuj ponownie.",
+      "originalTranscript": "Oryginalna transkrypcja",
+      "showOriginalTranscript": "Pokaż oryginalną transkrypcję",
+      "hideOriginalTranscript": "Ukryj oryginalną transkrypcję",
+      "matchInOriginalTranscript": "Dopasowano w oryginalnej transkrypcji"
     },
     "debug": {
       "title": "Debugowanie",

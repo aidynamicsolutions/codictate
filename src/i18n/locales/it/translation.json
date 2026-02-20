@@ -634,7 +634,11 @@
       "save": "Salva la trascrizione",
       "unsave": "Rimuovi dai salvataggi",
       "delete": "Elimina elemento",
-      "deleteError": "Errore nell'eliminazione dell'elemento. Per favore, prova di nuovo."
+      "deleteError": "Errore nell'eliminazione dell'elemento. Per favore, prova di nuovo.",
+      "originalTranscript": "Trascrizione originale",
+      "showOriginalTranscript": "Mostra trascrizione originale",
+      "hideOriginalTranscript": "Nascondi trascrizione originale",
+      "matchInOriginalTranscript": "Corrispondenza nella trascrizione originale"
     },
     "debug": {
       "title": "Debug",

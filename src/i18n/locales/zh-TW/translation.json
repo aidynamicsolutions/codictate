@@ -386,7 +386,11 @@
       "save": "儲存轉錄",
       "unsave": "從已儲存中移除",
       "delete": "刪除條目",
-      "deleteError": "刪除條目失敗，請重試"
+      "deleteError": "刪除條目失敗，請重試",
+      "originalTranscript": "原始轉寫",
+      "showOriginalTranscript": "顯示原始轉寫",
+      "hideOriginalTranscript": "隱藏原始轉寫",
+      "matchInOriginalTranscript": "在原始轉寫中符合"
     },
     "debug": {
       "title": "偵錯",

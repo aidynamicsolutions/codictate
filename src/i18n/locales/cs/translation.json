@@ -386,7 +386,11 @@
       "save": "Uložit přepis",
       "unsave": "Odebrat z uložených",
       "delete": "Smazat záznam",
-      "deleteError": "Nepodařilo se smazat záznam. Zkuste to prosím znovu."
+      "deleteError": "Nepodařilo se smazat záznam. Zkuste to prosím znovu.",
+      "originalTranscript": "Původní přepis",
+      "showOriginalTranscript": "Zobrazit původní přepis",
+      "hideOriginalTranscript": "Skrýt původní přepis",
+      "matchInOriginalTranscript": "Shoda v původním přepisu"
     },
     "debug": {
       "title": "Ladění",

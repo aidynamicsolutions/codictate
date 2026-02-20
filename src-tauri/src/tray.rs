@@ -254,10 +254,7 @@ async fn has_history_entries_async(app: &AppHandle) -> bool {
 }
 
 fn last_transcript_text(entry: &HistoryEntry) -> &str {
-    entry
-        .post_processed_text
-        .as_deref()
-        .unwrap_or(&entry.transcription_text)
+    &entry.effective_text
 }
 
 /// Copy the latest transcription to clipboard (from main, uses sync get_latest_entry)
@@ -297,7 +294,15 @@ mod tests {
     use super::last_transcript_text;
     use crate::managers::history::HistoryEntry;
 
-    fn build_entry(transcription: &str, post_processed: Option<&str>) -> HistoryEntry {
+    fn build_entry(
+        transcription: &str,
+        post_processed: Option<&str>,
+        inserted: Option<&str>,
+    ) -> HistoryEntry {
+        let effective_text = inserted
+            .map(std::string::ToString::to_string)
+            .or_else(|| post_processed.map(std::string::ToString::to_string))
+            .unwrap_or_else(|| transcription.to_string());
         HistoryEntry {
             id: 1,
             file_name: "codictate-1.wav".to_string(),
@@ -306,6 +311,9 @@ mod tests {
             title: "Recording".to_string(),
             transcription_text: transcription.to_string(),
             post_processed_text: post_processed.map(|text| text.to_string()),
+            inserted_text: inserted.map(|text| text.to_string()),
+            effective_text,
+            raw_text: transcription.to_string(),
             post_process_prompt: None,
             duration_ms: 0,
             file_path: String::new(),
@@ -313,14 +321,20 @@ mod tests {
     }
 
     #[test]
-    fn uses_post_processed_text_when_available() {
-        let entry = build_entry("raw", Some("processed"));
+    fn uses_inserted_text_when_available() {
+        let entry = build_entry("raw", Some("processed"), Some("inserted"));
+        assert_eq!(last_transcript_text(&entry), "inserted");
+    }
+
+    #[test]
+    fn falls_back_to_post_processed_text() {
+        let entry = build_entry("raw", Some("processed"), None);
         assert_eq!(last_transcript_text(&entry), "processed");
     }
 
     #[test]
     fn falls_back_to_raw_transcription() {
-        let entry = build_entry("raw", None);
+        let entry = build_entry("raw", None, None);
         assert_eq!(last_transcript_text(&entry), "raw");
     }
 }

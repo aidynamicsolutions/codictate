@@ -619,7 +619,11 @@
       "save": "Salvar transcrição",
       "unsave": "Remover dos salvos",
       "delete": "Excluir entrada",
-      "deleteError": "Falha ao excluir entrada. Por favor, tente novamente."
+      "deleteError": "Falha ao excluir entrada. Por favor, tente novamente.",
+      "originalTranscript": "Transcrição original",
+      "showOriginalTranscript": "Mostrar transcrição original",
+      "hideOriginalTranscript": "Ocultar transcrição original",
+      "matchInOriginalTranscript": "Correspondência na transcrição original"
     },
     "debug": {
       "title": "Depuração",

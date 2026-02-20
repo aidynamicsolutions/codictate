@@ -65,6 +65,20 @@ This document is a maintainer-facing reference for smart insertion behavior chan
 - `openspec validate update-custom-word-punctuation-dedup --strict`
 - `openspec validate update-smart-transcript-insertion-clause-boundary-punctuation-cleanup --strict`
 
+## Session Update (2026-02-19) - History Inserted-Text Parity
+
+### Scope Completed
+
+1. History entry model now stores `inserted_text` (nullable) alongside existing raw and post-processed fields.
+2. History primary line now resolves from `effective_text` with deterministic fallback:
+   - `inserted_text` -> `post_processed_text` -> `transcription_text`.
+3. Raw ASR text is preserved as `raw_text` and shown on demand via inline `Original transcript` disclosure.
+4. Transcribe flow now persists `inserted_text` from the exact `PasteResult.pasted_text` payload for the exact saved row id when paste succeeds.
+5. Refine-last flow continues to use raw ASR input, updates refine output on the same latest row id, and updates `inserted_text` only when refine paste succeeds.
+6. Paste-last flow now reuses `effective_text` so re-paste behavior matches what users most recently got inserted.
+7. Search now matches both primary effective text and raw ASR text.
+8. Migration remains additive (`ALTER TABLE ... ADD COLUMN inserted_text TEXT`) with no destructive history rewrites.
+
 ## Maintenance Guidance
 
 1. Keep this file for implementation notes and validation history.

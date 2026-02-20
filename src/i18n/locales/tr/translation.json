@@ -386,7 +386,11 @@
       "save": "Transkripsiyonu kaydet",
       "unsave": "Kaydedilenlerden kaldır",
       "delete": "Kaydı sil",
-      "deleteError": "Kayıt silinemedi. Lütfen tekrar deneyin."
+      "deleteError": "Kayıt silinemedi. Lütfen tekrar deneyin.",
+      "originalTranscript": "Orijinal döküm",
+      "showOriginalTranscript": "Orijinal dökümü göster",
+      "hideOriginalTranscript": "Orijinal dökümü gizle",
+      "matchInOriginalTranscript": "Eşleşme orijinal dökümde"
     },
     "debug": {
       "title": "Hata Ayıklama",

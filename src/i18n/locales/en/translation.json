@@ -961,7 +961,11 @@
         "noStarredDescription": "Star important transcriptions to find them here.",
         "noPeriod": "No transcriptions for this period",
         "noPeriodDescription": "Try selecting a different time range."
-      }
+      },
+      "originalTranscript": "Original transcript",
+      "showOriginalTranscript": "Show original transcript",
+      "hideOriginalTranscript": "Hide original transcript",
+      "matchInOriginalTranscript": "Matched in original transcript"
     },
     "debug": {
       "title": "Debug",

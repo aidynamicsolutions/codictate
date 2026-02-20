@@ -634,7 +634,11 @@
       "save": "Lưu bản ghi",
       "unsave": "Xóa khỏi đã lưu",
       "delete": "Xóa mục",
-      "deleteError": "Không thể xóa mục. Vui lòng thử lại."
+      "deleteError": "Không thể xóa mục. Vui lòng thử lại.",
+      "originalTranscript": "Bản chép gốc",
+      "showOriginalTranscript": "Hiện bản chép gốc",
+      "hideOriginalTranscript": "Ẩn bản chép gốc",
+      "matchInOriginalTranscript": "Khớp trong bản chép gốc"
     },
     "debug": {
       "title": "Gỡ lỗi",

@@ -2,7 +2,7 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::managers::audio::AudioRecordingManager;
-use crate::managers::history::HistoryManager;
+use crate::managers::history::{HistoryEntry, HistoryManager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::managers::mlx::MlxModelManager;
 use crate::managers::transcription::TranscriptionManager;
@@ -417,6 +417,33 @@ fn build_undo_paste_capture(
     }
 }
 
+fn select_text_for_paste_last(entry: &HistoryEntry) -> (String, String) {
+    (entry.effective_text.clone(), entry.raw_text.clone())
+}
+
+fn select_raw_text_for_refine(entry: &HistoryEntry) -> String {
+    entry.raw_text.clone()
+}
+
+fn maybe_inserted_text_from_paste_result(
+    paste_result: &crate::clipboard::PasteResult,
+) -> Option<String> {
+    if paste_result.did_paste {
+        Some(paste_result.pasted_text.clone())
+    } else {
+        None
+    }
+}
+
+fn selected_refine_prompt_snapshot(settings: &AppSettings) -> Option<String> {
+    let prompt_id = settings.post_process_selected_prompt_id.as_ref()?;
+    settings
+        .post_process_prompts
+        .iter()
+        .find(|prompt| &prompt.id == prompt_id)
+        .map(|prompt| prompt.prompt.clone())
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         // Generate session ID for log correlation
@@ -707,18 +734,8 @@ impl ShortcutAction for TranscribeAction {
                                 if let Some(processed_text) = processed {
                                     post_processed_text = Some(processed_text.clone());
                                     final_text = processed_text;
-
-                                    if let Some(prompt_id) =
-                                        &settings.post_process_selected_prompt_id
-                                    {
-                                        if let Some(prompt) = settings
-                                            .post_process_prompts
-                                            .iter()
-                                            .find(|p| &p.id == prompt_id)
-                                        {
-                                            post_process_prompt = Some(prompt.prompt.clone());
-                                        }
-                                    }
+                                    post_process_prompt =
+                                        selected_refine_prompt_snapshot(&settings);
                                 } else if final_text != transcription {
                                     // Chinese conversion was applied but no LLM post-processing
                                     post_processed_text = Some(final_text.clone());
@@ -738,11 +755,13 @@ impl ShortcutAction for TranscribeAction {
                                 let transcription_for_history = transcription.clone();
                                 let filler_count = filler_words_removed as i64;
                                 let app_for_stats = ah.clone();
+                                let app_for_paste_task = ah.clone();
+                                let final_text_for_paste = final_text;
                                 tauri::async_runtime::spawn(async move {
                                     // Calculate duration in milliseconds (sample rate is 16kHz)
                                     let duration_ms =
                                         (samples_clone.len() as f64 / 16000.0 * 1000.0) as i64;
-                                    match hm_clone
+                                    let saved_transcription = match hm_clone
                                         .save_transcription(
                                             samples_clone,
                                             transcription_for_history,
@@ -753,52 +772,99 @@ impl ShortcutAction for TranscribeAction {
                                         )
                                         .await
                                     {
-                                        Ok(contribution) => {
+                                        Ok(saved) => {
                                             crate::undo::register_stats_contribution(
                                                 &app_for_stats,
                                                 stats_token,
                                                 source_action,
-                                                contribution,
+                                                saved.contribution.clone(),
                                             );
+                                            Some(saved)
                                         }
                                         Err(e) => {
                                             error!("Failed to save transcription to history: {}", e);
+                                            None
                                         }
-                                    }
-                                });
+                                    };
 
-                                let ah_clone = ah.clone();
-                                let paste_time = Instant::now();
-                                ah.run_on_main_thread(move || {
-                                    match utils::paste(final_text, ah_clone.clone()) {
-                                        Ok(result) => {
-                                            debug!(
-                                                "Text pasted successfully in {:?}",
-                                                paste_time.elapsed()
-                                            );
-                                            if result.did_paste {
-                                                let capture = build_undo_paste_capture(
-                                                    source_action,
-                                                    Some(stats_token),
-                                                    auto_refined,
-                                                    result,
-                                                    suggestion_text.clone(),
+                                    let paste_time = Instant::now();
+                                    let (paste_tx, paste_rx) = tokio::sync::oneshot::channel();
+                                    let app_for_main_thread = app_for_paste_task.clone();
+                                    let app_for_undo_slot = app_for_paste_task.clone();
+                                    let suggestion_for_undo = suggestion_text.clone();
+                                    let run_main_thread_result = app_for_paste_task.run_on_main_thread(move || {
+                                        let paste_result = match utils::paste(
+                                            final_text_for_paste,
+                                            app_for_main_thread.clone(),
+                                        ) {
+                                            Ok(result) => {
+                                                debug!(
+                                                    "Text pasted successfully in {:?}",
+                                                    paste_time.elapsed()
                                                 );
-                                                crate::undo::register_successful_paste(
-                                                    &ah_clone,
-                                                    capture,
+                                                let result_for_history = result.clone();
+                                                if result.did_paste {
+                                                    let capture = build_undo_paste_capture(
+                                                        source_action,
+                                                        Some(stats_token),
+                                                        auto_refined,
+                                                        result,
+                                                        suggestion_for_undo,
+                                                    );
+                                                    crate::undo::register_successful_paste(
+                                                        &app_for_undo_slot,
+                                                        capture,
+                                                    );
+                                                }
+                                                Some(result_for_history)
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to paste transcription: {}", e);
+                                                None
+                                            }
+                                        };
+
+                                        let _ = paste_tx.send(paste_result);
+                                        utils::hide_overlay_after_transcription(&app_for_main_thread);
+                                        change_tray_icon(&app_for_main_thread, TrayIconState::Idle);
+                                    });
+
+                                    let paste_result = if let Err(e) = run_main_thread_result {
+                                        error!("Failed to run paste on main thread: {:?}", e);
+                                        utils::hide_overlay_after_transcription(&app_for_paste_task);
+                                        change_tray_icon(&app_for_paste_task, TrayIconState::Idle);
+                                        None
+                                    } else {
+                                        match paste_rx.await {
+                                            Ok(result) => result,
+                                            Err(e) => {
+                                                error!(
+                                                    "Failed to receive paste result from main thread: {}",
+                                                    e
+                                                );
+                                                None
+                                            }
+                                        }
+                                    };
+
+                                    if let (Some(saved), Some(paste_result)) =
+                                        (saved_transcription, paste_result)
+                                    {
+                                        if let Some(inserted_text) =
+                                            maybe_inserted_text_from_paste_result(&paste_result)
+                                        {
+                                            if let Err(e) = hm_clone.update_inserted_text_by_id(
+                                                saved.entry_id,
+                                                inserted_text,
+                                            ) {
+                                                error!(
+                                                    "Failed to update inserted text for history entry {}: {}",
+                                                    saved.entry_id,
+                                                    e
                                                 );
                                             }
                                         }
-                                        Err(e) => error!("Failed to paste transcription: {}", e),
                                     }
-                                    utils::hide_overlay_after_transcription(&ah_clone);
-                                    change_tray_icon(&ah_clone, TrayIconState::Idle);
-                                })
-                                .unwrap_or_else(|e| {
-                                    error!("Failed to run paste on main thread: {:?}", e);
-                                    utils::hide_overlay_after_transcription(&ah);
-                                    change_tray_icon(&ah, TrayIconState::Idle);
                                 });
                             } else {
                                 utils::hide_overlay_after_transcription(&ah);
@@ -910,17 +976,12 @@ impl ShortcutAction for PasteLastTranscriptAction {
                 match manager.get_history_entries(1, 0, None, false, None).await {
                     Ok(entries) => {
                         if let Some(latest) = entries.first() {
-                            // Prefer post-processed text if available, otherwise use raw transcription
-                            let text = latest
-                                .post_processed_text
-                                .as_ref()
-                                .unwrap_or(&latest.transcription_text)
-                                .clone();
+                            let (text, suggestion_text) = select_text_for_paste_last(latest);
                             debug!(
                                 chars = text.len(),
                                 "Retrieved latest transcription for paste"
                             );
-                            Some((text, latest.transcription_text.clone()))
+                            Some((text, suggestion_text))
                         } else {
                             info!("No history entries available for paste last transcript");
                             // Show notification to inform user
@@ -1008,15 +1069,14 @@ impl ShortcutAction for RefineLastTranscriptAction {
 
         // Spawn async task to get the latest transcription, refine it, and paste
         tauri::async_runtime::spawn(async move {
-            // Get the last raw transcription from history
-            let raw_text =
+            // Get the latest entry and preserve the exact row id for update-by-id behavior
+            let latest_entry =
                 if let Some(history_manager) = app_clone.try_state::<Arc<HistoryManager>>() {
                     let manager = history_manager.inner().clone();
                     match manager.get_history_entries(1, 0, None, false, None).await {
                         Ok(entries) => {
                             if let Some(latest) = entries.first() {
-                                // Always use the RAW transcription, not post-processed
-                                Some(latest.transcription_text.clone())
+                                Some((manager, latest.clone()))
                             } else {
                                 info!("No history entries available for refine last transcript");
                                 crate::notification::show_info(
@@ -1036,10 +1096,12 @@ impl ShortcutAction for RefineLastTranscriptAction {
                     None
                 };
 
-            let Some(raw_text) = raw_text else {
+            let Some((history_manager, latest_entry)) = latest_entry else {
                 return;
             };
 
+            // Refinement input MUST stay raw ASR text
+            let raw_text = select_raw_text_for_refine(&latest_entry);
             if raw_text.is_empty() {
                 debug!("Refine last transcript skipped: transcription text is empty");
                 return;
@@ -1076,34 +1138,81 @@ impl ShortcutAction for RefineLastTranscriptAction {
                 return;
             };
 
+            if let Err(e) = history_manager.update_refine_output_by_id(
+                latest_entry.id,
+                final_text.clone(),
+                selected_refine_prompt_snapshot(&settings),
+            ) {
+                error!(
+                    "Failed to update refined text for history entry {}: {}",
+                    latest_entry.id,
+                    e
+                );
+            }
+
             // Add a delay before pasting to allow the user to release the hotkey modifiers
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-            // Paste the refined text
+            // Paste refined text and capture transformed pasted payload for inserted_text parity
+            let (paste_tx, paste_rx) = tokio::sync::oneshot::channel();
             let app_for_paste = app_clone.clone();
             let app_for_undo_slot = app_clone.clone();
-            if let Err(e) = app_clone.run_on_main_thread(move || {
-                match crate::utils::paste(final_text, app_for_paste) {
+            let final_text_for_paste = final_text;
+            let raw_text_for_undo = raw_text;
+            let run_main_thread_result = app_clone.run_on_main_thread(move || {
+                let paste_result = match crate::utils::paste(final_text_for_paste, app_for_paste) {
                     Ok(result) => {
                         info!("Pasted refined transcript successfully");
+                        let result_for_history = result.clone();
                         if result.did_paste {
                             let capture = build_undo_paste_capture(
                                 "refine_last_transcript",
                                 None,
                                 true,
                                 result,
-                                raw_text,
+                                raw_text_for_undo,
                             );
                             crate::undo::register_successful_paste(
                                 &app_for_undo_slot,
                                 capture,
                             );
                         }
+                        Some(result_for_history)
                     }
-                    Err(e) => error!("Failed to paste refined transcript: {}", e),
-                }
-            }) {
+                    Err(e) => {
+                        error!("Failed to paste refined transcript: {}", e);
+                        None
+                    }
+                };
+
+                let _ = paste_tx.send(paste_result);
+            });
+
+            let paste_result = if let Err(e) = run_main_thread_result {
                 error!("Failed to run paste on main thread: {:?}", e);
+                None
+            } else {
+                match paste_rx.await {
+                    Ok(result) => result,
+                    Err(e) => {
+                        error!("Failed to receive paste result for refine action: {}", e);
+                        None
+                    }
+                }
+            };
+
+            if let Some(paste_result) = paste_result {
+                if let Some(inserted_text) = maybe_inserted_text_from_paste_result(&paste_result) {
+                    if let Err(e) = history_manager
+                        .update_inserted_text_by_id(latest_entry.id, inserted_text)
+                    {
+                        error!(
+                            "Failed to update inserted text for refined history entry {}: {}",
+                            latest_entry.id,
+                            e
+                        );
+                    }
+                }
             }
         });
     }
@@ -1238,7 +1347,30 @@ pub static ACTION_MAP: LazyLock<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy
 
 #[cfg(test)]
 mod tests {
-    use super::{auto_refined_from_post_processed_text, build_undo_paste_capture};
+    use super::{
+        auto_refined_from_post_processed_text, build_undo_paste_capture,
+        maybe_inserted_text_from_paste_result, select_raw_text_for_refine,
+        select_text_for_paste_last,
+    };
+    use crate::managers::history::HistoryEntry;
+
+    fn sample_history_entry() -> HistoryEntry {
+        HistoryEntry {
+            id: 1,
+            file_name: "codictate-1.wav".to_string(),
+            timestamp: 0,
+            saved: false,
+            title: "Recording".to_string(),
+            transcription_text: "raw asr".to_string(),
+            post_processed_text: Some("refined".to_string()),
+            inserted_text: Some("inserted".to_string()),
+            effective_text: "inserted".to_string(),
+            raw_text: "raw asr".to_string(),
+            post_process_prompt: None,
+            duration_ms: 0,
+            file_path: "/tmp/codictate-1.wav".to_string(),
+        }
+    }
 
     #[test]
     fn auto_refined_is_false_without_post_processed_output() {
@@ -1272,5 +1404,38 @@ mod tests {
         assert_eq!(capture.stats_token, Some(7));
         assert!(capture.auto_refined);
         assert_eq!(capture.suggestion_text, "raw output");
+    }
+
+    #[test]
+    fn paste_last_uses_effective_text_and_keeps_raw_for_suggestion() {
+        let entry = sample_history_entry();
+        let (text_to_paste, suggestion_text) = select_text_for_paste_last(&entry);
+
+        assert_eq!(text_to_paste, "inserted");
+        assert_eq!(suggestion_text, "raw asr");
+    }
+
+    #[test]
+    fn refine_uses_raw_text_input() {
+        let entry = sample_history_entry();
+        assert_eq!(select_raw_text_for_refine(&entry), "raw asr");
+    }
+
+    #[test]
+    fn inserted_text_persistence_requires_successful_paste() {
+        let failed = crate::clipboard::PasteResult {
+            pasted_text: "transformed".to_string(),
+            did_paste: false,
+        };
+        let succeeded = crate::clipboard::PasteResult {
+            pasted_text: "transformed".to_string(),
+            did_paste: true,
+        };
+
+        assert_eq!(maybe_inserted_text_from_paste_result(&failed), None);
+        assert_eq!(
+            maybe_inserted_text_from_paste_result(&succeeded).as_deref(),
+            Some("transformed")
+        );
     }
 }
