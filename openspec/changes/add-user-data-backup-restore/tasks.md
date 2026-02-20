@@ -1,5 +1,5 @@
 ## 1. OpenSpec and Rule Lock
-- [ ] 1.1 Confirm v1 rules `BR-001` to `BR-037` are represented in proposal/design/spec files.
+- [ ] 1.1 Confirm v1 rules `BR-001` to `BR-042` are represented in proposal/design/spec files.
 - [ ] 1.2 Validate OpenSpec change with `openspec validate add-user-data-backup-restore --strict`.
 
 ## 2. Backend Contracts and Command Surface
@@ -7,21 +7,17 @@
 - [ ] 2.2 Define typed request/response contracts in Rust and generated frontend bindings:
   - [ ] `CreateBackupRequest` with scope (`full` or `lightweight`) and user-selected output path.
   - [ ] `CreateBackupReport` with counts, warnings, output path, and duration.
-  - [ ] `PreflightRestoreRequest` and `PreflightRestoreReport` (with current-vs-backup counts, backup identity metadata, concise summary, and optional detailed findings).
+  - [ ] `PreflightRestoreRequest` and `PreflightRestoreReport` (default summary MUST include `backup_created_at` + `backup_history_entries`; optional detailed findings include full backup metadata and side-by-side counts).
   - [ ] `ApplyRestoreRequest` and `ApplyRestoreReport`.
-  - [ ] `BackupProgress` event payload with `phase`, `current`, `total`, `estimated_seconds_remaining`.
+  - [ ] `BackupProgress` event payload with `phase`, `current`, `total` (`estimated_seconds_remaining` optional best-effort).
   - [ ] `EstimateSizeRequest` and `EstimateSizeReport`.
-  - [ ] `GetBackupOperationStatusReport` (or equivalent) to reattach UI after settings reopen/background operation.
-  - [ ] `StartupRestoreReconciliationReport` payload for user-facing post-crash outcome summary.
+  - [ ] `StartupRestoreReconciliationReport` payload for user-facing post-crash outcome summary with standardized `outcome` enum (`rolled_back`, `committed`, `no_action`) and phase context.
 - [ ] 2.3 Add an app-level operation mutex so only one backup/restore runs concurrently (`BR-016`).
 - [ ] 2.4 Add operation cancel token plumbing for export/restore flows (`BR-020`).
 - [ ] 2.5 Add persistent restore-in-progress marker state for crash reconciliation (`BR-021`).
 - [ ] 2.6 Add restore quiesce-mode state/plumbing to block new transcription/history writes during apply-restore (`BR-034`).
-- [ ] 2.7 Add soft resource-threshold settings model (read/write/persist) for power-user overrides (`BR-035`).
-- [ ] 2.8 Add safety-backup inventory + retention metadata model (path, timestamp, scope, size, retention prune state).
-- [ ] 2.9 Add operation lifecycle state so backup/restore continues when settings window closes and can be queried/reported by tray/notification surfaces.
-- [ ] 2.10 Ensure pre-restore safety backup runs as an internal restore phase and does not reacquire the top-level backup/restore mutex (avoid self-deadlock/busy false positives).
-- [ ] 2.11 Add typed `restore_in_progress` blocked-action response/event contract so hotkey/tray/UI entry points can show consistent status and offer `Open restore status`.
+- [ ] 2.11 Add typed `restore_in_progress` blocked-action response/event contract so hotkey/tray/UI entry points can show consistent status.
+- [ ] 2.12 Add internal `RestorePhase` marker enum: `snapshot_ready`, `active_moved`, `staged_activated`, `completed`.
 
 ## 3. Export Pipeline Implementation
 - [ ] 3.1 Implement archive workspace builder that writes exact layout required by `BR-002` (including `settings/settings.json`).
@@ -47,14 +43,18 @@
 - [ ] 3.11 Package workspace into `.codictatebackup` ZIP and write output atomically (`BR-001`).
 - [ ] 3.12 Return `CreateBackupReport` with counts and warnings (`BR-015`).
 - [ ] 3.13 Add export storage-capacity precheck for both temp workspace and destination (`BR-019`):
-  - [ ] detect destination filesystem single-file size limits (for example FAT32 4 GiB) before export starts.
-  - [ ] return actionable failure guidance so frontend can offer pick-another-location or switch-to-lightweight choices.
+  - [ ] validate destination can accept the estimated archive write (free-space and filesystem constraints).
+  - [ ] return concise actionable failure guidance without additional decision matrices.
 - [ ] 3.14 Add export cancellation checkpoints and temp/output cleanup behavior (`BR-020`).
-- [ ] 3.15 Emit progress events at each major step with ETA (`BR-028`).
+- [ ] 3.15 Emit progress events at each major step (`BR-028`); ETA is optional best-effort metadata.
 - [ ] 3.16 Add export destination filename guardrails:
   - [ ] prefill save dialog with `codictate-backup-YYYY-MM-DD_HH-mm.codictatebackup`.
   - [ ] auto-append `.codictatebackup` when omitted.
   - [ ] require explicit overwrite confirmation for existing destination files.
+- [ ] 3.17 Add short export snapshot consistency fence (`BR-041`):
+  - [ ] briefly block new history/settings writes only for snapshot capture.
+  - [ ] capture history rows, stats, dictionary/settings from one point-in-time snapshot.
+  - [ ] release fence immediately after snapshot capture.
 
 ## 4. Restore Preflight Implementation
 - [ ] 4.1 Validate archive entry safety from archive metadata before file-content extraction (reject traversal, absolute path, symlink/hardlink entries) (`BR-018`).
@@ -62,77 +62,72 @@
 - [ ] 4.3 Validate required files exist including `settings/settings.json` (`BR-002`).
 - [ ] 4.4 Parse and validate manifest fields including `platform` (`BR-003`).
 - [ ] 4.5 Verify checksums before any write (`BR-004`, `BR-008`).
-- [ ] 4.6 Enforce compatibility policy `current major + previous major` (`BR-009`).
+- [ ] 4.6 Enforce compatibility policy for known payload versions within format major `1` and documented major-transition runway (`BR-009`).
 - [ ] 4.7 Normalize extracted filenames to NFC Unicode and validate cross-platform filename safety with issue classification (`BR-030`).
-- [ ] 4.8 Add restore storage-capacity precheck including safety backup size (`BR-019`):
-  - [ ] include pruneable automatic safety backups in low-space estimation/recovery path before fallback prompts.
+- [ ] 4.8 Add restore storage-capacity precheck including rollback workspace size (`BR-019`).
 - [ ] 4.9 Build and return `PreflightRestoreReport` with:
   - [ ] compatibility result
-  - [ ] current-vs-backup counts side-by-side
-  - [ ] backup identity metadata (created timestamp, app version, platform, includes-recordings, archive size)
+  - [ ] concise impact counts in the default summary, including `backup_created_at` and `backup_history_entries`
   - [ ] payload counts
   - [ ] concise user-facing summary (plain language; not overwhelming)
   - [ ] blocking findings list (must abort)
-  - [ ] recoverable findings list (can continue with user confirmation)
-  - [ ] optional detailed findings payload for explicit `View details` UX
+  - [ ] recoverable findings list (auto-continued when only optional recording-file issues exist)
+  - [ ] optional detailed findings payload for explicit `View details` UX, including side-by-side counts and backup identity metadata
   - [ ] warning list (including missing recordings declared by manifest)
-- [ ] 4.10 Add preflight decision contract: when recoverable-only findings exist, frontend must send explicit `continue_partial_restore` confirmation (`BR-033`).
-- [ ] 4.11 Enforce two-tier resource limits during preflight (`BR-035`):
-  - [ ] non-overridable hard security bounds (compression ratio + absolute parser ceilings).
-  - [ ] generous soft operational thresholds (entry count/size/rows) that trigger warning flow.
-  - [ ] warning decision actions: continue once, update soft limits and continue, or cancel.
-- [ ] 4.12 Include integrity-scope disclosure in preflight result payload/UI model (`BR-036`).
+- [ ] 4.10 Enforce hard non-overridable resource limits during preflight/import (`BR-035`):
+  - [ ] compression ratio and absolute parser ceilings are blocking failures.
+  - [ ] bounded streaming parsing remains enabled for all JSON/JSONL payloads.
+- [ ] 4.11 Include integrity-scope disclosure in preflight result payload/UI model (`BR-036`).
 
 ## 5. Restore Apply Implementation (Replace-Only)
-- [ ] 5.1 Auto-create pre-restore safety backup using full-first policy (`BR-024`):
-  - [ ] attempt full safety `.codictatebackup` first.
-  - [ ] run safety backup as an internal restore phase without reacquiring top-level operation lock.
-  - [ ] if full fails from low space, prune old automatic safety backups per policy and retry full once before offering fallback choices.
-  - [ ] if full fails, present explicit choices: retry full, continue lightweight fallback, cancel.
-  - [ ] never silently downgrade from full to lightweight.
-  - [ ] log safety backup path and scope (`full` or `lightweight`).
-  - [ ] include safety backup metadata in result payload (path, created_at, scope, size_bytes) for UI discoverability.
-  - [ ] abort restore unless selected safety backup mode succeeds.
-- [ ] 5.2 Implement component migration pipeline (`BR-010`) for history payload, dictionary payload, and settings payload versions.
-- [ ] 5.3 Create staging restore area with fresh DB initialized through current migrations.
-- [ ] 5.4 Import migrated history rows into staging DB.
-- [ ] 5.5 Recompute `user_stats` from imported history rows (`BR-025`):
+- [ ] 5.1 Implement pre-swap rollback snapshot of active data and automatic rollback on failure/crash (`BR-024`):
+  - [ ] create rollback workspace snapshot before final swap.
+  - [ ] validate rollback snapshot can be restored.
+  - [ ] restore from rollback snapshot on failure/interruption.
+  - [ ] retain latest snapshot for 7 days and cleanup older snapshots (`BR-042`).
+- [ ] 5.2 Add explicit restore-managed dataset resolver/validator (`BR-038`) for:
+  - [ ] active `history.db` (including stats tables).
+  - [ ] dictionary source state in `settings_store.json`.
+  - [ ] restore-managed `recordings/` subtree.
+- [ ] 5.3 Implement component migration pipeline (`BR-010`) for history payload, dictionary payload, and settings payload versions.
+- [ ] 5.4 Create staging restore area with fresh DB initialized through current migrations.
+- [ ] 5.5 Import migrated history rows into staging DB.
+- [ ] 5.6 Recompute `user_stats` from imported history rows (`BR-025`):
   - [ ] recalculate `total_words`, `total_duration_ms`, `total_transcriptions`, `transcription_dates`, `total_filler_words_removed`.
-- [ ] 5.6 Import dictionary payload into staged settings payload.
-- [ ] 5.7 Merge settings selectively into staged settings, applying forward-compatible defaults for new/missing fields (`BR-027`):
+- [ ] 5.7 Import dictionary payload into staged settings payload.
+- [ ] 5.8 Merge settings selectively into staged settings, applying forward-compatible defaults for new/missing fields (`BR-027`):
   - [ ] fields present in backup → restore.
   - [ ] fields missing from backup but in current schema → keep defaults.
   - [ ] fields in backup but removed from schema → silently ignore.
-- [ ] 5.8 Copy recordings from archive when present.
-- [ ] 5.9 Implement deterministic conflict resolution (`BR-022`):
-  - [ ] duplicate history IDs resolved via deterministic rekey (preserve valid rows; backup IDs non-authoritative).
-  - [ ] duplicate recording filenames resolved by suffix rename (e.g., `_1`, `_2`).
-  - [ ] malformed history rows are skipped with recoverable warnings.
-  - [ ] oversized JSONL lines/rows are skipped with recoverable warnings using bounded parser (`BR-035`).
-  - [ ] invalid optional recording filenames are sanitized/remapped when safe, otherwise skipped with recoverable warnings.
-  - [ ] references remapped to match resolved filenames.
-- [ ] 5.10 Run staging validation:
+- [ ] 5.9 Copy recordings from archive when present.
+- [ ] 5.10 Implement strict core payload validation (`BR-022`):
+  - [ ] malformed history rows in required payload are blocking restore errors.
+  - [ ] invalid dictionary/settings payloads are blocking restore errors.
+  - [ ] optional recording filename/file issues are skipped with recoverable warnings.
+  - [ ] references for skipped recordings resolve to audio-unavailable runtime state.
+- [ ] 5.11 Run staging validation:
   - [ ] SQLite integrity check passes.
   - [ ] payload counts match import counts.
-- [ ] 5.11 Execute replace-only swap (`BR-011`, `BR-012`):
-  - [ ] move active restore-managed data to rollback location.
-  - [ ] move staged data into active app data paths.
-- [ ] 5.12 Implement rollback path on any failure (`BR-013`).
-- [ ] 5.13 Emit state refresh events (history/settings) after successful restore.
-- [ ] 5.14 Return `ApplyRestoreReport` with restored counts, warnings, and failures (`BR-015`).
-- [ ] 5.15 Add restore cancellation checkpoints and cleanup behavior (`BR-020`).
-- [ ] 5.16 Implement startup reconciliation using restore-in-progress marker (`BR-021`).
-- [ ] 5.17 Emit progress events at each major step with ETA (`BR-028`).
-- [ ] 5.18 Ensure restore quiesce mode is entered before apply-restore and always exited on success/failure/rollback (`BR-034`).
-- [ ] 5.19 Implement automatic safety-backup retention policy with explicit defaults:
-  - [ ] keep newest 3 automatic safety backups.
-  - [ ] never auto-prune explicitly saved safety backups.
-  - [ ] prune old automatic backups before full-safety-backup fallback prompts when low-space is detected.
-- [ ] 5.20 Implement post-restore safety-backup disposition flow:
-  - [ ] support user actions `Save safety backup` and `Discard safety backup`.
-  - [ ] require explicit confirmation before discard deletion.
-  - [ ] persist saved/discarded status in safety-backup inventory metadata.
-- [ ] 5.21 Emit explicit reconciliation outcome event/report at startup so frontend can display post-interruption summary.
+- [ ] 5.12 Add same-volume atomicity guard before destructive swap (`BR-039`):
+  - [ ] verify active/staging/rollback roots are same-volume.
+  - [ ] block restore before destructive phase when atomic rename is not guaranteed.
+- [ ] 5.13 Execute replace-only swap using atomic renames only (`BR-011`, `BR-012`, `BR-039`):
+  - [ ] rename active restore-managed data to rollback location and set marker `active_moved`.
+  - [ ] rename staged data into active app data paths and set marker `staged_activated`.
+  - [ ] forbid copy/delete swap semantics.
+- [ ] 5.14 Implement phase-based marker transitions and deterministic reconciliation (`BR-040`):
+  - [ ] set marker `snapshot_ready` after rollback snapshot validation.
+  - [ ] map `active_moved` -> rollback recovery.
+  - [ ] map `staged_activated` -> commit finalization.
+  - [ ] set/clear `completed` state on successful finish.
+- [ ] 5.15 Implement rollback path on any failure (`BR-013`).
+- [ ] 5.16 Emit state refresh events (history/settings) after successful restore.
+- [ ] 5.17 Return `ApplyRestoreReport` with restored counts, warnings, and failures (`BR-015`).
+- [ ] 5.18 Add restore cancellation checkpoints and cleanup behavior (`BR-020`).
+- [ ] 5.19 Implement startup reconciliation using restore-in-progress marker (`BR-021`) and standardized `outcome` enum.
+- [ ] 5.20 Emit progress events at each major step (`BR-028`); ETA is optional best-effort metadata.
+- [ ] 5.21 Ensure restore quiesce mode is entered before apply-restore and always exited on success/failure/rollback (`BR-034`).
+- [ ] 5.22 Emit explicit reconciliation outcome event/report at startup so frontend can display post-interruption summary.
 
 ## 6. Missing Audio Runtime Behavior
 - [ ] 6.1 Update audio lookup/playback flow to detect missing recording file and return typed error instead of crash (`BR-014`).
@@ -146,16 +141,14 @@
   - [ ] `lightweight` requires explicit user choice and clearly states recordings are excluded while history/dictionary/settings remain included.
 - [ ] 7.2 Add estimated archive size preview before export (`BR-029`).
 - [ ] 7.3 Add explicit unencrypted notice in export flow (`BR-017`).
-- [ ] 7.4 Add progress bar with ETA for export and restore operations (`BR-028`).
+- [ ] 7.4 Add progress bar for export and restore operations (`BR-028`), with optional best-effort ETA display.
 - [ ] 7.5 Add restore flow with two steps:
-  - [ ] Step A: preflight summary view from `PreflightRestoreReport` with current-vs-backup counts, backup identity metadata, and concise blocking/recoverable summary.
+  - [ ] Step A: preflight summary view from `PreflightRestoreReport` with concise impact + blocking/recoverable summary.
+  - [ ] Step A default summary always shows backup `created_at` + `history_entries`.
   - [ ] Step A includes optional `View details` drill-in for per-item findings.
   - [ ] Step B: replace-only confirmation dialog with `Will restore` and `Will not restore` sections, clearly warning current data will be replaced.
   - [ ] Step B explicitly lists excluded settings (API keys, selected devices, selected model).
   - [ ] Step B explicitly states missing-audio consequences when recordings are absent.
-- [ ] 7.6 Add recoverable-findings decision UI:
-  - [ ] show explicit choices `Continue partial restore` and `Cancel`.
-  - [ ] only continue when user explicitly confirms partial restore (`BR-033`).
 - [ ] 7.7 Show compatibility gate errors and remediation messages for unsupported versions (`BR-009`).
 - [ ] 7.8 Show pragmatic success/failure summaries using structured reports (`BR-015`):
   - [ ] default summary is short and confidence-building (`backup is ready` / `restore completed`).
@@ -163,34 +156,15 @@
   - [ ] provide `View details` for full warning/file-level diagnostics.
 - [ ] 7.9 Add insufficient disk space warning in export and restore flows (`BR-019`).
 - [ ] 7.10 Show integrity-scope disclosure text in restore preflight UI (checksums detect corruption, not trusted-origin authenticity) (`BR-036`).
-- [ ] 7.11 Add soft-threshold warning UI for power users (`BR-035`):
-  - [ ] show warning with observed vs configured limits.
-  - [ ] provide choices: continue once, update limits and continue, cancel.
-  - [ ] expose soft-threshold settings editor for advanced users.
-- [ ] 7.12 Add full-first safety-backup fallback UI (`BR-024`):
-  - [ ] when full safety backup fails, show choices: retry full, continue lightweight fallback, cancel.
-  - [ ] show reduced rollback fidelity warning when lightweight fallback is selected.
 - [ ] 7.13 Add cancellation UX states (`BR-020`):
   - [ ] show visible cancel action during cancellable phases for export/restore.
   - [ ] show cancel-in-progress cleanup state after user requests cancel.
   - [ ] show explicit non-cancellable commit-phase messaging when cancel is temporarily unavailable.
-- [ ] 7.14 Add destination filesystem-limit error UX for export:
-  - [ ] show actionable message when destination max-file-size is below estimated archive size.
-  - [ ] provide explicit actions: choose another destination or switch to lightweight.
-- [ ] 7.15 Add safety-backup management UI:
-  - [ ] show latest safety backup metadata (path, timestamp, scope, size) after restore pre-check/create.
-  - [ ] add actions: reveal location, copy path, delete selected backup.
-  - [ ] after restore completion, prompt user to `Save safety backup` or `Discard safety backup` (default to `Save`).
-  - [ ] show retention policy disclosure in backup/restore settings.
-- [ ] 7.16 Add background-operation UX:
-  - [ ] keep backup/restore running if settings window closes/minimizes.
-  - [ ] reattach in-progress UI when settings is reopened.
-  - [ ] show tray or desktop completion/failure notification.
-  - [ ] if tray icon is hidden, provide desktop notification with action to open live status.
-  - [ ] on app quit attempt during cancellable phase, require explicit `Keep running in background` or `Cancel and quit`.
-  - [ ] on app quit attempt during non-cancellable commit/rollback, require explicit `Keep running in background` or `Quit when safe` (no cancel-and-quit in that phase).
+- [ ] 7.14 Add destination-capacity/error UX for export:
+  - [ ] show concise actionable message when destination constraints block export.
+  - [ ] avoid additional decision dialogs; user can re-run export with a new destination/scope from the main flow.
 - [ ] 7.17 Add startup reconciliation outcome UX:
-  - [ ] show post-crash restore reconciliation summary banner/dialog with outcome, timestamp, and next-step guidance.
+  - [ ] show minimal post-crash restore reconciliation summary with outcome and timestamp.
 - [ ] 7.18 Add accessibility guardrails for backup/restore UI:
   - [ ] keyboard-only operation for all dialogs and actions.
   - [ ] focus trap/restore and safe default focus in destructive dialogs.
@@ -202,7 +176,6 @@
   - [ ] show explicit overwrite confirmation for existing files.
 - [ ] 7.20 Add quiesce blocked-action UX across all entry points:
   - [ ] hotkey/tray/main UI transcription attempts show consistent `restore in progress` message.
-  - [ ] message includes action to open live restore status.
 
 ## 8. Permissions and Capabilities
 - [ ] 8.1 Configure Tauri capabilities for backup/restore:
@@ -216,7 +189,7 @@
 
 ## 9. Structured Logging (`BR-031`)
 - [ ] 9.1 Add `info!` logs at every major export milestone (start, snapshot, scan, write, package, complete with counts/duration).
-- [ ] 9.2 Add `info!`/`error!` logs at every major restore milestone (preflight, safety backup, migration, staging, swap, rollback, reconciliation).
+- [ ] 9.2 Add `info!`/`error!` logs at every major restore milestone (preflight, rollback snapshot, migration, staging, swap, rollback, reconciliation).
 - [ ] 9.3 Add `warn!` logs for all recoverable warnings (missing recordings, skipped malformed rows, skipped invalid optional filenames, low space).
 - [ ] 9.4 Add frontend `logInfo`/`logError` calls with target `fe-backup` for all user-initiated backup/restore actions.
 - [ ] 9.5 Add `debug!` logs for intermediate steps using metadata only (counts/indices), never raw row payload content (`BR-037`).
@@ -238,50 +211,44 @@
 - [ ] 11.8 Integration test: lightweight backup round-trip without recordings restores history, dictionary, and settings (`BR-006`, `BR-014`, `BR-026`, `BR-027`).
 - [ ] 11.9 Integration test: preflight rejects corrupted archive (checksum mismatch) (`BR-004`, `BR-008`).
 - [ ] 11.10 Integration test: preflight rejects too-old and forward-incompatible versions (`BR-009`).
-- [ ] 11.11 Integration test: restore failure triggers rollback and leaves active data unchanged (`BR-013`).
+- [ ] 11.11 Integration test: restore failure triggers rollback and preserves exact pre-restore history/stats/dictionary state (`BR-013`, `BR-038`).
 - [ ] 11.12 Integration test: missing recordings in full export produce warnings but export succeeds (`BR-007`).
-- [ ] 11.13 Integration test: pre-restore full safety backup is attempted before overwrite (`BR-024`).
+- [ ] 11.13 Integration test: pre-swap rollback snapshot is created before destructive swap (`BR-024`).
 - [ ] 11.14 Integration test: settings selective merge restores preferences but not API keys (`BR-026`, `BR-027`).
 - [ ] 11.15 Integration test: backup from older app version restores with defaults for new fields (`BR-027`).
-- [ ] 11.16 Integration test: progress events are emitted during export and restore (`BR-028`).
+- [ ] 11.16 Integration test: progress events are emitted during export and restore (`BR-028`) without requiring ETA.
 - [ ] 11.17 Integration test: estimated size preview matches actual archive size within tolerance (`BR-029`).
-- [ ] 11.18 Frontend tests for unencrypted notice, preflight summary with current-vs-backup counts, replace-only warning, progress bar, and missing-audio message.
+- [ ] 11.18 Frontend tests for unencrypted notice, concise preflight summary, replace-only warning, progress bar, and missing-audio message.
 - [ ] 11.19 Integration test: archive path traversal entry is rejected (`BR-018`).
 - [ ] 11.20 Integration test: archive symlink/hardlink entry is rejected (`BR-018`).
 - [ ] 11.21 Integration test: low-disk export and restore prechecks fail safely (`BR-019`).
 - [ ] 11.22 Integration test: cancel export and restore clean up temp artifacts and keep active data intact (`BR-020`).
-- [ ] 11.23 Integration test: crash/interruption during restore reconciles safely on next startup (`BR-021`).
-- [ ] 11.24 Integration test: duplicate ID/filename payload imports resolve with deterministic rekey and suffix rename while preserving valid rows (`BR-022`).
+- [ ] 11.23 Integration test: crash/interruption during restore reconciles safely on next startup with deterministic marker-phase outcomes (`BR-021`, `BR-040`).
 - [ ] 11.25 Integration test: concurrent backup/restore request is rejected while operation lock is held (`BR-016`).
 - [ ] 11.26 Integration test: out-of-scope path operations are rejected (`BR-023`).
 - [ ] 11.27 Integration test: cross-platform backup created on macOS restores correctly on Linux (`BR-030`).
-- [ ] 11.28 Integration test: preflight recoverable-only findings require explicit user confirmation to continue partial restore (`BR-033`).
-- [ ] 11.29 Integration test: user cancel on recoverable preflight findings aborts restore with active data unchanged (`BR-033`).
 - [ ] 11.30 Integration test: restore quiesce mode blocks new writes during apply-restore and is released after completion (`BR-034`).
 - [ ] 11.31 Integration test: restore rejects archive exceeding hard security bounds (for example compression-ratio abuse) as blocking (`BR-035`).
-- [ ] 11.32 Integration test: soft-threshold exceedance triggers warning + explicit choice flow (`BR-035`).
-- [ ] 11.33 Integration test: user can continue once after soft-threshold warning and restore completes (`BR-035`).
-- [ ] 11.34 Integration test: user updates soft thresholds and restore re-evaluates using new values (`BR-035`).
-- [ ] 11.35 Integration test: oversized JSONL lines are handled with bounded parser and skipped as recoverable warnings (`BR-035`).
+- [ ] 11.32 Integration test: restore blocks on malformed required core payload row (`BR-022`).
+- [ ] 11.33 Integration test: optional missing/invalid recording files auto-skip with concise summary warning (`BR-033`).
+- [ ] 11.34 Integration test: rollback snapshot restores exact pre-restore history/stats/dictionary state on injected swap failure (`BR-024`, `BR-038`).
+- [ ] 11.35 Integration test: compatibility migration succeeds across all supported v1 payload versions (`BR-009`, `BR-010`).
 - [ ] 11.36 Frontend test: preflight UI shows integrity-scope disclosure text (corruption-detection only) (`BR-036`).
 - [ ] 11.37 Unit/integration test: backup/restore logs never contain transcript text, prompt text, API keys, or raw payload bodies (`BR-037`).
-- [ ] 11.38 Integration test: full safety backup failure prompts fallback choice and respects retry/lightweight/cancel behavior (`BR-024`).
 - [ ] 11.39 Frontend test: backup export defaults to `full` and lightweight copy clearly states excluded recordings and included text/settings.
-- [ ] 11.40 Integration test: export precheck blocks when destination filesystem max-file-size is below estimate and returns actionable choices.
+- [ ] 11.40 Integration test: export precheck blocks when destination constraints prevent archive write and returns concise actionable error.
 - [ ] 11.41 Frontend test: cancellation UX shows cancel action in cancellable phases, cancel-in-progress state, and commit-phase non-cancellable messaging.
 - [ ] 11.42 Integration/frontend test: startup reconciliation outcome is surfaced to user after interrupted restore.
 - [ ] 11.43 Frontend test: restore confirmation includes `Will restore` and `Will not restore` sections with explicit exclusion list.
-- [ ] 11.44 Integration/frontend test: safety-backup metadata is shown, management actions work, save/discard actions work, and retention pruning preserves newest automatic backups while keeping explicitly saved backups.
-- [ ] 11.45 Integration/frontend test: backup/restore continues when settings window closes and reattaches progress when reopened.
-- [ ] 11.46 Integration/frontend test: app-quit attempt during active operation is phase-aware (cancellable phase allows cancel-and-quit; commit/rollback phase offers quit-when-safe only).
 - [ ] 11.47 Accessibility test: backup/restore dialogs and progress flows are keyboard operable with correct focus management.
 - [ ] 11.48 Accessibility test: screen readers receive progress/error announcements and warning/error severity is not color-only.
-- [ ] 11.49 Integration test: pre-restore safety backup runs as internal restore phase and does not deadlock/reject itself as busy.
 - [ ] 11.50 Frontend test: preflight and completion summaries are concise by default and show detailed diagnostics only via explicit `View details`.
-- [ ] 11.51 Frontend test: restore confirmation shows backup identity metadata (created time, source app version, source platform, includes recordings, archive size).
+- [ ] 11.51 Frontend test: restore confirmation stays concise by default, always shows backup `created_at` + `history_entries`, and keeps full metadata in optional details view.
 - [ ] 11.52 Frontend/integration test: save dialog pre-fills Codictate default filename, auto-appends `.codictatebackup`, and requires overwrite confirmation.
-- [ ] 11.53 Frontend/integration test: when tray icon is disabled, background operation status/completion is surfaced via desktop notification with open-status action.
-- [ ] 11.54 Integration/frontend test: blocked transcription/history actions during restore quiesce show consistent `restore in progress` messaging with open-status action.
+- [ ] 11.54 Integration/frontend test: blocked transcription/history actions during restore quiesce show consistent `restore in progress` messaging.
+- [ ] 11.55 Integration test: restore blocks before destructive phase when same-volume atomic rename cannot be guaranteed (`BR-039`).
+- [ ] 11.56 Integration test: export under concurrent writes yields one fenced point-in-time history/stats/dictionary snapshot (`BR-041`).
+- [ ] 11.57 Integration test: rollback snapshot retention keeps latest snapshot for 7 days and cleans older snapshots (`BR-042`).
 
 ## 12. Documentation
 - [ ] 12.1 Create `doc/backup-restore.md` with:
@@ -292,11 +259,10 @@
   - [ ] Error catalog documenting all user-facing error conditions and messages.
   - [ ] Archive format spec, compatibility window, and migration guidance for unsupported versions.
   - [ ] Integrity scope note: checksums provide corruption detection only in v1 (no trusted-origin authenticity).
-  - [ ] Restore resource limit table and operator guidance for limit failures.
-  - [ ] Destination filesystem limit guidance (for example FAT32/exFAT constraints) and remediation choices.
-  - [ ] Document soft-threshold override/update UX and hard-bound non-overridable safety guarantees.
-  - [ ] Document cancellation behavior, non-cancellable commit/rollback phase messaging, phase-aware quit options, and background continuation behavior.
-  - [ ] Document safety-backup discoverability, save/discard choice, management actions, and automatic retention policy (including explicitly saved backup behavior).
+  - [ ] Restore hard resource-limit table and operator guidance for limit failures.
+  - [ ] Destination filesystem constraint guidance (for example FAT32/exFAT limits) with simple retry guidance.
+  - [ ] Document cancellation behavior and non-cancellable commit/rollback phase messaging.
+  - [ ] Document rollback snapshot behavior and cleanup retention.
   - [ ] Document concise default summaries and optional `View details` diagnostics for preflight/restore outcomes.
   - [ ] Document startup reconciliation outcome messaging after interrupted restore.
   - [ ] Document accessibility expectations for backup/restore dialogs and progress flows.

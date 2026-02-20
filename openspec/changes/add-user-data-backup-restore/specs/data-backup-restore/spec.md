@@ -56,27 +56,17 @@ The system SHALL validate archive entry metadata during restore preflight and SH
 - **THEN** restore is rejected before file-content extraction into restore-managed paths
 
 ### Requirement: Archive Resource Bounds
-The system SHALL enforce a two-tier bounded-limit model (hard security bounds and soft operational thresholds) to prevent resource exhaustion during restore.
+The system SHALL enforce hard non-overridable bounded limits to prevent resource exhaustion during restore.
 
 #### Scenario: Archive metadata exceeds hard security bounds
 - **WHEN** archive metadata exceeds non-overridable hard security bounds (for example compression-ratio explosion or absolute parser ceilings)
 - **THEN** restore is rejected as a blocking preflight failure
 - **AND** active app data remains unchanged
 
-#### Scenario: Soft operational threshold is exceeded
-- **WHEN** archive metadata exceeds configured soft thresholds (for example soft total size or soft entry-count limit) but does not exceed hard security bounds
-- **THEN** preflight presents warning details and explicit choices to continue once, update soft limits and continue, or cancel
-- **AND** restore proceeds only after explicit user confirmation
-
-#### Scenario: User updates soft thresholds
-- **WHEN** user chooses update-soft-limits during preflight warning
-- **THEN** updated soft thresholds are persisted to settings
-- **AND** restore re-evaluates against updated soft thresholds
-
-#### Scenario: Oversized JSONL line during import within hard bounds
-- **WHEN** a history JSONL line exceeds configured soft bounded-parser line-size threshold but remains within hard parser safety bounds
-- **THEN** that row is skipped as a recoverable warning
-- **AND** restore continues safely for remaining valid rows
+#### Scenario: Oversized JSONL line breaches hard parser bound
+- **WHEN** a history JSONL line exceeds hard parser safety bounds
+- **THEN** restore is rejected as a blocking corruption failure
+- **AND** active app data remains unchanged
 
 ### Requirement: Logical History Export
 The system SHALL export history as logical payload records rather than raw live SQLite file copying.
@@ -85,6 +75,15 @@ The system SHALL export history as logical payload records rather than raw live 
 - **WHEN** backup export runs
 - **THEN** history rows and stats are serialized into payload files
 - **AND** raw `history.db` is not copied into backup archive
+
+### Requirement: Export Snapshot Consistency Fence
+The system SHALL capture history, stats, and dictionary/settings payloads from one fenced point-in-time snapshot during export.
+
+#### Scenario: Snapshot fence is brief and consistency-preserving
+- **WHEN** backup export captures logical payload source data
+- **THEN** the app briefly fences new history/settings writes for snapshot capture only
+- **AND** the fence is released immediately after snapshot capture completes
+- **AND** exported history/stats/dictionary/settings payloads come from the same captured snapshot point
 
 ### Requirement: Backup Scope Options (V1)
 The system SHALL support exactly two backup scopes in v1, SHALL default export selection to `full`, and SHALL keep `lightweight` as an explicit user choice with clear consequences.
@@ -129,18 +128,22 @@ The system SHALL run non-destructive preflight validation before any restore wri
 - **WHEN** preflight finds recoverable issues and no blocking issues
 - **THEN** the user is shown a concise issue summary (counts by category and plain-language impact)
 - **AND** detailed per-item findings are available only behind an explicit `View details` action
-- **AND** the user must explicitly choose continue-partial-restore or cancel
-- **AND** restore proceeds only when the user confirms continue-partial-restore
+- **AND** restore proceeds automatically when recoverable findings only affect optional recording files
 
-#### Scenario: User cancels after recoverable preflight findings
-- **WHEN** preflight finds recoverable issues and user chooses cancel
-- **THEN** restore is aborted
-- **AND** active app data remains unchanged
+#### Scenario: Preflight default summary includes anti-mistake context
+- **WHEN** preflight returns a restore-ready summary
+- **THEN** the default summary includes backup `created_at` and `history_entries`
+- **AND** additional backup metadata remains available only behind explicit `View details`
 
 #### Scenario: Preflight fails
 - **WHEN** any blocking preflight validation check fails
 - **THEN** restore is aborted
 - **AND** active app data remains unchanged
+
+#### Scenario: Optional recording files are missing or invalid
+- **WHEN** preflight/import finds missing or invalid optional recording files and required payloads are valid
+- **THEN** restore continues automatically
+- **AND** skipped optional files are reported in a concise user-facing summary
 
 ### Requirement: Operation Concurrency Guard
 The system SHALL allow at most one backup or restore operation at a time.
@@ -148,11 +151,6 @@ The system SHALL allow at most one backup or restore operation at a time.
 #### Scenario: Second operation is requested while one is running
 - **WHEN** a backup or restore operation is already in progress
 - **THEN** a new backup or restore request is rejected with a busy/operation-in-progress response
-
-#### Scenario: Mandatory safety backup does not deadlock restore
-- **WHEN** restore runs its mandatory pre-restore safety backup
-- **THEN** that safety backup runs as an internal restore phase under the same operation context
-- **AND** the system does not attempt to acquire a second top-level backup/restore lock
 
 ### Requirement: Restore Quiesce Mode
 The system SHALL place the app in restore quiesce mode before apply-restore so active data is not concurrently modified.
@@ -167,10 +165,9 @@ The system SHALL place the app in restore quiesce mode before apply-restore so a
 - **THEN** restore waits for the in-flight write to finish within timeout
 - **AND** if timeout is exceeded, restore aborts with busy/retry guidance and leaves active data unchanged
 
-#### Scenario: Blocked actions show clear status while restore runs in background
+#### Scenario: Blocked actions show clear status while restore is in progress
 - **WHEN** user triggers transcription/history-write actions while restore quiesce mode is active
 - **THEN** the action is rejected safely with a clear `restore_in_progress` message
-- **AND** the UI offers an action to open the live restore status view
 
 ### Requirement: Storage Capacity Precheck
 The system SHALL check required free disk space before export and restore.
@@ -185,11 +182,10 @@ The system SHALL check required free disk space before export and restore.
 - **THEN** restore is aborted before active data write
 - **AND** active app data remains unchanged
 
-#### Scenario: Destination filesystem file-size limit blocks export
-- **WHEN** estimated archive size exceeds the selected destination filesystem single-file limit (for example FAT32 4 GiB)
-- **THEN** export is blocked with actionable guidance
-- **AND** guidance includes explicit choices to pick another destination or switch to `lightweight`
-- **AND** export does not start until the user makes a new explicit choice
+#### Scenario: Destination filesystem constraint blocks export
+- **WHEN** destination filesystem constraints prevent writing the estimated archive (for example single-file size limits)
+- **THEN** export is blocked with a concise actionable error
+- **AND** no partial backup file is left at destination
 
 ### Requirement: Export Destination Naming and Extension Guardrails
 The system SHALL provide safe default naming and extension behavior when users choose export destination.
@@ -209,23 +205,23 @@ The system SHALL provide safe default naming and extension behavior when users c
 - **AND** if overwrite is declined, export is canceled without modifying existing file
 
 ### Requirement: Backup Format Compatibility Window
-The system SHALL enforce backup format support for current major and previous major only.
+The system SHALL use payload-version migration support for all known versions within backup format major `1`, and SHALL require a documented deprecation runway before narrowing support in future major-format transitions.
 
-#### Scenario: Current major restore
-- **WHEN** backup format major equals current supported major
+#### Scenario: Supported v1 payload version restore
+- **WHEN** backup format major is `1` and payload versions are within the known migration map
 - **THEN** restore is allowed subject to other validations
 
-#### Scenario: Previous major restore
-- **WHEN** backup format major equals previous supported major
-- **THEN** restore is allowed through migration pipeline
-
 #### Scenario: Too-old restore is rejected
-- **WHEN** backup format major is older than previous supported major
+- **WHEN** backup format major is older than supported compatibility policy
 - **THEN** restore is rejected with unsupported-version guidance
 
 #### Scenario: Forward-incompatible restore is rejected
 - **WHEN** backup format major is newer than current supported major
 - **THEN** restore is rejected with update-app guidance
+
+#### Scenario: Deprecation runway for future major transition
+- **WHEN** support for a prior format major is planned for removal
+- **THEN** a deprecation notice is documented and shipped at least one stable release before removal
 
 ### Requirement: Schema Migration for Supported Backups
 The system SHALL migrate supported older payload schemas to current import schemas before staging import.
@@ -284,6 +280,16 @@ The system SHALL recover safely from interruption during restore.
 - **AND** active restore-managed data is either intact pre-restore data or fully restored data
 - **AND** partial intermediate state is not left active
 
+#### Scenario: Reconciliation from `active_moved` phase
+- **WHEN** startup finds restore marker phase `active_moved`
+- **THEN** reconciliation restores active data from rollback snapshot before allowing normal app writes
+- **AND** pre-restore history/stats/dictionary state is preserved
+
+#### Scenario: Reconciliation from `staged_activated` phase
+- **WHEN** startup finds restore marker phase `staged_activated`
+- **THEN** reconciliation finalizes committed restored state and clears stale rollback/in-progress artifacts safely
+- **AND** active data remains non-partial and internally consistent
+
 #### Scenario: Startup reconciliation outcome is shown to user
 - **WHEN** startup reconciliation runs after an interrupted restore
 - **THEN** the app shows a user-facing outcome summary (for example rolled back to pre-restore data or restore completed)
@@ -302,23 +308,21 @@ The system SHALL preserve history text restore when recordings are absent and SH
 - **THEN** those history rows are restored
 - **AND** unavailable audio is handled gracefully without app crash
 
-### Requirement: Deterministic Import Conflict Handling
-The system SHALL resolve duplicate imported identifiers and filename collisions deterministically while preserving valid data and skipping only unrecoverable items.
+### Requirement: Strict Core Payload Validation
+The system SHALL treat malformed or invalid required payload content as blocking corruption and SHALL only treat optional recording-file issues as recoverable.
 
-#### Scenario: Duplicate history IDs in payload
-- **WHEN** imported history payload contains duplicate row identifiers
-- **THEN** restore rekeys conflicting rows deterministically
-- **AND** preserves all valid rows
+#### Scenario: Malformed required history row
+- **WHEN** a required history payload row cannot be parsed or fails schema validation
+- **THEN** restore is rejected as corrupted backup before active-data replacement
 
-#### Scenario: Duplicate recording filenames in payload
-- **WHEN** imported recordings include filename collisions
-- **THEN** restore applies deterministic rename strategy
-- **AND** restored history rows reference the resolved filenames correctly
+#### Scenario: Invalid required dictionary or settings payload
+- **WHEN** required dictionary/settings payload cannot be parsed or fails schema validation
+- **THEN** restore is rejected as corrupted backup before active-data replacement
 
-#### Scenario: Malformed history rows are present
-- **WHEN** one or more history rows cannot be parsed or fail schema validation
-- **THEN** those rows are skipped with recoverable warnings
-- **AND** valid rows continue restoring
+#### Scenario: Optional recording issue
+- **WHEN** optional recording files are missing or invalid while required payloads are valid
+- **THEN** restore continues with warnings
+- **AND** history text and settings restore remain successful
 
 ### Requirement: Operation Reports
 The system SHALL return structured export and restore reports for UI display.
@@ -364,102 +368,59 @@ The system SHALL restrict backup and restore file operations to user-selected ar
 - **WHEN** export destination is not the user-selected save path
 - **THEN** export write is rejected
 
-### Requirement: Pre-Restore Safety Backup
-The system SHALL use a full-first safety-backup policy before any restore overwrites active data.
+### Requirement: Restore-Managed Dataset Contract
+The system SHALL treat restore-managed active data as one explicit protection set for rollback, swap, and reconciliation.
 
-#### Scenario: Full safety backup succeeds
-- **WHEN** the user confirms restore after preflight
-- **THEN** the system creates a full safety backup of current state in the app data directory
-- **AND** the safety backup path is logged
-- **AND** restore proceeds only after safety backup succeeds
+#### Scenario: Restore-managed dataset is explicit
+- **WHEN** rollback snapshot or destructive swap is prepared
+- **THEN** the protected dataset includes active `history.db` (including stats tables), dictionary source data in `settings_store.json`, and restore-managed `recordings/`
+- **AND** rollback and reconciliation operate over this exact dataset contract
 
-#### Scenario: Full safety backup cannot complete
-- **WHEN** full safety backup creation fails or cannot complete (for example insufficient disk space or user-soft-threshold constraints)
-- **THEN** the UI presents explicit choices: retry full backup, continue with lightweight backup, or cancel restore
-- **AND** restore proceeds only after explicit user confirmation
+### Requirement: Atomic Swap Durability
+The system SHALL perform restore commit using same-volume atomic renames and SHALL fail safely before destructive actions when atomicity is not guaranteed.
 
-#### Scenario: Low-space failure triggers prune-and-retry before fallback options
-- **WHEN** full safety backup fails due to insufficient space
-- **THEN** the system prunes old automatic safety backups per retention policy and retries full safety backup once
-- **AND** fallback options (`retry full`, `continue lightweight`, `cancel`) are shown only if the retry still fails
+#### Scenario: Same-volume atomic swap succeeds
+- **WHEN** staging, active, and rollback paths are on the same filesystem
+- **THEN** commit uses atomic rename operations only
+- **AND** copy/delete swap semantics are not used
 
-#### Scenario: User chooses lightweight fallback
-- **WHEN** full safety backup cannot complete and user explicitly chooses lightweight fallback
-- **THEN** system creates lightweight safety backup
-- **AND** UI indicates reduced rollback fidelity (recordings may not be recoverable from safety backup)
-- **AND** restore proceeds only after lightweight safety backup succeeds
+#### Scenario: Atomic swap cannot be guaranteed
+- **WHEN** restore detects swap paths that cannot guarantee same-volume atomic rename
+- **THEN** restore is aborted before destructive swap begins
+- **AND** active restore-managed data remains unchanged
 
-#### Scenario: Safety backup path fails without fallback confirmation
-- **WHEN** full safety backup fails and user does not explicitly choose lightweight fallback
-- **THEN** restore is aborted
-- **AND** active app data remains unchanged
+### Requirement: Pre-Swap Rollback Snapshot
+The system SHALL preserve currently active restore-managed data in a rollback workspace before final restore swap.
 
-#### Scenario: Restore confirmation shows current-vs-backup counts
+#### Scenario: Rollback snapshot is created before destructive swap
+- **WHEN** user confirms restore after preflight
+- **THEN** the system creates a rollback snapshot of active restore-managed data
+- **AND** restore proceeds to final swap only after snapshot validation succeeds
+
+#### Scenario: Restore failure uses rollback snapshot
+- **WHEN** restore fails after snapshot creation and before final success
+- **THEN** rollback restores pre-restore active data from rollback snapshot
+- **AND** user receives actionable failure summary
+
+#### Scenario: Startup reconciliation uses rollback snapshot
+- **WHEN** app is interrupted during restore
+- **THEN** startup reconciliation restores a consistent final state using rollback snapshot or completed staged state
+- **AND** partial intermediate state is never left active
+
+#### Scenario: Rollback snapshot retention is bounded
+- **WHEN** restore completes successfully
+- **THEN** the latest pre-restore rollback snapshot is retained for 7 days
+- **AND** snapshots older than the retention window are cleaned automatically on startup or post-restore cleanup
+
+#### Scenario: Restore confirmation shows concise impact summary
 - **WHEN** the user views the restore confirmation dialog
-- **THEN** the UI shows current data counts alongside backup data counts
-- **AND** the UI shows backup identity metadata (created timestamp, created-with-app version, source platform, includes-recordings flag, archive size)
+- **THEN** the UI shows a concise restore impact summary including backup `created_at` and `history_entries`
+- **AND** detailed backup metadata and side-by-side counts are available only behind explicit `View details`
 - **AND** the UI labels the artifact as a Codictate backup (`.codictatebackup`)
 - **AND** the UI shows a `Will restore` section and a `Will not restore` section
 - **AND** the `Will not restore` section explicitly lists excluded settings (API keys, selected devices, selected model)
 - **AND** if recordings are absent (lightweight backup or missing files), the UI explicitly states affected audio clips will be unavailable after restore
 - **AND** the UI warns that current data will be replaced
-
-### Requirement: Safety Backup Visibility and Retention
-The system SHALL make automatically-created pre-restore safety backups discoverable and manageable for users.
-
-#### Scenario: Safety backup details are shown when created
-- **WHEN** pre-restore safety backup succeeds
-- **THEN** the UI shows safety backup path, created timestamp, scope (`full` or `lightweight`), and approximate size
-- **AND** the UI provides actions to reveal the file location and copy the path
-
-#### Scenario: User manages stored safety backups
-- **WHEN** user opens backup/restore settings
-- **THEN** the UI shows recent safety backups with path, timestamp, scope, and size
-- **AND** the UI allows explicit user deletion of selected safety backups
-
-#### Scenario: Automatic retention prunes old safety backups
-- **WHEN** a new safety backup is created
-- **THEN** the system applies a default automatic retention policy that keeps the newest 3 automatic safety backups
-- **AND** older automatic safety backups are pruned first when creating a new automatic safety backup or when low-space precheck runs
-- **AND** explicitly saved safety backups are preserved and never auto-pruned
-- **AND** retention behavior is disclosed in backup/restore settings
-
-#### Scenario: User chooses whether to keep newly-created automatic safety backup
-- **WHEN** restore completes and an automatic safety backup exists
-- **THEN** the UI offers explicit choices `Save safety backup` and `Discard safety backup`
-- **AND** the default action is `Save safety backup`
-
-#### Scenario: User discards automatic safety backup
-- **WHEN** user chooses `Discard safety backup`
-- **THEN** the app asks for explicit confirmation before deletion
-- **AND** on confirmation, the automatic safety backup is deleted and the UI confirms deletion
-
-### Requirement: Background Operation Continuation
-The system SHALL continue backup/restore operations when the settings window closes and SHALL provide clear lifecycle feedback.
-
-#### Scenario: Operation continues when settings window closes
-- **WHEN** a backup or restore is running and the user closes/minimizes settings
-- **THEN** the operation continues in background
-- **AND** the app provides ongoing status and completion/failure notification via tray or desktop notification
-
-#### Scenario: Progress reattaches after reopening settings
-- **WHEN** the user reopens settings during an in-progress operation
-- **THEN** the backup/restore UI reattaches to live progress state without restarting the operation
-
-#### Scenario: Tray icon hidden still preserves status visibility
-- **WHEN** backup/restore is active in background and tray icon is disabled
-- **THEN** the app provides desktop notification with an explicit action to open restore/backup status
-- **AND** operation progress/completion is not silently hidden
-
-#### Scenario: User attempts app quit during cancellable phase
-- **WHEN** the user attempts to quit while backup/restore is active in a cancellable phase
-- **THEN** the app requires explicit choice to keep running in background or cancel-and-quit
-- **AND** the app does not silently terminate the operation
-
-#### Scenario: User attempts app quit during non-cancellable commit/rollback phase
-- **WHEN** the user attempts to quit while restore is in non-cancellable commit or rollback phase
-- **THEN** the app requires explicit choice to keep running in background or quit automatically when the phase becomes safe
-- **AND** `cancel-and-quit` is not offered for that phase
 
 ### Requirement: User Stats Recomputation on Restore
 The system SHALL recompute user stats from imported history rows rather than importing the backup stats snapshot.
@@ -496,18 +457,20 @@ The system SHALL merge restored settings selectively, using defaults for any new
 - **WHEN** a backup contains settings fields that no longer exist in the current app version
 - **THEN** those fields are silently ignored
 
-### Requirement: Progress and ETA Reporting
+### Requirement: Progress Reporting
 The system SHALL emit incremental progress events during export and restore for frontend display.
 
 #### Scenario: Export progress events
 - **WHEN** backup export is in progress
-- **THEN** the system emits progress events with phase, current count, total count, and estimated seconds remaining
-- **AND** the frontend displays a progress bar with ETA
+- **THEN** the system emits progress events with phase, current count, and total count
+- **AND** the frontend displays a progress bar
+- **AND** ETA, when shown, is clearly best-effort
 
 #### Scenario: Restore progress events
 - **WHEN** restore is in progress
-- **THEN** the system emits progress events with phase, current count, total count, and estimated seconds remaining
-- **AND** the frontend displays a progress bar with ETA
+- **THEN** the system emits progress events with phase, current count, and total count
+- **AND** the frontend displays a progress bar
+- **AND** ETA, when shown, is clearly best-effort
 
 ### Requirement: Estimated Size Preview
 The system SHALL display estimated archive size before export begins.
@@ -548,7 +511,7 @@ The system SHALL emit structured logs at every major backup/restore milestone.
 
 #### Scenario: Restore logging
 - **WHEN** restore runs
-- **THEN** `info` logs are emitted at preflight start, safety backup creation, migration, staging, swap completion, and restore completion with counts and duration
+- **THEN** `info` logs are emitted at preflight start, rollback snapshot creation, migration, staging, swap completion, and restore completion with counts and duration
 - **AND** `error` logs are emitted on any failure with step context
 
 #### Scenario: Frontend logging
