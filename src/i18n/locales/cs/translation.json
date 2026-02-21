@@ -261,8 +261,10 @@
           "clipboardCtrlShiftV": "Schránka (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Schránka (Shift+Insert)",
           "direct": "Přímé",
-          "none": "Žádné"
-        }
+          "none": "Žádné",
+          "externalScript": "Externí skript"
+        },
+        "externalScriptPlaceholder": "/cesta/k/vasemu/skriptu.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "Přizpůsobit „Vložit poslední přepis“ kurzoru",
@@ -318,7 +320,8 @@
         "description": "Přidejte slova, která jsou při přepisu často špatně rozpoznána nebo napsána. Systém automaticky opraví podobně znějící slova podle vašeho seznamu.",
         "placeholder": "Přidat slovo",
         "add": "Přidat",
-        "remove": "Odebrat {{word}}"
+        "remove": "Odebrat {{word}}",
+        "duplicate": "\"{{word}}\" již existuje"
       }
     },
     "postProcessing": {

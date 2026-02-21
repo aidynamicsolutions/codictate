@@ -261,8 +261,10 @@
           "clipboardCtrlShiftV": "클립보드 (Ctrl+Shift+V)",
           "clipboardShiftInsert": "클립보드 (Shift+Insert)",
           "direct": "직접",
-          "none": "없음"
-        }
+          "none": "없음",
+          "externalScript": "외부 스크립트"
+        },
+        "externalScriptPlaceholder": "/path/to/your/script.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "‘마지막 전사 붙여넣기’를 커서에 맞추기",
@@ -318,7 +320,8 @@
         "description": "녹음 중 자주 잘못 들리거나 철자가 틀리는 단어를 추가하세요. 시스템이 유사한 소리의 단어를 목록과 일치하도록 자동으로 수정합니다.",
         "placeholder": "단어 추가",
         "add": "추가",
-        "remove": "{{word}} 제거"
+        "remove": "{{word}} 제거",
+        "duplicate": "\"{{word}}\"이(가) 이미 존재합니다"
       }
     },
     "postProcessing": {

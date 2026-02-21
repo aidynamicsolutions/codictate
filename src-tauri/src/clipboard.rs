@@ -4,6 +4,7 @@ use crate::settings::TypingTool;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
 use enigo::{Direction, Enigo, Key, Keyboard};
 use tracing::info;
+use std::process::Command;
 
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
@@ -11,8 +12,6 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 
 #[cfg(target_os = "linux")]
 use crate::utils::{is_kde_wayland, is_wayland};
-#[cfg(target_os = "linux")]
-use std::process::Command;
 
 /// Pastes text using the clipboard: saves current content, writes text, sends paste keystroke, restores clipboard.
 fn paste_via_clipboard(
@@ -502,6 +501,31 @@ fn send_key_combo_via_xdotool(paste_method: &PasteMethod) -> Result<(), String> 
     Ok(())
 }
 
+/// Pastes text by invoking an external script.
+/// The script receives the text to paste as a single argument.
+fn paste_via_external_script(text: &str, script_path: &str) -> Result<(), String> {
+    info!("Pasting via external script: {}", script_path);
+
+    let output = Command::new(script_path)
+        .arg(text)
+        .output()
+        .map_err(|e| format!("Failed to execute external script '{}': {}", script_path, e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        return Err(format!(
+            "External script '{}' failed with exit code {:?}. stderr: {}, stdout: {}",
+            script_path,
+            output.status.code(),
+            stderr.trim(),
+            stdout.trim()
+        ));
+    }
+
+    Ok(())
+}
+
 /// Types text directly by simulating individual key presses.
 fn paste_direct(
     enigo: &mut Enigo,
@@ -699,6 +723,15 @@ pub fn paste_with_mode(
                 paste_delay_ms,
                 paste_restore_delay_ms,
             )?;
+            true
+        }
+        PasteMethod::ExternalScript => {
+            let script_path = settings
+                .external_script_path
+                .as_ref()
+                .filter(|p| !p.is_empty())
+                .ok_or("External script path is not configured")?;
+            paste_via_external_script(&prepared_text, script_path)?;
             true
         }
     };

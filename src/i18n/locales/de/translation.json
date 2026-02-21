@@ -487,8 +487,10 @@
           "clipboardCtrlShiftV": "Zwischenablage (Strg+Umschalt+V)",
           "clipboardShiftInsert": "Zwischenablage (Umschalt+Einfg)",
           "direct": "Direkt",
-          "none": "Keine"
-        }
+          "none": "Keine",
+          "externalScript": "Externes Skript"
+        },
+        "externalScriptPlaceholder": "/pfad/zu/ihrem/skript.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "„Letzte Transkription einfügen“ am Cursor ausrichten",
@@ -544,7 +546,8 @@
         "description": "Wörter hinzufügen, die oft falsch gehört oder geschrieben werden. Das System korrigiert automatisch ähnlich klingende Wörter entsprechend deiner Liste.",
         "placeholder": "Wort hinzufügen",
         "add": "Hinzufügen",
-        "remove": "{{word}} entfernen"
+        "remove": "{{word}} entfernen",
+        "duplicate": "\"{{word}}\" existiert bereits"
       }
     },
     "postProcessing": {

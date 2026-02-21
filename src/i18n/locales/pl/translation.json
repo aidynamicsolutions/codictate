@@ -487,8 +487,10 @@
           "clipboardCtrlShiftV": "Schowek (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Schowek (Shift+Insert)",
           "direct": "Bezpośrednio",
-          "none": "Brak"
-        }
+          "none": "Brak",
+          "externalScript": "Skrypt zewnętrzny"
+        },
+        "externalScriptPlaceholder": "/sciezka/do/twojego/skryptu.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "Dopasuj „Wklej ostatnią transkrypcję” do kursora",
@@ -544,7 +546,8 @@
         "description": "Dodaj słowa, które często są źle rozpoznawane lub zapisywane podczas transkrypcji. System automatycznie poprawi podobnie brzmiące słowa, aby pasowały do Twojej listy.",
         "placeholder": "Dodaj słowo",
         "add": "Dodaj",
-        "remove": "Usuń {{word}}"
+        "remove": "Usuń {{word}}",
+        "duplicate": "\"{{word}}\" już istnieje"
       }
     },
     "postProcessing": {

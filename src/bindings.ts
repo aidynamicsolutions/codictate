@@ -134,6 +134,14 @@ async changeTypingToolSetting(tool: string) : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeExternalScriptPathSetting(path: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_external_script_path_setting", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeClipboardHandlingSetting(handling: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_clipboard_handling_setting", { handling }) };
@@ -1037,7 +1045,7 @@ enable_filler_word_filter?: boolean;
 /**
  * When true, collapses repeated/stuttered words caused by ASR hallucinations.
  */
-enable_hallucination_filter?: boolean; show_tray_icon?: boolean; show_unload_model_in_tray?: boolean; paste_delay_ms?: number; paste_restore_delay_ms?: number; typing_tool?: TypingTool }
+enable_hallucination_filter?: boolean; show_tray_icon?: boolean; show_unload_model_in_tray?: boolean; paste_delay_ms?: number; paste_restore_delay_ms?: number; typing_tool?: TypingTool; external_script_path: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean; is_bluetooth: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
@@ -1128,7 +1136,7 @@ export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "
 export type OverlayClientRect = { x: number; y: number; width: number; height: number }
 export type OverlayInteractionRegionsPayload = { overlayVisible: boolean; messageLaneRect: OverlayClientRect | null; actionRects?: OverlayClientRect[] }
 export type OverlayPosition = "none" | "top" | "bottom"
-export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v"
+export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }

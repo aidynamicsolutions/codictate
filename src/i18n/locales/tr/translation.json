@@ -261,8 +261,10 @@
           "clipboardCtrlShiftV": "Pano (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Pano (Shift+Insert)",
           "direct": "Doğrudan",
-          "none": "Yok"
-        }
+          "none": "Yok",
+          "externalScript": "Harici Betik"
+        },
+        "externalScriptPlaceholder": "/dosya/yolu/betik.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "\"Son metni yapıştır\"ı imlece göre uyarlama",
@@ -318,7 +320,8 @@
         "description": "Transkripsiyon sırasında sıkça yanlış duyulan veya yanlış yazılan kelimeleri ekleyin. Sistem, benzer sesli kelimeleri listenize göre otomatik olarak düzeltir.",
         "placeholder": "Kelime ekle",
         "add": "Ekle",
-        "remove": "{{word}} Kaldır"
+        "remove": "{{word}} Kaldır",
+        "duplicate": "\"{{word}}\" zaten mevcut"
       }
     },
     "postProcessing": {

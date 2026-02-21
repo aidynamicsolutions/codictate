@@ -487,8 +487,10 @@
           "clipboardCtrlShiftV": "Presse-papiers (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Presse-papiers (Shift+Insert)",
           "direct": "Direct",
-          "none": "Aucun"
-        }
+          "none": "Aucun",
+          "externalScript": "Script externe"
+        },
+        "externalScriptPlaceholder": "/chemin/vers/votre/script.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "Adapter « Coller le dernier texte » au curseur",
@@ -544,7 +546,8 @@
         "description": "Ajoutez des mots souvent mal entendus ou mal orthographiés lors de la transcription. Le système corrigera automatiquement les mots similaires pour correspondre à votre liste.",
         "placeholder": "Ajouter un mot",
         "add": "Ajouter",
-        "remove": "Supprimer {{word}}"
+        "remove": "Supprimer {{word}}",
+        "duplicate": "\"{{word}}\" existe déjà"
       }
     },
     "postProcessing": {

@@ -487,8 +487,10 @@
           "clipboardCtrlShiftV": "Portapapeles (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Portapapeles (Shift+Insert)",
           "direct": "Directo",
-          "none": "Ninguno"
-        }
+          "none": "Ninguno",
+          "externalScript": "Script externo"
+        },
+        "externalScriptPlaceholder": "/ruta/a/su/script.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "Adaptar \"Pegar último\" al cursor",
@@ -544,7 +546,8 @@
         "description": "Agrega palabras que a menudo se escuchan mal o se escriben incorrectamente durante la transcripción. El sistema corregirá automáticamente palabras similares para que coincidan con tu lista.",
         "placeholder": "Agregar una palabra",
         "add": "Agregar",
-        "remove": "Eliminar {{word}}"
+        "remove": "Eliminar {{word}}",
+        "duplicate": "\"{{word}}\" ya existe"
       }
     },
     "postProcessing": {

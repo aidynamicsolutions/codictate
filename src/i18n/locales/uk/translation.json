@@ -486,8 +486,10 @@
           "clipboardCtrlShiftV": "Буфер обміну (Ctrl+Shift+V)",
           "clipboardShiftInsert": "Буфер обміну (Shift+Insert)",
           "direct": "Прямий",
-          "none": "Немає"
-        }
+          "none": "Немає",
+          "externalScript": "Зовнішній скрипт"
+        },
+        "externalScriptPlaceholder": "/path/to/your/script.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "Підлаштовувати «Вставити останній текст» під курсор",
@@ -543,7 +545,8 @@
         "description": "Додайте слова, які часто неправильно розпізнаються під час транскрипції. Система автоматично виправлятиме схожі за звучанням слова відповідно до вашого списку.",
         "placeholder": "Додати слово",
         "add": "Додати",
-        "remove": "Видалити {{word}}"
+        "remove": "Видалити {{word}}",
+        "duplicate": "\"{{word}}\" вже існує"
       }
     },
     "postProcessing": {

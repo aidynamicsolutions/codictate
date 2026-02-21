@@ -239,8 +239,10 @@
           "clipboardCtrlShiftV": "الحافظة (Ctrl+Shift+V)",
           "clipboardShiftInsert": "الحافظة (Shift+Insert)",
           "direct": "مباشر",
-          "none": "بلا"
-        }
+          "none": "بلا",
+          "externalScript": "نص برمجي خارجي"
+        },
+        "externalScriptPlaceholder": "/path/to/your/script.sh"
       },
       "pasteLastSmartInsertion": {
         "label": "تكييف \"لصق آخر تفريغ\" مع موضع المؤشر",
@@ -296,7 +298,8 @@
         "description": ".أضف الكلمات التي غالباً ما يتم فهمها بشكل خاطئ أو كتابتها بشكل خاطئ أثناء التفريغ. سيقوم النظام تلقائياً بتصحيح الكلمات ذات الصوت المماثل لتطابق قائمتك",
         "placeholder": "أضف كلمة",
         "add": "إضافة",
-        "remove": "إزالة {{word}}"
+        "remove": "إزالة {{word}}",
+        "duplicate": "\"{{word}}\" موجود بالفعل"
       }
     },
     "postProcessing": {
