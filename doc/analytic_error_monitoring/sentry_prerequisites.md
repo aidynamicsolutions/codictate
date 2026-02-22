@@ -1,34 +1,62 @@
 # Sentry Integration Prerequisites
 
-To enable Sentry error monitoring for Codictate, you need to provide the following credentials.
+This file lists the minimum prerequisites before enabling Sentry in Codictate.
 
-## 1. Create a Sentry Project
-1.  Log in to [Sentry.io](https://sentry.io/).
-2.  Create a new project.
-3.  Choose **Browser (JavaScript)** or **Rust** (the generic project type works for both in this context, but Browser is often easier for the frontend config).
-4.  Name the project `codictate-app` (or similar).
+## 1. Sentry Access
 
-## 2. Get the DSN (Data Source Name)
-1.  Go to **Project Settings** > **Client Keys (DSN)**.
-2.  Copy the DSN URL (e.g., `https://examplePublicKey@o0.ingest.sentry.io/0`).
+1. Create or access a Sentry organization.
+2. Create a project for Codictate desktop errors.
+3. Confirm you can view project settings and project releases.
 
-## 3. Configuration
-You have two options to provide this key:
+## 2. Required Values
 
-### Option A: `.env` File (Recommended for Dev)
-Create or update the `.env` file in the root directory:
-```bash
-SENTRY_DSN=your_dsn_here
-```
+### Runtime (local app)
 
-### Option B: Build-time Variable
-Pass it during the build process:
-```bash
-SENTRY_DSN=your_dsn_here cargo tauri build
-```
+- `SENTRY_DSN`: enables Sentry event ingestion and overrides embedded DSN when set.
+- `SENTRY_ENVIRONMENT`: recommended values are `development`, `staging`, or `production`.
+- `HANDY_DISABLE_SENTRY`: optional kill switch (`1` disables Sentry entirely).
 
-## 4. Source Maps (Optional but Recommended)
-For readable stack traces, you will need to upload source maps.
-1.  Go to **Organization Settings** > **Auth Tokens**.
-2.  Create a new token with `project:releases` scope.
-3.  Add `SENTRY_AUTH_TOKEN` to your CI/CD secrets or local `.env`.
+### CI (sourcemap upload)
+
+- `SENTRY_AUTH_TOKEN`
+- `SENTRY_ORG`
+- `SENTRY_PROJECT`
+- `SENTRY_DSN` (required to embed DSN into distributed builds)
+- `SENTRY_RELEASE` (must match runtime release tag)
+
+## 3. Auth Token Scope (sourcemaps)
+
+Create a Sentry auth token with:
+
+- `project:releases`
+- `org:read`
+
+These scopes are sufficient for release creation and frontend sourcemap upload.
+
+## 4. Release Naming Convention
+
+Use a single convention everywhere:
+
+- `codictate@<version>`
+
+Examples:
+
+- `codictate@0.7.6`
+- `codictate@0.8.0-beta.1`
+
+Runtime events and uploaded sourcemaps must use the same release string.
+
+## 5. Delivery Model (Pre-Prod)
+
+Current phase is pre-prod and uses best-effort delivery:
+
+- no durable offline queue requirement
+- no native minidump sidecar requirement
+
+The app should continue running normally if Sentry is disabled, misconfigured, or unreachable.
+
+## 6. DSN Source of Truth by Stage
+
+1. Local dev: `.env` / shell `SENTRY_DSN`.
+2. Distributed builds: CI-provided `SENTRY_DSN` embedded at compile time.
+3. Runtime override: shell `SENTRY_DSN` can override embedded DSN for debugging/reroute.

@@ -21,6 +21,7 @@ mod notification;
 mod overlay;
 mod permissions;
 mod settings;
+mod sentry_observability;
 mod shortcut;
 mod signal_handle;
 mod smart_insertion;
@@ -33,6 +34,10 @@ mod user_profile;
 mod utils;
 
 pub use cli::CliArgs;
+use once_cell::sync::Lazy;
+use regex::Regex;
+use sentry::protocol::{Event as SentryEvent, Map as SentryMap, Stacktrace};
+use serde_json::Value as JsonValue;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
 
@@ -48,6 +53,7 @@ use managers::transcription::TranscriptionManager;
 use signal_hook::consts::{SIGUSR1, SIGUSR2};
 #[cfg(unix)]
 use signal_hook::iterator::Signals;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
@@ -59,6 +65,7 @@ use tauri::{AppHandle, Emitter, Listener, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 use crate::settings::get_settings;
+use crate::sentry_observability::initialize_sentry_identity_scope;
 
 #[derive(Default)]
 struct ShortcutToggleStates {
@@ -77,6 +84,43 @@ pub type OnboardingPasteOverride = Mutex<bool>;
 // We use u8 to store the log::LevelFilter as a number
 pub static FILE_LOG_LEVEL: AtomicU8 = AtomicU8::new(log::LevelFilter::Debug as u8);
 
+const SENTRY_DSN_ENV_VAR: &str = "SENTRY_DSN";
+const SENTRY_ENVIRONMENT_ENV_VAR: &str = "SENTRY_ENVIRONMENT";
+const SENTRY_RELEASE_ENV_VAR: &str = "SENTRY_RELEASE";
+const HANDY_DISABLE_SENTRY_ENV_VAR: &str = "HANDY_DISABLE_SENTRY";
+const HANDY_SENTRY_TEST_PRIVACY_REDACTION_ON_START_ENV_VAR: &str =
+    "HANDY_SENTRY_TEST_PRIVACY_REDACTION_ON_START";
+const BUILD_TIME_SENTRY_DSN: Option<&str> = option_env!("SENTRY_DSN");
+
+#[derive(Clone, Copy)]
+enum SentryDsnSource {
+    RuntimeEnv,
+    BuildTimeEmbedded,
+}
+
+static EMAIL_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b")
+        .expect("email scrubbing pattern should compile")
+});
+static IPV4_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"\b(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\b",
+    )
+    .expect("ipv4 scrubbing pattern should compile")
+});
+static UNIX_USER_PATH_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)/(users|home)/[^/\s]+").expect("unix path scrubbing pattern should compile")
+});
+static WINDOWS_USER_PATH_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)[a-z]:\\users\\[^\\\s]+")
+        .expect("windows path scrubbing pattern should compile")
+});
+static SENSITIVE_ASSIGNMENT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(
+        r"(?i)\b(api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|secret|authorization|cookie)\b\s*[:=]\s*([^\s,;]+)",
+    )
+    .expect("sensitive assignment scrubbing pattern should compile")
+});
 
 
 fn build_console_filter() -> env_filter::Filter {
@@ -99,6 +143,417 @@ fn build_console_filter() -> env_filter::Filter {
     }
 
     builder.build()
+}
+
+fn env_var_is_truthy(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "1" | "true" | "yes" | "on"
+    )
+}
+
+fn normalize_non_empty(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn resolve_sentry_dsn() -> Option<(String, SentryDsnSource)> {
+    if let Some(runtime_dsn) = std::env::var(SENTRY_DSN_ENV_VAR)
+        .ok()
+        .and_then(|value| normalize_non_empty(&value))
+    {
+        return Some((runtime_dsn, SentryDsnSource::RuntimeEnv));
+    }
+
+    BUILD_TIME_SENTRY_DSN
+        .and_then(normalize_non_empty)
+        .map(|dsn| (dsn, SentryDsnSource::BuildTimeEmbedded))
+}
+
+fn resolve_sentry_environment() -> String {
+    std::env::var(SENTRY_ENVIRONMENT_ENV_VAR)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "development".to_string())
+}
+
+fn resolve_sentry_release() -> String {
+    std::env::var(SENTRY_RELEASE_ENV_VAR)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("codictate@{}", env!("CARGO_PKG_VERSION")))
+}
+
+fn sanitize_text(input: &str) -> String {
+    let step1 = EMAIL_PATTERN.replace_all(input, "[redacted-email]").into_owned();
+    let step2 = sanitize_ipv4_candidates(&step1);
+    let step3 = UNIX_USER_PATH_PATTERN
+        .replace_all(&step2, "/$1/[redacted-user]")
+        .into_owned();
+    let step4 = WINDOWS_USER_PATH_PATTERN
+        .replace_all(&step3, "C:\\Users\\[redacted-user]")
+        .into_owned();
+
+    SENSITIVE_ASSIGNMENT_PATTERN
+        .replace_all(&step4, "$1=[redacted]")
+        .into_owned()
+}
+
+fn sanitize_ipv4_candidates(input: &str) -> String {
+    let mut sanitized = String::with_capacity(input.len());
+    let mut last_index = 0;
+
+    for matched in IPV4_PATTERN.find_iter(input) {
+        sanitized.push_str(&input[last_index..matched.start()]);
+
+        // Do not scrub release-like tokens such as `codictate@0.7.6.1`.
+        // This guard is intentionally narrow to avoid preserving true IPs in
+        // other key-value contexts.
+        let previous_char = input[..matched.start()].chars().next_back();
+        if previous_char == Some('@') {
+            sanitized.push_str(matched.as_str());
+        } else {
+            sanitized.push_str("[redacted-ip]");
+        }
+
+        last_index = matched.end();
+    }
+
+    sanitized.push_str(&input[last_index..]);
+    sanitized
+}
+
+fn is_sensitive_key(key: &str) -> bool {
+    let normalized = key.trim().to_ascii_lowercase();
+    let has_token_marker = normalized == "token"
+        || normalized.starts_with("token_")
+        || normalized.ends_with("_token")
+        || normalized.contains("_token_")
+        || normalized.starts_with("token-")
+        || normalized.ends_with("-token")
+        || normalized.contains("-token-")
+        || normalized.starts_with("token.")
+        || normalized.ends_with(".token")
+        || normalized.contains(".token.")
+        // Catch common flattened camelCase variants such as `accessToken`.
+        || normalized.ends_with("token");
+
+    normalized.contains("password")
+        || has_token_marker
+        || normalized.contains("secret")
+        || normalized.contains("authorization")
+        || normalized.contains("api_key")
+        || normalized.contains("apikey")
+        || normalized.contains("cookie")
+        || normalized.contains("session")
+        || normalized.contains("credential")
+}
+
+fn scrub_optional_string(value: &mut Option<String>) {
+    if let Some(text) = value {
+        *text = sanitize_text(text);
+    }
+}
+
+fn scrub_json_value(value: &mut JsonValue) {
+    match value {
+        JsonValue::String(text) => {
+            *text = sanitize_text(text);
+        }
+        JsonValue::Array(items) => {
+            for item in items {
+                scrub_json_value(item);
+            }
+        }
+        JsonValue::Object(map) => {
+            let keys: Vec<String> = map.keys().cloned().collect();
+            for key in keys {
+                if let Some(entry) = map.get_mut(&key) {
+                    if is_sensitive_key(&key) {
+                        *entry = JsonValue::String("[redacted]".to_string());
+                    } else {
+                        scrub_json_value(entry);
+                    }
+                }
+            }
+        }
+        JsonValue::Null | JsonValue::Bool(_) | JsonValue::Number(_) => {}
+    }
+}
+
+fn scrub_string_map(map: &mut SentryMap<String, String>) {
+    let keys: Vec<String> = map.keys().cloned().collect();
+    for key in keys {
+        if let Some(value) = map.get_mut(&key) {
+            if is_sensitive_key(&key) {
+                *value = "[redacted]".to_string();
+            } else {
+                *value = sanitize_text(value);
+            }
+        }
+    }
+}
+
+fn scrub_stacktrace(stacktrace: &mut Stacktrace) {
+    for frame in &mut stacktrace.frames {
+        scrub_optional_string(&mut frame.abs_path);
+        scrub_optional_string(&mut frame.filename);
+        scrub_optional_string(&mut frame.module);
+        scrub_optional_string(&mut frame.function);
+        scrub_optional_string(&mut frame.symbol);
+        scrub_optional_string(&mut frame.package);
+        scrub_optional_string(&mut frame.context_line);
+
+        for line in &mut frame.pre_context {
+            *line = sanitize_text(line);
+        }
+        for line in &mut frame.post_context {
+            *line = sanitize_text(line);
+        }
+
+        let keys: Vec<String> = frame.vars.keys().cloned().collect();
+        for key in keys {
+            if let Some(value) = frame.vars.get_mut(&key) {
+                if is_sensitive_key(&key) {
+                    *value = JsonValue::String("[redacted]".to_string());
+                } else {
+                    scrub_json_value(value);
+                }
+            }
+        }
+    }
+}
+
+fn scrub_sentry_event(mut event: SentryEvent<'static>) -> SentryEvent<'static> {
+    scrub_optional_string(&mut event.culprit);
+    scrub_optional_string(&mut event.transaction);
+    scrub_optional_string(&mut event.message);
+    scrub_optional_string(&mut event.logger);
+
+    if let Some(logentry) = event.logentry.as_mut() {
+        logentry.message = sanitize_text(&logentry.message);
+        for param in &mut logentry.params {
+            scrub_json_value(param);
+        }
+    }
+
+    if let Some(user) = event.user.as_mut() {
+        if user.email.is_some() {
+            user.email = Some("[redacted-email]".to_string());
+        }
+        user.ip_address = None;
+        if let Some(user_id) = user.id.as_deref() {
+            if !user_id.starts_with("anon:") {
+                // Preserve pseudonymous `anon:` IDs, and redact all other identifiers.
+                user.id = Some("[redacted-user-id]".to_string());
+            }
+        }
+        scrub_optional_string(&mut user.username);
+
+        let keys: Vec<String> = user.other.keys().cloned().collect();
+        for key in keys {
+            if let Some(value) = user.other.get_mut(&key) {
+                if is_sensitive_key(&key) {
+                    *value = JsonValue::String("[redacted]".to_string());
+                } else {
+                    scrub_json_value(value);
+                }
+            }
+        }
+    }
+
+    if let Some(request) = event.request.as_mut() {
+        request.url = None;
+        scrub_optional_string(&mut request.data);
+        scrub_optional_string(&mut request.query_string);
+        request.cookies = None;
+        scrub_string_map(&mut request.headers);
+        scrub_string_map(&mut request.env);
+    }
+
+    for exception in &mut event.exception.values {
+        exception.ty = sanitize_text(&exception.ty);
+        scrub_optional_string(&mut exception.value);
+        scrub_optional_string(&mut exception.module);
+        if let Some(stacktrace) = exception.stacktrace.as_mut() {
+            scrub_stacktrace(stacktrace);
+        }
+        if let Some(raw_stacktrace) = exception.raw_stacktrace.as_mut() {
+            scrub_stacktrace(raw_stacktrace);
+        }
+    }
+
+    if let Some(stacktrace) = event.stacktrace.as_mut() {
+        scrub_stacktrace(stacktrace);
+    }
+
+    for thread in &mut event.threads.values {
+        scrub_optional_string(&mut thread.name);
+        if let Some(stacktrace) = thread.stacktrace.as_mut() {
+            scrub_stacktrace(stacktrace);
+        }
+        if let Some(raw_stacktrace) = thread.raw_stacktrace.as_mut() {
+            scrub_stacktrace(raw_stacktrace);
+        }
+    }
+
+    for breadcrumb in &mut event.breadcrumbs.values {
+        scrub_optional_string(&mut breadcrumb.message);
+        scrub_optional_string(&mut breadcrumb.category);
+
+        let keys: Vec<String> = breadcrumb.data.keys().cloned().collect();
+        for key in keys {
+            if let Some(value) = breadcrumb.data.get_mut(&key) {
+                if is_sensitive_key(&key) {
+                    *value = JsonValue::String("[redacted]".to_string());
+                } else {
+                    scrub_json_value(value);
+                }
+            }
+        }
+    }
+
+    scrub_string_map(&mut event.tags);
+
+    for value in event.modules.values_mut() {
+        *value = sanitize_text(value);
+    }
+
+    let keys: Vec<String> = event.extra.keys().cloned().collect();
+    for key in keys {
+        if let Some(value) = event.extra.get_mut(&key) {
+            if is_sensitive_key(&key) {
+                *value = JsonValue::String("[redacted]".to_string());
+            } else {
+                scrub_json_value(value);
+            }
+        }
+    }
+
+    if event.release.is_none() {
+        event.release = Some(Cow::Owned(resolve_sentry_release()));
+    }
+    if event.environment.is_none() {
+        event.environment = Some(Cow::Owned(resolve_sentry_environment()));
+    }
+
+    event
+}
+
+fn initialize_sentry() -> (Option<sentry::ClientInitGuard>, String) {
+    if let Ok(disable_value) = std::env::var(HANDY_DISABLE_SENTRY_ENV_VAR) {
+        if env_var_is_truthy(&disable_value) {
+            return (
+                None,
+                format!(
+                    "Sentry disabled: {} is set to '{}'",
+                    HANDY_DISABLE_SENTRY_ENV_VAR, disable_value
+                ),
+            );
+        }
+    }
+
+    let Some((dsn, dsn_source)) = resolve_sentry_dsn() else {
+        return (
+            None,
+            format!(
+                "Sentry disabled: {} is missing or empty and no build-time fallback is embedded",
+                SENTRY_DSN_ENV_VAR
+            ),
+        );
+    };
+
+    let parsed_dsn = match dsn.parse::<sentry::types::Dsn>() {
+        Ok(value) => value,
+        Err(_) => {
+            return (
+                None,
+                format!("Sentry disabled: {} is invalid", SENTRY_DSN_ENV_VAR),
+            );
+        }
+    };
+
+    let release = resolve_sentry_release();
+    let environment = resolve_sentry_environment();
+
+    let guard = sentry::init((
+        parsed_dsn,
+        sentry::ClientOptions {
+            release: Some(Cow::Owned(release.clone())),
+            environment: Some(Cow::Owned(environment.clone())),
+            send_default_pii: false,
+            before_send: Some(Arc::new(|event| Some(scrub_sentry_event(event)))),
+            ..Default::default()
+        },
+    ));
+
+    (
+        Some(guard),
+        format!(
+            "Sentry enabled (release='{}', environment='{}', dsn_source='{}')",
+            release,
+            environment,
+            match dsn_source {
+                SentryDsnSource::RuntimeEnv => "runtime_env",
+                SentryDsnSource::BuildTimeEmbedded => "build_time_embedded",
+            }
+        ),
+    )
+}
+
+fn trigger_sentry_privacy_redaction_smoke_if_requested() {
+    let Ok(value) = std::env::var(HANDY_SENTRY_TEST_PRIVACY_REDACTION_ON_START_ENV_VAR) else {
+        return;
+    };
+
+    if !env_var_is_truthy(&value) {
+        return;
+    }
+
+    let has_active_sentry_client = sentry::Hub::with_active(|hub| hub.client().is_some());
+    if !has_active_sentry_client {
+        tracing::warn!(
+            "Skipped privacy redaction smoke event because no active Sentry client is bound (check {} / {})",
+            SENTRY_DSN_ENV_VAR,
+            HANDY_DISABLE_SENTRY_ENV_VAR
+        );
+        return;
+    }
+
+    let event_id = sentry::with_scope(
+        |scope| {
+            scope.set_level(Some(sentry::Level::Error));
+            scope.set_tag("smoke_test", "true");
+            scope.set_tag("component", "backend");
+            scope.set_tag("operation", "privacy_redaction_smoke");
+            scope.set_extra("test_email", JsonValue::String("dev@example.com".to_string()));
+            scope.set_extra(
+                "test_path",
+                JsonValue::String("/Users/alice/private/file.txt".to_string()),
+            );
+            scope.set_extra("test_ip", JsonValue::String("192.168.0.42".to_string()));
+            scope.set_extra("api_key", JsonValue::String("abc123".to_string()));
+            scope.set_extra("test_cookie", JsonValue::String("session=abcdef12345".to_string()));
+        },
+        || {
+            sentry::capture_message(
+                "privacy scrub smoke event: dev@example.com /Users/alice/private/file.txt 192.168.0.42 api_key=abc123",
+                sentry::Level::Error,
+            )
+        },
+    );
+
+    tracing::warn!(
+        "Triggered privacy redaction smoke event (event_id={}, env_var={})",
+        event_id,
+        HANDY_SENTRY_TEST_PRIVACY_REDACTION_ON_START_ENV_VAR
+    );
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -584,8 +1039,16 @@ pub fn run(cli_args: CliArgs) {
         )
         .expect("Failed to export typescript bindings");
 
+    // `sentry_guard` lives until `run()` returns (after `builder.run(...)`),
+    // keeping the Sentry client active for the full app lifetime.
+    let (sentry_guard, sentry_status_message) = initialize_sentry();
+
     let mut builder = tauri::Builder::default()
         .device_event_filter(tauri::DeviceEventFilter::Always);
+
+    if let Some(client) = sentry_guard.as_ref() {
+        builder = builder.plugin(tauri_plugin_sentry::init(client));
+    }
 
     #[cfg(target_os = "macos")]
     {
@@ -624,6 +1087,10 @@ pub fn run(cli_args: CliArgs) {
         .manage(undo::UndoManager::default())
         .manage(cli_args.clone())
         .setup(move |app| {
+            // Correlation metadata is attached during setup, so any events emitted
+            // before this point may not include anon install/run metadata.
+            initialize_sentry_identity_scope(app.handle());
+
             // Initialize tracing with log directory
             let log_dir = app
                 .path()
@@ -634,6 +1101,8 @@ pub fn run(cli_args: CliArgs) {
             std::fs::create_dir_all(&log_dir).ok();
 
             tracing_config::init_tracing(&log_dir).expect("Failed to initialize tracing");
+            tracing::info!("{}", sentry_status_message);
+            trigger_sentry_privacy_redaction_smoke_if_requested();
 
             let mut settings = get_settings(app.handle());
 
@@ -773,4 +1242,66 @@ pub fn run(cli_args: CliArgs) {
                 _ => {}
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_sensitive_key, scrub_sentry_event};
+    use sentry::protocol::{Event as SentryEvent, User};
+
+    #[test]
+    fn scrubber_preserves_anon_user_id() {
+        let mut event = SentryEvent::default();
+        event.user = Some(User {
+            id: Some("anon:550e8400-e29b-41d4-a716-446655440000".to_string()),
+            ..Default::default()
+        });
+
+        let scrubbed = scrub_sentry_event(event);
+        let user = scrubbed.user.expect("user should exist");
+        assert_eq!(
+            user.id.as_deref(),
+            Some("anon:550e8400-e29b-41d4-a716-446655440000")
+        );
+    }
+
+    #[test]
+    fn scrubber_redacts_non_anon_user_id() {
+        let mut event = SentryEvent::default();
+        event.user = Some(User {
+            id: Some("john@example.com".to_string()),
+            ..Default::default()
+        });
+
+        let scrubbed = scrub_sentry_event(event);
+        let user = scrubbed.user.expect("user should exist");
+        assert_eq!(user.id.as_deref(), Some("[redacted-user-id]"));
+    }
+
+    #[test]
+    fn scrubber_redacts_non_anon_user_id_that_matches_no_pattern() {
+        let mut event = SentryEvent::default();
+        event.user = Some(User {
+            id: Some("employee_12345".to_string()),
+            ..Default::default()
+        });
+
+        let scrubbed = scrub_sentry_event(event);
+        let user = scrubbed.user.expect("user should exist");
+        assert_eq!(user.id.as_deref(), Some("[redacted-user-id]"));
+    }
+
+    #[test]
+    fn sensitive_key_token_matching_avoids_common_false_positives() {
+        assert!(!is_sensitive_key("tokenizer"));
+        assert!(!is_sensitive_key("tokenization_mode"));
+    }
+
+    #[test]
+    fn sensitive_key_token_and_credential_variants_are_detected() {
+        assert!(is_sensitive_key("token"));
+        assert!(is_sensitive_key("access_token"));
+        assert!(is_sensitive_key("accessToken"));
+        assert!(is_sensitive_key("api_credentials"));
+    }
 }

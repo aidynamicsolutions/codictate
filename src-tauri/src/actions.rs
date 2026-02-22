@@ -9,6 +9,7 @@ use crate::managers::transcription::TranscriptionManager;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::settings::LOCAL_MLX_PROVIDER_ID;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::sentry_observability::{capture_handled_error, capture_handled_message, HandledErrorMeta};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
@@ -25,6 +26,30 @@ use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
 use tracing::{debug, error, info, info_span, warn};
+
+const META_TRANSCRIBE_FAILURE: HandledErrorMeta = HandledErrorMeta {
+    component: "actions",
+    operation: "transcribe",
+    level: sentry::Level::Error,
+};
+
+const META_SAVE_HISTORY_FAILURE: HandledErrorMeta = HandledErrorMeta {
+    component: "actions",
+    operation: "save_history",
+    level: sentry::Level::Error,
+};
+
+const META_PASTE_FAILURE: HandledErrorMeta = HandledErrorMeta {
+    component: "actions",
+    operation: "paste",
+    level: sentry::Level::Error,
+};
+
+const META_CORRECTION_FAILURE: HandledErrorMeta = HandledErrorMeta {
+    component: "actions",
+    operation: "correction",
+    level: sentry::Level::Error,
+};
 
 /// Drop guard that notifies the [`TranscriptionCoordinator`] when the
 /// transcription pipeline finishes — whether it completes normally or panics.
@@ -846,6 +871,10 @@ impl ShortcutAction for TranscribeAction {
                                         }
                                         Err(e) => {
                                             error!("Failed to save transcription to history: {}", e);
+                                            capture_handled_error(
+                                                &META_SAVE_HISTORY_FAILURE,
+                                                e.as_ref() as &(dyn std::error::Error + 'static),
+                                            );
                                             None
                                         }
                                     };
@@ -883,6 +912,10 @@ impl ShortcutAction for TranscribeAction {
                                             }
                                             Err(e) => {
                                                 error!("Failed to paste transcription: {}", e);
+                                                capture_handled_message(
+                                                    &META_PASTE_FAILURE,
+                                                    &format!("Failed to paste transcription: {e}"),
+                                                );
                                                 None
                                             }
                                         };
@@ -894,6 +927,10 @@ impl ShortcutAction for TranscribeAction {
 
                                     let paste_result = if let Err(e) = run_main_thread_result {
                                         error!("Failed to run paste on main thread: {:?}", e);
+                                        capture_handled_message(
+                                            &META_PASTE_FAILURE,
+                                            &format!("Failed to run paste on main thread: {e:?}"),
+                                        );
                                         utils::hide_overlay_after_transcription(&app_for_paste_task);
                                         change_tray_icon(&app_for_paste_task, TrayIconState::Idle);
                                         None
@@ -904,6 +941,12 @@ impl ShortcutAction for TranscribeAction {
                                                 error!(
                                                     "Failed to receive paste result from main thread: {}",
                                                     e
+                                                );
+                                                capture_handled_message(
+                                                    &META_PASTE_FAILURE,
+                                                    &format!(
+                                                        "Failed to receive paste result from main thread: {e}"
+                                                    ),
                                                 );
                                                 None
                                             }
@@ -936,6 +979,10 @@ impl ShortcutAction for TranscribeAction {
                         }
                         Err(err) => {
                             debug!("Global Shortcut Transcription error: {}", err);
+                            capture_handled_error(
+                                &META_TRANSCRIBE_FAILURE,
+                                err.as_ref() as &(dyn std::error::Error + 'static),
+                            );
                             utils::hide_overlay_after_transcription(&ah);
                             change_tray_icon(&ah, TrayIconState::Idle);
                         }
@@ -1402,6 +1449,10 @@ impl ShortcutAction for CorrectAction {
                 }
                 Err(e) => {
                     error!("Correction failed: {}", e);
+                    capture_handled_message(
+                        &META_CORRECTION_FAILURE,
+                        &format!("Correction failed: {e}"),
+                    );
                     crate::notification::show_error(&app_clone, "errors.correctionFailed");
                     utils::hide_recording_overlay(&app_clone);
                 }

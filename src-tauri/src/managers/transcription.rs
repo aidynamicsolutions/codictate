@@ -2,6 +2,7 @@ use crate::audio_toolkit::{
     apply_custom_words_with_thresholds, filter_and_count_filler_words, filter_hallucinations,
 };
 use crate::managers::model::{EngineType, ModelManager};
+use crate::sentry_observability::{capture_handled_error, HandledErrorMeta};
 use crate::settings::{get_settings, ModelUnloadTimeout};
 use anyhow::Result;
 use serde::Serialize;
@@ -59,6 +60,12 @@ pub struct TranscriptionManager {
     loading_condvar: Arc<Condvar>,
     active_session_id: Arc<Mutex<Option<String>>>,
 }
+
+const META_BACKGROUND_MODEL_LOAD_FAILURE: HandledErrorMeta = HandledErrorMeta {
+    component: "transcription_manager",
+    operation: "background_model_load",
+    level: sentry::Level::Error,
+};
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
@@ -395,6 +402,10 @@ impl TranscriptionManager {
             let settings = get_settings(&self_clone.app_handle);
             if let Err(e) = self_clone.load_model(&settings.selected_model) {
                 error!("Failed to load model: {}", e);
+                capture_handled_error(
+                    &META_BACKGROUND_MODEL_LOAD_FAILURE,
+                    e.as_ref() as &(dyn std::error::Error + 'static),
+                );
             }
             let mut is_loading = self_clone.is_loading.lock().unwrap();
             *is_loading = false;

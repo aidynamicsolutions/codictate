@@ -77,6 +77,8 @@ specta = "=2.0.0-rc.22"
 specta-typescript = "0.0.9"
 tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 tauri-plugin-notification = "2.3.3"
+sentry = "0.36.0"
+tauri-plugin-sentry = "0.4.1"
 # Tracing stack for unified structured logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -131,4 +133,4 @@ tempfile = "3"
 lto = true
 codegen-units = 1
 strip = true
-panic = "abort"
+panic = "unwind"

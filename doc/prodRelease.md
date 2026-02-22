@@ -105,6 +105,79 @@ Output location: `src-tauri/target/release/bundle/`
 - [ ] Verify notarization succeeds
 - [ ] Test auto-update flow (if applicable)
 
+### Sentry Verification (Pre-Prod to Prod Readiness)
+
+- [ ] `SENTRY_RELEASE` follows `codictate@<version>` and matches runtime release tags
+- [ ] `SENTRY_ENVIRONMENT` is explicitly set per build profile
+- [ ] CI secrets are configured: `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, `SENTRY_PROJECT`, `SENTRY_DSN`
+- [ ] Release build startup log confirms Sentry DSN source is valid (`runtime_env` or `build_time_embedded`)
+- [ ] Frontend sourcemaps upload successfully in CI
+- [ ] At least one backend and one frontend test event are visible in Sentry for the release candidate
+- [ ] Kill switch (`HANDY_DISABLE_SENTRY=1`) confirmed to disable ingestion during smoke test
+- [ ] Local triage token has read scopes for production debugging (`event:read`, `org:read`, `project:releases`)
+- [ ] If CLI issue cleanup is required, local triage token also has issue write scope (`event:admin` or equivalent)
+
+#### Sentry DSN Provisioning for Installed Builds
+
+The app resolves DSN in this order:
+
+1. Runtime `SENTRY_DSN` (override path for local debugging/reroute)
+2. Build-time embedded DSN (`SENTRY_DSN` from CI build environment)
+
+For production installers, users typically do not provide runtime env vars.
+This means CI **must** provide `SENTRY_DSN` during build so installed apps can send errors.
+
+#### Release Candidate Smoke Check (Backend Error Ingestion)
+
+1. Build/install release candidate as normal.
+2. Launch the app normally (no test-only env vars).
+3. Trigger one real handled backend error path:
+   - Option A (transcription): temporarily make active model file unavailable, run one transcription, then restore file.
+   - Option B (correction): use invalid/missing provider credential and run one correction.
+4. Verify startup logs show:
+   - `Sentry enabled (...)`
+   - `dsn_source='build_time_embedded'` (or `runtime_env` when explicitly overriding)
+5. In Sentry, confirm a new backend issue/event appears for the release candidate with expected tags:
+   - `handled=true`
+   - `component=actions`
+   - `operation=transcribe` or `operation=correction`
+6. Restore any temporary failure setup and relaunch once for normal usage.
+
+#### Release Candidate Smoke Check (Frontend Symbolication)
+
+1. Trigger one frontend exception on the release candidate.
+2. Verify event has expected tags:
+   - `release=codictate@<version>`
+   - `environment=production` (or intended target env)
+3. Verify stack frame is readable (not only minified `main-<hash>.js` frame).
+4. If minified-only, run deterministic fallback upload:
+
+```bash
+bunx vite build --sourcemap hidden
+sentry-cli sourcemaps upload \
+  --org <org> \
+  --project <project> \
+  --release codictate@<version> \
+  --url-prefix "app://localhost/assets" \
+  --validate \
+  --wait \
+  dist/assets
+```
+
+5. Re-trigger one frontend event and confirm symbolication is now readable.
+
+#### Live Production Error Debug Workflow (Fast Path)
+
+1. Identify affected release and environment in Sentry issue details.
+2. Verify same release has sourcemap upload evidence.
+3. Confirm stack trace is symbolicated; if not, run fallback upload for that exact release.
+4. Run monitoring triage:
+   - `bash .agents/skills/sentry-monitoring/scripts/sentry_monitor.sh --mode issue-triage --org <org> --project <project> --require-host-network --json`
+5. Prioritize by:
+   - fatal/error level
+   - first-seen recency
+   - release regression signal
+
 ---
 
 ## Backup Compatibility

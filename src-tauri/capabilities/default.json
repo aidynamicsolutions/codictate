@@ -30,6 +30,7 @@
     "updater:default",
     "process:default",
     "notification:default",
+    "sentry:default",
     "dialog:default",
     "global-shortcut:allow-is-registered",
     "global-shortcut:allow-register",

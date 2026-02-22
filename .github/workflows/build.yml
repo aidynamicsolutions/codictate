@@ -281,6 +281,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ inputs.sign-binaries && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
           WHISPER_NO_AVX: ${{ contains(inputs.platform, 'ubuntu') && !contains(inputs.platform, 'arm') && 'ON' || '' }}
           WHISPER_NO_AVX2: ${{ contains(inputs.platform, 'ubuntu') && !contains(inputs.platform, 'arm') && 'ON' || '' }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN || '' }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG || '' }}
+          SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT || '' }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN || '' }}
+          SENTRY_RELEASE: codictate@${{ steps.get-version.outputs.version }}
+          SENTRY_ENVIRONMENT: ${{ inputs.is-debug-build && 'development' || 'production' }}
         with:
           tagName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}

@@ -1,0 +1,61 @@
+## 1. Implementation
+- [x] 1.1 Update OpenSpec proposal/tasks/spec delta for pre-prod scope:
+  - [x] use Tauri v2 capabilities instead of `tauri.conf.json` permissions
+  - [x] best-effort delivery language (no guaranteed offline queue)
+  - [x] release/environment metadata requirement
+  - [x] kill-switch/disable path requirement
+  - [x] developer setup docs + manual checklist requirement
+- [x] 1.2 Update `src-tauri/Cargo.toml` release profile from `panic = "abort"` to `panic = "unwind"`.
+- [x] 1.3 Add `sentry` and `tauri-plugin-sentry` to `src-tauri/Cargo.toml` (pinned)
+- [x] 1.4 Add Sentry permission to `src-tauri/capabilities/default.json`
+- [x] 1.5 Initialize Sentry in `src-tauri/src/lib.rs`:
+  - [x] enable when DSN is available from runtime env or build-time embedded fallback
+  - [x] runtime `SENTRY_DSN` overrides embedded fallback when both exist
+  - [x] disable when `HANDY_DISABLE_SENTRY=1`
+  - [x] set `release` and `environment`
+  - [x] set `send_default_pii = false`
+  - [x] add `before_send` scrubbing for email/path/IP/sensitive keys
+  - [x] log enable/disable reason to unified logs
+- [x] 1.6 Add frontend sourcemap upload support:
+  - [x] add `@sentry/vite-plugin` in `package.json`
+  - [x] configure `vite.config.ts` to upload only when Sentry secrets exist
+  - [x] keep local/fork builds non-blocking when secrets are absent
+- [x] 1.7 Update CI build workflow (`.github/workflows/build.yml`) to pass Sentry vars for sourcemap upload and release naming
+  - [x] pass `SENTRY_DSN` in CI build env so distributed app builds embed DSN fallback
+- [x] 1.8 Update docs:
+  - [x] `doc/analytic_error_monitoring/sentry_prerequisites.md`
+  - [x] `doc/analytic_error_monitoring/sentry_integration.md`
+  - [x] align `doc/analytic_error_monitoring/sentry_integration.md` setup snippets with the exact implementation path in `src-tauri/src/lib.rs` and the `tauri-plugin-sentry` API actually used
+  - [x] document default sampling behavior as informational guidance (non-normative)
+  - [x] `doc/prodRelease.md`
+  - [x] add `doc/analytic_error_monitoring/sentry_dev_setup.md`
+- [x] 1.9 Add manual test checklist `doc/test/sentry-error-monitoring-manual-checklist.md`
+- [ ] 1.10 Validate:
+  - [x] `openspec validate add-sentry-error-monitoring --strict`
+  - [ ] verify backend/frontend event capture path and kill-switch behavior
+  - [ ] manual verify release-build panic event capture path after `panic = "unwind"` change
+- [x] 1.11 Add handled-error capture + pseudonymous correlation plumbing:
+  - [x] add `src-tauri/src/sentry_observability.rs` with:
+    - [x] `HandledErrorMeta`
+    - [x] `capture_handled_error(...)`
+    - [x] `capture_handled_message(...)`
+    - [x] `initialize_sentry_identity_scope(...)`
+    - [x] `get_or_create_anonymous_install_id(...)`
+  - [x] initialize Sentry identity scope during `.setup(...)` in `src-tauri/src/lib.rs`
+  - [x] preserve `anon:` `user.id` values in `before_send` scrubber
+  - [x] store per-run `run_id` in `context`/`extra` only (non-indexed)
+  - [x] force immediate `store.save()` only on first install-id creation
+- [x] 1.12 Instrument selected handled backend failures:
+  - [x] transcription failure capture in `src-tauri/src/actions.rs`
+  - [x] history save + paste-path handled failures in `src-tauri/src/actions.rs`
+  - [x] correction fallback failure capture in `src-tauri/src/actions.rs`
+  - [x] background model-load failure capture in `src-tauri/src/managers/transcription.rs`
+  - [x] use fingerprint `["{{ default }}", component, operation]`
+  - [x] defer `op_sid` tagging in this phase
+- [x] 1.13 Update docs/checklist for handled-errors + correlation:
+  - [x] `doc/analytic_error_monitoring/sentry_integration.md`
+  - [x] `doc/analytic_error_monitoring/sentry_dev_setup.md`
+  - [x] `doc/test/sentry-error-monitoring-manual-checklist.md`
+  - [x] document startup timing gap (pre-`.setup(...)` events may miss anon/run metadata)
+
+> Note: Minidump sidecar integration is deferred to a follow-up change.

@@ -67,6 +67,7 @@
     "zustand": "^5.0.8"
   },
   "devDependencies": {
+    "@sentry/vite-plugin": "4.3.0",
     "@playwright/test": "^1.58.0",
     "@tauri-apps/cli": "^2.10.0",
     "@types/canvas-confetti": "^1.9.0",
