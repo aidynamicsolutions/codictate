@@ -156,6 +156,8 @@ We use GitHub Discussions for feature requests rather than issues. This keeps is
 
 Community feedback is essential to keeping Codictate the best it can be for everyone. It helps prioritize what matters most and prevents feature creep.
 
+For this fork's branch model and upstream sync process, see [doc/git-workflow.md](doc/git-workflow.md).
+
 ### Development Workflow
 
 1. **Create a feature branch**:
