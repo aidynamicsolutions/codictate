@@ -124,7 +124,9 @@ pub fn mlx_open_models_dir(
     mlx_manager: State<'_, Arc<MlxModelManager>>,
     model_id: String,
 ) -> Result<(), String> {
-    let model_dir = mlx_manager.models_dir().join(&model_id);
+    let model_dir = mlx_manager
+        .model_path_for_id(&model_id)
+        .map_err(|e| e.to_string())?;
     if !model_dir.exists() {
         return Err(format!("Model directory not found: {}", model_id));
     }

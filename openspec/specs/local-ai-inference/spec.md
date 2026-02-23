@@ -6,39 +6,20 @@ TBD - created by archiving change add-mlx-local-ai-provider. Update Purpose afte
 ### Requirement: Local MLX Model Management
 The system SHALL provide local AI model management for Apple Silicon Macs, allowing users to download, load, and delete MLX-based language models for on-device transcription enhancement.
 
-#### Scenario: List available models
-- **WHEN** a user opens the post-processing settings on an Apple Silicon Mac
-- **THEN** the system SHALL display a list of available MLX models with their download status (not downloaded, downloading, downloaded, loading, ready)
+#### Scenario: Canonical model IDs
+- **WHEN** MLX models are defined in the catalog
+- **THEN** each model SHALL have a stable canonical ID for long-term compatibility
 
-#### Scenario: Download a model from Hugging Face Hub
-- **WHEN** a user initiates a model download
-- **THEN** the system SHALL download the model from Hugging Face Hub with progress reporting
-- **AND** the system SHALL allow the user to cancel the download
+#### Scenario: Alias-based compatibility
+- **WHEN** the persisted selected model ID matches a known alias
+- **THEN** the system SHALL resolve it to the canonical model ID
+- **AND** SHALL persist the canonical model ID back to settings
 
-#### Scenario: Cancel download
-- **WHEN** a user cancels an in-progress download
-- **THEN** the system SHALL stop the download immediately
-- **AND** reset the download progress to 0
-- **AND** update the status to reflect cancellation
-
-#### Scenario: Retry failed download
-- **WHEN** a model download fails due to network error
-- **THEN** the system SHALL allow the user to retry the download
-- **AND** limit retry attempts to a maximum of 3
-
-#### Scenario: Delete a model
-- **WHEN** a user requests to delete a downloaded model
-- **THEN** the system SHALL remove the model files from disk and update the model status
-
-#### Scenario: Prevent delete while busy
-- **WHEN** a user attempts to delete a model that is currently downloading, loading, or running
-- **THEN** the system SHALL prevent the deletion and show an appropriate error message
-
-#### Scenario: Platform restriction
-- **WHEN** the app runs on a non-Apple Silicon platform (x86_64, Windows, Linux)
-- **THEN** the system SHALL NOT display the local MLX provider option in settings
-
----
+#### Scenario: Invalid selected model fallback
+- **WHEN** the persisted selected model ID is missing or invalid
+- **THEN** the system SHALL select a deterministic fallback model
+- **AND** SHALL persist the fallback selection
+- **AND** SHALL continue processing without user-facing hard failure
 
 ### Requirement: Local AI Text Generation
 The system SHALL support text generation using locally loaded MLX models via a Python sidecar for transcription post-processing.
@@ -135,4 +116,21 @@ The system SHALL handle errors gracefully and provide meaningful feedback to use
 - **WHEN** the system detects an empty model directory during status check
 - **THEN** the system SHALL remove the empty directory
 - **AND** update the status to "not downloaded"
+
+### Requirement: Source-Aware Model Definitions
+The system SHALL support ordered model download sources in MLX catalog metadata.
+
+#### Scenario: HF-only runtime
+- **WHEN** no mirror source is configured/enabled
+- **THEN** model download SHALL proceed via Hugging Face source
+
+#### Scenario: Optional mirror readiness
+- **WHEN** mirror source metadata exists but mirror support is disabled or unconfigured
+- **THEN** the system SHALL skip mirror source attempts
+- **AND** SHALL use the next valid source
+
+#### Scenario: Deterministic source fallback contract
+- **WHEN** a higher-priority source fails and fallback is allowed
+- **THEN** the system SHALL attempt the next source in priority order
+- **AND** SHALL preserve consistent progress/error reporting semantics
 

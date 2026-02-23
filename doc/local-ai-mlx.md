@@ -78,7 +78,7 @@ The MLX inference runs in a separate Python process for best model compatibility
     (MlxModelManager)                         (FastAPI Server)
           │                                         │
           │  ┌───────────────────────────────┐      │
-          │  │  HTTP over localhost:5000-5100│      │
+          │  │ HTTP over localhost:11400-11500│     │
           │  └───────────────────────────────┘      │
           │                                         │
           ├──────────GET /status───────────────────▶│  Health check
@@ -141,13 +141,15 @@ All models are **4-bit quantized** for efficient Apple Silicon inference.
 |-------|----------|-----------|----------|
 | Qwen 3 Base 0.6B | ~0.4 GB | ~1 GB | Ultra-fast, simple corrections |
 | **Qwen 3 Base 1.7B** | ~1.0 GB | ~2-3 GB | 8GB Macs (recommended ≤8GB) |
-| **Qwen 3 Base 4B** | ~2.3 GB | ~4-5 GB | 16GB Macs (recommended 9-16GB) |
+| **Qwen 3 4B Instruct (2507)** | ~2.26 GB | ~2 GB min, ~4-5 GB typical | 16GB Macs (recommended 9-16GB) |
 | **Qwen 3 Base 8B** | ~4.7 GB | ~7-8 GB | 24GB+ Macs (recommended >16GB) |
 | Gemma 3 Base 1B | ~0.8 GB | ~1 GB | Multi-language support |
 | Gemma 3 Base 4B | ~2.3 GB | ~3 GB | Strong multi-language |
 | SmolLM 3 Base 3B | ~1.8 GB | ~2 GB | HuggingFace alternative |
 
 **Recommendation is automatic based on system RAM.**
+
+> Note: Official Qwen `2507` updates are available for 4B (and larger sparse variants), but not currently for 0.6B/1.7B/8B.
 
 ## Generation Settings
 
@@ -195,7 +197,10 @@ Codictate/
 │   └── src/
 │       ├── managers/
 │       │   └── mlx/
-│       │       └── manager.rs       # Rust MLX manager
+│       │       ├── catalog.rs       # Canonical IDs, aliases, model sources
+│       │       ├── downloader.rs    # Source dispatch (HF now, mirror later)
+│       │       ├── provider.rs      # Catalog provider abstraction
+│       │       └── manager.rs       # Rust MLX manager runtime
 │       └── actions.rs               # Integration point
 └── src/
     ├── components/settings/
@@ -208,8 +213,10 @@ Codictate/
 
 1. **Model Selection**: User selects a model in Settings → Refine → Local (MLX)
 2. **Disk Space Check**: System verifies sufficient space (model size + 100MB buffer)
-3. **Model Download**: Model files are downloaded from Hugging Face Hub (~1-5 GB)
-4. **Sidecar Startup**: On first use, `uv` spawns the Python sidecar on an available port (5000-5100)
+3. **Model Download**: Model files are downloaded directly from Hugging Face Hub (~1-5 GB)
+   - Public, ungated models download without requiring a user API key/token.
+   - Gated/private models require Hugging Face authentication.
+4. **Sidecar Startup**: On first use, `uv` spawns the Python sidecar on an available port (11400-11500)
 5. **Model Loading**: Model loads into GPU memory (~5-15 seconds)
 6. **Text Processing**: Transcriptions are enhanced via the sidecar
 7. **Auto-Unload**: Model unloads after idle timeout to free memory
@@ -218,7 +225,7 @@ Codictate/
 ## Troubleshooting
 
 ### Sidecar won't start
-- Ports 5000-5100 are scanned automatically; ensure at least one is available
+- Ports 11400-11500 are scanned automatically; ensure at least one is available
 - Ensure `uv` binary exists in `src-tauri/binaries/`
 - Check console for Python errors
 
@@ -228,7 +235,7 @@ Codictate/
 
 ### Model output is verbose/rambling
 - Ensure chat template is applied (`enable_thinking=False`)
-- Check `max_tokens` is set to 150
+- Verify dynamic `max_tokens` is enabled (`-1` sentinel passed by Rust sidecar client)
 - Verify repetition penalty is active
 
 ### Generation is slow

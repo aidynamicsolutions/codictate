@@ -6,7 +6,6 @@
 
 use anyhow::{anyhow, Result};
 use hf_hub::api::tokio::{Api, Progress};
-use tracing::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
@@ -19,8 +18,12 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
+use tracing::{debug, error, info, warn};
 
-use crate::settings::get_settings;
+use super::catalog::{MlxCatalog, MlxCatalogModel};
+use super::downloader::{DownloadSourceTarget, ModelDownloader, SourceDispatchErrorKind};
+use super::provider::{CatalogProvider, EmbeddedCatalogProvider};
+use crate::settings::{get_settings, write_settings};
 
 /// Port range to search for available port
 /// Using higher registered ports (1024-49151 range) to minimize conflicts with system services.
@@ -33,9 +36,6 @@ const DISK_SPACE_BUFFER_BYTES: u64 = 100 * 1024 * 1024;
 
 /// Unique identifier for the MLX local provider
 pub const LOCAL_MLX_PROVIDER_ID: &str = "local_mlx";
-
-/// Default model to use if none is selected
-pub const DEFAULT_MLX_MODEL_ID: &str = "qwen3_base_1.7b";
 
 /// Model status enum representing the lifecycle of a model
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -290,6 +290,7 @@ struct LoadedModelState {
 pub struct MlxModelManager {
     app_handle: AppHandle,
     models_dir: PathBuf,
+    catalog: MlxCatalog,
     /// Available models registry
     models: RwLock<HashMap<String, MlxModelInfo>>,
     /// Currently active download operation
@@ -320,10 +321,20 @@ impl MlxModelManager {
             fs::create_dir_all(&models_dir)?;
         }
 
+        let system_ram_gb = Self::get_system_memory_gb();
+        let catalog_provider = EmbeddedCatalogProvider;
+        let catalog = catalog_provider.load_catalog(system_ram_gb)?;
+        info!(
+            "System has {}GB RAM, recommending model: {}",
+            system_ram_gb,
+            catalog.default_canonical_id()
+        );
+
         let manager = Self {
             app_handle: app_handle.clone(),
             models_dir,
-            models: RwLock::new(Self::create_model_registry()),
+            catalog: catalog.clone(),
+            models: RwLock::new(Self::create_model_registry(&catalog)),
             current_download: Mutex::new(None),
             loaded_model: RwLock::new(None),
             active_port: AtomicU16::new(0),
@@ -334,6 +345,7 @@ impl MlxModelManager {
 
         // Update status based on what's already downloaded
         manager.update_download_status()?;
+        let _ = manager.normalize_selected_model_id()?;
 
         Ok(manager)
     }
@@ -365,142 +377,85 @@ impl MlxModelManager {
         }
     }
 
-    /// Create the initial model registry with all available models
-    /// The recommended model is chosen based on system RAM:
-    /// - 8GB or less: Qwen 3 Base 1.7B (~2-3 GB runtime, leaves headroom for system)
-    /// - 9-16GB: Qwen 3 Base 4B (~4-5 GB runtime, good balance)
-    /// - More than 16GB: Qwen 3 Base 8B (~7-8 GB runtime, best quality)
-    fn create_model_registry() -> HashMap<String, MlxModelInfo> {
+    /// Create the initial model registry using the loaded catalog.
+    fn create_model_registry(catalog: &MlxCatalog) -> HashMap<String, MlxModelInfo> {
         let mut models = HashMap::new();
-        
-        // Determine the recommended model based on system RAM
-        // Memory usage estimates (4-bit quantized):
-        // - 0.6B: ~1-1.5 GB runtime
-        // - 1.7B: ~2-3 GB runtime
-        // - 4B: ~4-5 GB runtime  
-        // - 8B: ~7-8 GB runtime
-        let system_ram_gb = Self::get_system_memory_gb();
-        let recommended_model_id = if system_ram_gb > 16 {
-            "qwen3_base_8b" // Best quality for high-memory systems
-        } else if system_ram_gb > 8 {
-            "qwen3_base_4b" // Good balance for 16GB systems
-        } else {
-            "qwen3_base_1.7b" // Lightweight for 8GB systems
-        };
-        info!(
-            "System has {}GB RAM, recommending model: {}",
-            system_ram_gb, recommended_model_id
-        );
 
-        // Qwen 3 family - excellent instruction following and reasoning
-        models.insert(
-            "qwen3_base_0.6b".to_string(),
-            MlxModelInfo {
-                id: "qwen3_base_0.6b".to_string(),
-                display_name: "Qwen 3 Base 0.6B".to_string(),
-                description: "Ultra-fast responses. Best for simple corrections.".to_string(),
-                hf_repo: "mlx-community/Qwen3-0.6B-4bit".to_string(),
-                size_bytes: 400 * 1024 * 1024, // ~400 MB
-                status: MlxModelStatus::NotDownloaded,
-                download_progress: 0.0,
-                is_default: "qwen3_base_0.6b" == recommended_model_id,
-                parameters: "~1 GB".to_string(),
-            },
-        );
-
-        models.insert(
-            "qwen3_base_1.7b".to_string(),
-            MlxModelInfo {
-                id: "qwen3_base_1.7b".to_string(),
-                display_name: "Qwen 3 Base 1.7B".to_string(),
-                description: "Good speed and quality. Great for 8GB Macs.".to_string(),
-                hf_repo: "mlx-community/Qwen3-1.7B-4bit".to_string(),
-                size_bytes: 1024 * 1024 * 1024, // ~1 GB
-                status: MlxModelStatus::NotDownloaded,
-                download_progress: 0.0,
-                is_default: "qwen3_base_1.7b" == recommended_model_id,
-                parameters: "~2-3 GB".to_string(),
-            },
-        );
-
-        models.insert(
-            "qwen3_base_4b".to_string(),
-            MlxModelInfo {
-                id: "qwen3_base_4b".to_string(),
-                display_name: "Qwen 3 Base 4B".to_string(),
-                description: "Strong reasoning and writing quality.".to_string(),
-                hf_repo: "mlx-community/Qwen3-4B-4bit".to_string(),
-                size_bytes: 2300 * 1024 * 1024, // ~2.3 GB
-                status: MlxModelStatus::NotDownloaded,
-                download_progress: 0.0,
-                is_default: "qwen3_base_4b" == recommended_model_id,
-                parameters: "~4-5 GB".to_string(),
-            },
-        );
-
-        models.insert(
-            "qwen3_base_8b".to_string(),
-            MlxModelInfo {
-                id: "qwen3_base_8b".to_string(),
-                display_name: "Qwen 3 Base 8B".to_string(),
-                description: "Best quality and complex reasoning.".to_string(),
-                hf_repo: "mlx-community/Qwen3-8B-4bit".to_string(),
-                size_bytes: 4700 * 1024 * 1024, // ~4.7 GB
-                status: MlxModelStatus::NotDownloaded,
-                download_progress: 0.0,
-                is_default: "qwen3_base_8b" == recommended_model_id,
-                parameters: "~7-8 GB".to_string(),
-            },
-        );
-
-        // Gemma 3 family - Google's open model, strong multi-language
-        models.insert(
-            "gemma3_base_1b".to_string(),
-            MlxModelInfo {
-                id: "gemma3_base_1b".to_string(),
-                display_name: "Gemma 3 Base 1B".to_string(),
-                description: "Lightweight with good multi-language support.".to_string(),
-                hf_repo: "mlx-community/gemma-3-1b-it-4bit".to_string(),
-                size_bytes: 800 * 1024 * 1024, // ~800 MB
-                status: MlxModelStatus::NotDownloaded,
-                download_progress: 0.0,
-                is_default: false,
-                parameters: "~1 GB".to_string(),
-            },
-        );
-
-        models.insert(
-            "gemma3_base_4b".to_string(),
-            MlxModelInfo {
-                id: "gemma3_base_4b".to_string(),
-                display_name: "Gemma 3 Base 4B".to_string(),
-                description: "Excellent multi-language and translation.".to_string(),
-                hf_repo: "mlx-community/gemma-3-4b-it-4bit".to_string(),
-                size_bytes: 2300 * 1024 * 1024, // ~2.3 GB
-                status: MlxModelStatus::NotDownloaded,
-                download_progress: 0.0,
-                is_default: false,
-                parameters: "~3 GB".to_string(),
-            },
-        );
-
-        // SmolLM 3 - HuggingFace's efficient small model
-        models.insert(
-            "smollm3_base_3b".to_string(),
-            MlxModelInfo {
-                id: "smollm3_base_3b".to_string(),
-                display_name: "SmolLM 3 Base 3B".to_string(),
-                description: "HuggingFace's efficient small model.".to_string(),
-                hf_repo: "mlx-community/SmolLM2-1.7B-Instruct-4bit".to_string(),
-                size_bytes: 1800 * 1024 * 1024, // ~1.8 GB
-                status: MlxModelStatus::NotDownloaded,
-                download_progress: 0.0,
-                is_default: false,
-                parameters: "~2 GB".to_string(),
-            },
-        );
+        for model in catalog.models() {
+            models.insert(
+                model.canonical_id.clone(),
+                MlxModelInfo {
+                    id: model.canonical_id.clone(),
+                    display_name: model.display_name.clone(),
+                    description: model.description.clone(),
+                    hf_repo: model.primary_hf_repo().unwrap_or_default().to_string(),
+                    size_bytes: model.size_bytes,
+                    status: MlxModelStatus::NotDownloaded,
+                    download_progress: 0.0,
+                    is_default: model.canonical_id == catalog.default_canonical_id(),
+                    parameters: model.parameters.clone(),
+                },
+            );
+        }
 
         models
+    }
+
+    fn resolve_canonical_model_id(&self, model_id: &str) -> Option<String> {
+        self.catalog.resolve_canonical_id(model_id)
+    }
+
+    fn catalog_model(&self, canonical_id: &str) -> Result<&MlxCatalogModel> {
+        self.catalog
+            .get_model(canonical_id)
+            .ok_or_else(|| anyhow!("Model not found in catalog: {}", canonical_id))
+    }
+
+    fn migrate_alias_directory_to_canonical(
+        &self,
+        canonical_id: &str,
+        canonical_path: &Path,
+    ) -> Result<()> {
+        if canonical_path.exists() {
+            return Ok(());
+        }
+
+        let Some(catalog_model) = self.catalog.get_model(canonical_id) else {
+            return Ok(());
+        };
+
+        for alias in &catalog_model.aliases {
+            let alias_path = self.models_dir.join(alias);
+            if !alias_path.exists() || !alias_path.is_dir() {
+                continue;
+            }
+
+            if Self::is_model_download_complete_internal(&alias_path) {
+                if canonical_path.exists() {
+                    return Ok(());
+                }
+
+                match fs::rename(&alias_path, canonical_path) {
+                    Ok(()) => info!(
+                        "Migrated MLX model directory from alias {} to canonical {}",
+                        alias, canonical_id
+                    ),
+                    Err(e) => warn!(
+                        "Failed to migrate MLX model alias directory {} -> {}: {}",
+                        alias, canonical_id, e
+                    ),
+                }
+                return Ok(());
+            }
+
+            warn!(
+                "Found incomplete alias model directory for {} (alias {}), cleaning up",
+                canonical_id, alias
+            );
+            let _ = fs::remove_dir_all(&alias_path);
+        }
+
+        Ok(())
     }
 
     /// Update the download status of all models based on what's on disk
@@ -509,6 +464,7 @@ impl MlxModelManager {
 
         for model in models.values_mut() {
             let model_path = self.models_dir.join(&model.id);
+            self.migrate_alias_directory_to_canonical(&model.id, &model_path)?;
 
             if model_path.exists() && model_path.is_dir() {
                 // Check if all required files are present (complete download)
@@ -569,7 +525,9 @@ impl MlxModelManager {
             } else if !a.is_default && b.is_default {
                 std::cmp::Ordering::Greater
             } else {
-                a.size_bytes.cmp(&b.size_bytes)
+                a.size_bytes
+                    .cmp(&b.size_bytes)
+                    .then_with(|| a.id.cmp(&b.id))
             }
         });
         list
@@ -577,8 +535,16 @@ impl MlxModelManager {
 
     /// Get status of a specific model
     pub fn get_model_status(&self, model_id: &str) -> Option<MlxModelInfo> {
+        let canonical_id = self.resolve_canonical_model_id(model_id)?;
         let models = self.models.read().unwrap();
-        models.get(model_id).cloned()
+        models.get(&canonical_id).cloned()
+    }
+
+    pub fn model_path_for_id(&self, model_id: &str) -> Result<PathBuf> {
+        let canonical_id = self
+            .resolve_canonical_model_id(model_id)
+            .ok_or_else(|| anyhow!("Model not found: {}", model_id))?;
+        Ok(self.models_dir.join(canonical_id))
     }
 
     /// Emit a model state event to the frontend
@@ -586,6 +552,75 @@ impl MlxModelManager {
         if let Err(e) = self.app_handle.emit("mlx-model-state-changed", &event) {
             error!("Failed to emit MLX model event: {}", e);
         }
+    }
+
+    fn deterministic_downloaded_fallback(models: &HashMap<String, MlxModelInfo>) -> Option<String> {
+        let mut candidates: Vec<&MlxModelInfo> = models
+            .values()
+            .filter(|model| {
+                matches!(
+                    model.status,
+                    MlxModelStatus::Downloaded | MlxModelStatus::Ready
+                )
+            })
+            .collect();
+
+        candidates.sort_by(|a, b| {
+            if a.is_default && !b.is_default {
+                std::cmp::Ordering::Less
+            } else if !a.is_default && b.is_default {
+                std::cmp::Ordering::Greater
+            } else {
+                a.size_bytes
+                    .cmp(&b.size_bytes)
+                    .then_with(|| a.id.cmp(&b.id))
+            }
+        });
+
+        candidates.first().map(|model| model.id.clone())
+    }
+
+    fn resolve_selected_model_id(
+        persisted: &str,
+        models: &HashMap<String, MlxModelInfo>,
+        catalog: &MlxCatalog,
+    ) -> (String, bool) {
+        let normalized = if !persisted.trim().is_empty() {
+            catalog
+                .resolve_canonical_id(persisted)
+                .unwrap_or_else(|| {
+                    Self::deterministic_downloaded_fallback(models)
+                        .unwrap_or_else(|| catalog.default_canonical_id().to_string())
+                })
+        } else {
+            Self::deterministic_downloaded_fallback(models)
+                .unwrap_or_else(|| catalog.default_canonical_id().to_string())
+        };
+
+        let changed = normalized != persisted;
+        (normalized, changed)
+    }
+
+    fn normalize_selected_model_id(&self) -> Result<String> {
+        let mut settings = get_settings(&self.app_handle);
+        let persisted = settings
+            .post_process_models
+            .get(LOCAL_MLX_PROVIDER_ID)
+            .cloned()
+            .unwrap_or_default();
+        let models = self.models.read().unwrap();
+        let (normalized, changed) =
+            Self::resolve_selected_model_id(&persisted, &models, &self.catalog);
+        drop(models);
+
+        if changed {
+            settings
+                .post_process_models
+                .insert(LOCAL_MLX_PROVIDER_ID.to_string(), normalized.clone());
+            write_settings(&self.app_handle, settings);
+        }
+
+        Ok(normalized)
     }
 
     /// Get the base URL for the sidecar server using the active port
@@ -684,13 +719,17 @@ impl MlxModelManager {
 
     /// Start downloading a model from Hugging Face Hub
     pub async fn download_model(&self, model_id: &str) -> Result<()> {
+        let canonical_model_id = self
+            .resolve_canonical_model_id(model_id)
+            .ok_or_else(|| anyhow!("Model not found: {}", model_id))?;
+
         // Check if model exists in registry
         let model_info = {
             let models = self.models.read().map_err(|e| anyhow!("Lock error: {}", e))?;
             models
-                .get(model_id)
+                .get(&canonical_model_id)
                 .cloned()
-                .ok_or_else(|| anyhow!("Model not found: {}", model_id))?
+                .ok_or_else(|| anyhow!("Model not found: {}", canonical_model_id))?
         };
 
         // Check if already downloading
@@ -705,7 +744,7 @@ impl MlxModelManager {
         if model_info.status == MlxModelStatus::Downloaded
             || model_info.status == MlxModelStatus::Ready
         {
-            info!("Model {} is already downloaded", model_id);
+            info!("Model {} is already downloaded", canonical_model_id);
             return Ok(());
         }
 
@@ -719,7 +758,7 @@ impl MlxModelManager {
         {
             let mut current = self.current_download.lock().unwrap();
             *current = Some(DownloadState {
-                model_id: model_id.to_string(),
+                model_id: canonical_model_id.clone(),
                 cancel_sender: cancel_tx,
                 retry_count: 0,
                 download_handle: None, // Will be set if spawned
@@ -729,7 +768,7 @@ impl MlxModelManager {
         // Update status to downloading
         {
             let mut models = self.models.write().unwrap();
-            if let Some(model) = models.get_mut(model_id) {
+            if let Some(model) = models.get_mut(&canonical_model_id) {
                 model.status = MlxModelStatus::Downloading;
                 model.download_progress = 0.0;
             }
@@ -739,9 +778,7 @@ impl MlxModelManager {
 
 
         // Perform the download
-        let result = self
-            .perform_download(model_id, &model_info.hf_repo, cancel_rx)
-            .await;
+        let result = self.perform_download(&canonical_model_id, cancel_rx).await;
 
         // Clear download state
         {
@@ -754,13 +791,13 @@ impl MlxModelManager {
                 // Update status to downloaded
                 {
                     let mut models = self.models.write().unwrap();
-                    if let Some(model) = models.get_mut(model_id) {
+                    if let Some(model) = models.get_mut(&canonical_model_id) {
                         model.status = MlxModelStatus::Downloaded;
                         model.download_progress = 1.0;
                     }
                 }
                 self.emit_event(MlxModelStateEvent::DownloadCompleted {
-                    model_id: model_id.to_string(),
+                    model_id: canonical_model_id.clone(),
                 });
                 Ok(())
             }
@@ -770,24 +807,24 @@ impl MlxModelManager {
                     // Download was cancelled
                     {
                         let mut models = self.models.write().unwrap();
-                        if let Some(model) = models.get_mut(model_id) {
+                        if let Some(model) = models.get_mut(&canonical_model_id) {
                             model.status = MlxModelStatus::NotDownloaded;
                             model.download_progress = 0.0;
                         }
                     }
                     self.emit_event(MlxModelStateEvent::DownloadCancelled {
-                        model_id: model_id.to_string(),
+                        model_id: canonical_model_id.clone(),
                     });
                 } else {
                     // Download failed
                     {
                         let mut models = self.models.write().unwrap();
-                        if let Some(model) = models.get_mut(model_id) {
+                        if let Some(model) = models.get_mut(&canonical_model_id) {
                             model.status = MlxModelStatus::DownloadFailed;
                         }
                     }
                     self.emit_event(MlxModelStateEvent::DownloadFailed {
-                        model_id: model_id.to_string(),
+                        model_id: canonical_model_id.clone(),
                         error: error_msg.clone(),
                     });
                 }
@@ -800,10 +837,18 @@ impl MlxModelManager {
     async fn perform_download(
         &self,
         model_id: &str,
-        hf_repo: &str,
         cancel_rx: watch::Receiver<bool>,
     ) -> Result<()> {
-        info!("Starting download of model {} from {}", model_id, hf_repo);
+        let catalog_model = self.catalog_model(model_id)?;
+        let ordered_sources = ModelDownloader::ordered_sources(catalog_model);
+        if ordered_sources.is_empty() {
+            return Err(anyhow!(
+                "Model {} has no configured download sources",
+                model_id
+            ));
+        }
+
+        info!("Starting download of model {}", model_id);
 
         let model_dir = self.models_dir.join(model_id);
 
@@ -811,9 +856,6 @@ impl MlxModelManager {
         if !model_dir.exists() {
             fs::create_dir_all(&model_dir)?;
         }
-
-        // Use hf-hub API to download model files (Api created inside each spawn for each file)
-        let _api = Api::new()?;
 
         // Get list of files to download
         // For MLX models, we typically need: config.json, tokenizer files, and model weights
@@ -855,56 +897,124 @@ impl MlxModelManager {
 
             debug!("Downloading {} for model {}", filename, model_id);
 
-            // Download with progress tracking - spawn task to enable cancellation via panic
-            let tracker_clone = progress_tracker.clone();
-            let filename_str = filename.to_string();
-            let hf_repo_str = hf_repo.to_string();
-            
-            let download_handle = tokio::spawn(async move {
-                // Create new API client inside spawn (ApiRepo doesn't implement Clone)
-                let api = Api::new()?;
-                let repo = api.model(hf_repo_str);
-                repo.download_with_progress(&filename_str, tracker_clone).await
-            });
-            
-            // Wait for download, handling cancellation panics
-            let download_result = match download_handle.await {
-                Ok(result) => result,
-                Err(e) if e.is_panic() => {
-                    // Panic from Progress::update (cancellation)
-                    let _ = fs::remove_dir_all(&model_dir);
-                    return Err(anyhow!("Download cancelled"));
-                }
-                Err(e) if e.is_cancelled() => {
-                    let _ = fs::remove_dir_all(&model_dir);
-                    return Err(anyhow!("Download cancelled"));
-                }
-                Err(e) => {
-                    return Err(anyhow!("Download task error: {}", e));
-                }
-            };
+            let mut file_downloaded = false;
+            let mut last_error: Option<anyhow::Error> = None;
 
-            match download_result {
-                Ok(cached_path) => {
-                    // Copy from cache to our model directory
-                    let dest_path = model_dir.join(filename);
-                    if let Err(e) = fs::copy(&cached_path, &dest_path) {
-                        if !*is_required {
-                            debug!("Optional file {} copy failed: {}", filename, e);
+            for source in &ordered_sources {
+                if *cancel_rx.borrow() || progress_tracker.is_cancelled() {
+                    let _ = fs::remove_dir_all(&model_dir);
+                    return Err(anyhow!("Download cancelled"));
+                }
+
+                let target = match ModelDownloader::dispatch_download_target(source) {
+                    Ok(target) => target,
+                    Err(source_error) => {
+                        if source_error.kind == SourceDispatchErrorKind::Disabled {
                             continue;
                         }
-                        warn!("Failed to copy {}: {}", filename, e);
-                    }
-                }
-                Err(e) => {
-                    if *is_required {
-                        error!("Failed to download required file {}: {}", filename, e);
+
+                        if source_error.can_fallback() {
+                            debug!(
+                                "Skipping source for model {} file {}: {}",
+                                model_id, filename, source_error
+                            );
+                            last_error = Some(anyhow!(source_error.to_string()));
+                            continue;
+                        }
+
                         let _ = fs::remove_dir_all(&model_dir);
-                        return Err(anyhow!("Failed to download {}: {}", filename, e));
+                        return Err(anyhow!(source_error.to_string()));
                     }
-                    // Optional files can fail
-                    debug!("Optional file {} not available: {}", filename, e);
+                };
+
+                let DownloadSourceTarget::HuggingFaceRepo(hf_repo) = target;
+                let tracker_clone = progress_tracker.clone();
+                let filename_str = filename.to_string();
+                let hf_repo_str = hf_repo.clone();
+
+                let download_handle = tokio::spawn(async move {
+                    let api = Api::new()?;
+                    let repo = api.model(hf_repo_str);
+                    repo.download_with_progress(&filename_str, tracker_clone).await
+                });
+
+                let download_result = match download_handle.await {
+                    Ok(result) => result,
+                    Err(e) if e.is_panic() => {
+                        let _ = fs::remove_dir_all(&model_dir);
+                        return Err(anyhow!("Download cancelled"));
+                    }
+                    Err(e) if e.is_cancelled() => {
+                        let _ = fs::remove_dir_all(&model_dir);
+                        return Err(anyhow!("Download cancelled"));
+                    }
+                    Err(e) => {
+                        let source_err = anyhow!("Download task error: {}", e);
+                        if source.allow_fallback {
+                            warn!(
+                                "Download task failed via source {} for {}: {}",
+                                hf_repo, filename, source_err
+                            );
+                            last_error = Some(source_err);
+                            continue;
+                        }
+
+                        let _ = fs::remove_dir_all(&model_dir);
+                        return Err(source_err);
+                    }
+                };
+
+                match download_result {
+                    Ok(cached_path) => {
+                        let dest_path = model_dir.join(filename);
+                        match fs::copy(&cached_path, &dest_path) {
+                            Ok(_) => {
+                                file_downloaded = true;
+                                break;
+                            }
+                            Err(e) => {
+                                let source_err = anyhow!(
+                                    "Failed to copy {} from {}: {}",
+                                    filename,
+                                    hf_repo,
+                                    e
+                                );
+                                if source.allow_fallback {
+                                    warn!("{}", source_err);
+                                    last_error = Some(source_err);
+                                    continue;
+                                }
+
+                                let _ = fs::remove_dir_all(&model_dir);
+                                return Err(source_err);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        let source_err =
+                            anyhow!("Failed to download {} from {}: {}", filename, hf_repo, e);
+                        if source.allow_fallback {
+                            warn!("{}", source_err);
+                            last_error = Some(source_err);
+                            continue;
+                        }
+
+                        let _ = fs::remove_dir_all(&model_dir);
+                        return Err(source_err);
+                    }
                 }
+            }
+
+            if !file_downloaded {
+                if *is_required {
+                    let _ = fs::remove_dir_all(&model_dir);
+                    return Err(last_error.unwrap_or_else(|| {
+                        anyhow!("No source was able to download required file {}", filename)
+                    }));
+                }
+
+                debug!("Optional file {} not available for model {}", filename, model_id);
+                continue;
             }
 
             // Update model progress in state
@@ -973,11 +1083,15 @@ impl MlxModelManager {
 
     /// Delete a downloaded model
     pub fn delete_model(&self, model_id: &str) -> Result<()> {
+        let canonical_model_id = self
+            .resolve_canonical_model_id(model_id)
+            .ok_or_else(|| anyhow!("Model not found: {}", model_id))?;
+
         // Check if model is busy
         {
             let current = self.current_download.lock().unwrap();
             if let Some(ref state) = *current {
-                if state.model_id == model_id {
+                if state.model_id == canonical_model_id {
                     return Err(anyhow!("Cannot delete model while downloading"));
                 }
             }
@@ -986,7 +1100,7 @@ impl MlxModelManager {
         {
             let loaded = self.loaded_model.read().unwrap();
             if let Some(ref state) = *loaded {
-                if state.model_id == model_id {
+                if state.model_id == canonical_model_id {
                     return Err(anyhow!("Cannot delete model while it is loaded"));
                 }
             }
@@ -995,22 +1109,42 @@ impl MlxModelManager {
         // Check if model exists in registry
         {
             let models = self.models.read().unwrap();
-            if !models.contains_key(model_id) {
-                return Err(anyhow!("Model not found: {}", model_id));
+            if !models.contains_key(&canonical_model_id) {
+                return Err(anyhow!("Model not found: {}", canonical_model_id));
             }
         }
 
         // Delete the model directory
-        let model_path = self.models_dir.join(model_id);
+        let model_path = self.models_dir.join(&canonical_model_id);
         if model_path.exists() {
             fs::remove_dir_all(&model_path)?;
-            info!("Deleted model {} at {:?}", model_id, model_path);
+            info!("Deleted model {} at {:?}", canonical_model_id, model_path);
+        }
+
+        // Clean up any alias directories that may still exist from older versions.
+        if let Some(catalog_model) = self.catalog.get_model(&canonical_model_id) {
+            for alias in &catalog_model.aliases {
+                let alias_path = self.models_dir.join(alias);
+                if alias_path.exists() {
+                    if let Err(e) = fs::remove_dir_all(&alias_path) {
+                        warn!(
+                            "Failed to remove alias model directory for {} ({}): {}",
+                            canonical_model_id, alias, e
+                        );
+                    } else {
+                        info!(
+                            "Deleted alias model directory for {} (alias: {})",
+                            canonical_model_id, alias
+                        );
+                    }
+                }
+            }
         }
 
         // Update status
         {
             let mut models = self.models.write().unwrap();
-            if let Some(model) = models.get_mut(model_id) {
+            if let Some(model) = models.get_mut(&canonical_model_id) {
                 model.status = MlxModelStatus::NotDownloaded;
                 model.download_progress = 0.0;
             }
@@ -1041,34 +1175,21 @@ impl MlxModelManager {
         min_p: Option<f32>,
     ) -> Result<String> {
         // Check if a model is loaded, determine which model to load if needed
-        let model_to_load: Option<String> = {
-            let loaded = self.loaded_model.read().unwrap();
-            if loaded.is_none() {
-                let settings = get_settings(&self.app_handle);
-                let selected = settings
-                    .post_process_models
-                    .get(LOCAL_MLX_PROVIDER_ID)
-                    .cloned()
-                    .unwrap_or_else(|| DEFAULT_MLX_MODEL_ID.to_string());
-
-                // Check if model is downloaded
-                let model_info = self.get_model_status(&selected);
-                match model_info {
-                    Some(info) if info.status == MlxModelStatus::Downloaded => Some(selected),
-                    Some(info) if info.status == MlxModelStatus::Ready => {
-                        None // Already ready
-                    }
-                    _ => {
-                        return Err(anyhow!(
-                            "Selected MLX model is not downloaded: {}",
-                            selected
-                        ));
-                    }
+        let model_to_load = if self.loaded_model.read().unwrap().is_none() {
+            let selected = self.normalize_selected_model_id()?;
+            match self.get_model_status(&selected) {
+                Some(info) if info.status == MlxModelStatus::Downloaded => Some(info.id),
+                Some(info) if info.status == MlxModelStatus::Ready => None,
+                _ => {
+                    return Err(anyhow!(
+                        "Selected MLX model is not downloaded: {}",
+                        selected
+                    ));
                 }
-            } else {
-                None // Model already loaded
             }
-        }; // Lock is released here
+        } else {
+            None
+        };
 
         // Load model if needed (outside of lock scope)
         if let Some(model_id) = model_to_load {
@@ -1198,7 +1319,10 @@ impl MlxModelManager {
 
     /// Load a model into memory via Python sidecar
     async fn load_model_async(&self, model_id: &str) -> Result<()> {
-        info!("Loading MLX model via sidecar: {}", model_id);
+        let canonical_model_id = self
+            .resolve_canonical_model_id(model_id)
+            .ok_or_else(|| anyhow!("Model not found: {}", model_id))?;
+        info!("Loading MLX model via sidecar: {}", canonical_model_id);
 
         // Start server if not running
         self.ensure_server_running_async().await?;
@@ -1206,26 +1330,29 @@ impl MlxModelManager {
         // Update status to loading
         {
             let mut models = self.models.write().unwrap();
-            if let Some(model) = models.get_mut(model_id) {
+            if let Some(model) = models.get_mut(&canonical_model_id) {
                 model.status = MlxModelStatus::Loading;
             }
         }
 
         self.emit_event(MlxModelStateEvent::LoadingStarted {
-            model_id: model_id.to_string(),
+            model_id: canonical_model_id.clone(),
         });
 
-        let model_path = self.models_dir.join(model_id);
+        let model_path = self.models_dir.join(&canonical_model_id);
         if !model_path.exists() {
             let mut models = self.models.write().unwrap();
-            if let Some(model) = models.get_mut(model_id) {
-                model.status = MlxModelStatus::DownloadFailed;
+            if let Some(model) = models.get_mut(&canonical_model_id) {
+                model.status = MlxModelStatus::NotDownloaded;
             }
             self.emit_event(MlxModelStateEvent::LoadingFailed {
-                model_id: model_id.to_string(),
-                error: "Model directory not found".to_string(),
+                model_id: canonical_model_id.clone(),
+                error: "Model files missing, re-download required".to_string(),
             });
-            return Err(anyhow!("Model directory not found: {}", model_id));
+            return Err(anyhow!(
+                "Model files missing, re-download required: {}",
+                canonical_model_id
+            ));
         }
 
         // Load model via HTTP POST to sidecar
@@ -1249,7 +1376,7 @@ impl MlxModelManager {
                 {
                     let mut loaded = self.loaded_model.write().unwrap();
                     *loaded = Some(LoadedModelState {
-                        model_id: model_id.to_string(),
+                        model_id: canonical_model_id.clone(),
                         last_used: Instant::now(),
                     });
                 }
@@ -1257,42 +1384,48 @@ impl MlxModelManager {
                 // Update status to ready
                 {
                     let mut models = self.models.write().unwrap();
-                    if let Some(model) = models.get_mut(model_id) {
+                    if let Some(model) = models.get_mut(&canonical_model_id) {
                         model.status = MlxModelStatus::Ready;
                     }
                 }
 
                 self.emit_event(MlxModelStateEvent::LoadingCompleted {
-                    model_id: model_id.to_string(),
+                    model_id: canonical_model_id.clone(),
                 });
 
                 // Start unload timer
                 self.reset_unload_timer();
 
-                info!("MLX model {} loaded successfully via sidecar", model_id);
+                info!(
+                    "MLX model {} loaded successfully via sidecar",
+                    canonical_model_id
+                );
                 Ok(())
             }
             Ok(resp) => {
                 let error_text = resp.text().await.unwrap_or_default();
-                error!("Failed to load model {}: {}", model_id, error_text);
+                error!(
+                    "Failed to load model {}: {}",
+                    canonical_model_id, error_text
+                );
                 let mut models = self.models.write().unwrap();
-                if let Some(model) = models.get_mut(model_id) {
+                if let Some(model) = models.get_mut(&canonical_model_id) {
                     model.status = MlxModelStatus::LoadFailed;
                 }
                 self.emit_event(MlxModelStateEvent::LoadingFailed {
-                    model_id: model_id.to_string(),
+                    model_id: canonical_model_id.clone(),
                     error: error_text.clone(),
                 });
                 Err(anyhow!("Failed to load model: {}", error_text))
             }
             Err(e) => {
-                error!("Failed to load model {}: {}", model_id, e);
+                error!("Failed to load model {}: {}", canonical_model_id, e);
                 let mut models = self.models.write().unwrap();
-                if let Some(model) = models.get_mut(model_id) {
+                if let Some(model) = models.get_mut(&canonical_model_id) {
                     model.status = MlxModelStatus::LoadFailed;
                 }
                 self.emit_event(MlxModelStateEvent::LoadingFailed {
-                    model_id: model_id.to_string(),
+                    model_id: canonical_model_id.clone(),
                     error: e.to_string(),
                 });
                 Err(anyhow!("Failed to load model: {}", e))
@@ -1566,12 +1699,7 @@ impl MlxModelManager {
         }
 
         // Determine which model to load
-        let settings = get_settings(&self.app_handle);
-        let selected = settings
-            .post_process_models
-            .get(LOCAL_MLX_PROVIDER_ID)
-            .cloned()
-            .unwrap_or_else(|| DEFAULT_MLX_MODEL_ID.to_string());
+        let selected = self.normalize_selected_model_id()?;
 
         // Load the model
         self.load_model_async(&selected).await
@@ -1647,28 +1775,33 @@ impl MlxModelManager {
         }
     }
 
-    /// Get the path to the models directory
-    pub fn models_dir(&self) -> &PathBuf {
-        &self.models_dir
-    }
-
     /// Handle model switching - unload current and prepare for new
     pub fn switch_model(&self, new_model_id: &str) -> Result<()> {
+        let canonical_model_id = self
+            .resolve_canonical_model_id(new_model_id)
+            .ok_or_else(|| anyhow!("Model {} not found", new_model_id))?;
+
         // Unload current model if any
         self.unload_model()?;
 
         // Check if new model is downloaded
-        let model_info = self.get_model_status(new_model_id);
+        let model_info = self.get_model_status(&canonical_model_id);
         match model_info {
             Some(info) if info.status == MlxModelStatus::Downloaded => {
                 // Model is ready to be loaded on next use
-                info!("Switched to model {}, will load on first use", new_model_id);
+                info!(
+                    "Switched to model {}, will load on first use",
+                    canonical_model_id
+                );
                 Ok(())
             }
             Some(info) if info.status == MlxModelStatus::NotDownloaded => {
-                Err(anyhow!("Model {} is not downloaded", new_model_id))
+                Err(anyhow!("Model {} is not downloaded", canonical_model_id))
             }
-            _ => Err(anyhow!("Model {} not found or in invalid state", new_model_id)),
+            _ => Err(anyhow!(
+                "Model {} not found or in invalid state",
+                canonical_model_id
+            )),
         }
     }
 }
@@ -1676,23 +1809,176 @@ impl MlxModelManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::managers::mlx::catalog::build_embedded_catalog;
 
     #[test]
     fn test_create_model_registry() {
-        let registry = MlxModelManager::create_model_registry();
+        let catalog = build_embedded_catalog(12).expect("catalog should build");
+        let registry = MlxModelManager::create_model_registry(&catalog);
         assert!(!registry.is_empty());
-        assert!(registry.contains_key("qwen3_base_1.7b"));
+        assert!(registry.contains_key("qwen3_base_1.7b_v1"));
 
         // Check that exactly one model is marked as default (the recommended one)
         let default_models: Vec<_> = registry.values().filter(|m| m.is_default).collect();
         assert_eq!(default_models.len(), 1, "Should have exactly one default model");
 
-        // The default should be 1.7B (≤8GB), 4B (9-16GB), or 8B (>16GB) based on RAM
+        // For 12GB RAM, 4B is the recommended default.
         let default = default_models[0];
         assert!(
-            default.id == "qwen3_base_1.7b" || default.id == "qwen3_base_4b" || default.id == "qwen3_base_8b",
-            "Default model should be qwen3_base_1.7b, qwen3_base_4b, or qwen3_base_8b, got: {}",
+            default.id == "qwen3_base_4b_v1",
+            "Default model should be qwen3_base_4b_v1 for 12GB RAM, got: {}",
             default.id
         );
+    }
+
+    #[test]
+    fn test_qwen_4b_uses_2507_and_other_qwen_repos_unchanged() {
+        let catalog = build_embedded_catalog(12).expect("catalog should build");
+        let registry = MlxModelManager::create_model_registry(&catalog);
+
+        let qwen_4b = registry
+            .get("qwen3_base_4b_v1")
+            .expect("qwen3_base_4b_v1 should exist");
+        assert_eq!(
+            qwen_4b.hf_repo,
+            "mlx-community/Qwen3-4B-Instruct-2507-4bit"
+        );
+        assert_eq!(qwen_4b.display_name, "Qwen 3 4B Instruct (2507)");
+        assert_eq!(qwen_4b.size_bytes, 2260 * 1024 * 1024);
+        assert_eq!(qwen_4b.parameters, "~2 GB min, ~4-5 GB typical");
+
+        // Ensure adjacent Qwen sizes remain on their current repos in this change.
+        assert_eq!(
+            registry
+                .get("qwen3_base_0.6b_v1")
+                .expect("qwen3_base_0.6b_v1 should exist")
+                .hf_repo,
+            "mlx-community/Qwen3-0.6B-4bit"
+        );
+        assert_eq!(
+            registry
+                .get("qwen3_base_1.7b_v1")
+                .expect("qwen3_base_1.7b_v1 should exist")
+                .hf_repo,
+            "mlx-community/Qwen3-1.7B-4bit"
+        );
+        assert_eq!(
+            registry
+                .get("qwen3_base_8b_v1")
+                .expect("qwen3_base_8b_v1 should exist")
+                .hf_repo,
+            "mlx-community/Qwen3-8B-4bit"
+        );
+    }
+
+    #[test]
+    fn test_alias_resolves_to_canonical() {
+        let catalog = build_embedded_catalog(12).expect("catalog should build");
+        assert_eq!(
+            catalog.resolve_canonical_id("qwen3_base_4b"),
+            Some("qwen3_base_4b_v1".to_string())
+        );
+        assert_eq!(
+            catalog.resolve_canonical_id("qwen3_base_4b_v1"),
+            Some("qwen3_base_4b_v1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_deterministic_downloaded_fallback_prefers_default_then_smallest() {
+        let mut models = HashMap::new();
+        models.insert(
+            "a_v1".to_string(),
+            MlxModelInfo {
+                id: "a_v1".to_string(),
+                display_name: "A".to_string(),
+                description: String::new(),
+                hf_repo: "repo/a".to_string(),
+                size_bytes: 300,
+                status: MlxModelStatus::Downloaded,
+                download_progress: 1.0,
+                is_default: false,
+                parameters: "~1 GB".to_string(),
+            },
+        );
+        models.insert(
+            "b_v1".to_string(),
+            MlxModelInfo {
+                id: "b_v1".to_string(),
+                display_name: "B".to_string(),
+                description: String::new(),
+                hf_repo: "repo/b".to_string(),
+                size_bytes: 500,
+                status: MlxModelStatus::Downloaded,
+                download_progress: 1.0,
+                is_default: true,
+                parameters: "~1 GB".to_string(),
+            },
+        );
+        models.insert(
+            "c_v1".to_string(),
+            MlxModelInfo {
+                id: "c_v1".to_string(),
+                display_name: "C".to_string(),
+                description: String::new(),
+                hf_repo: "repo/c".to_string(),
+                size_bytes: 200,
+                status: MlxModelStatus::NotDownloaded,
+                download_progress: 0.0,
+                is_default: false,
+                parameters: "~1 GB".to_string(),
+            },
+        );
+
+        let selected = MlxModelManager::deterministic_downloaded_fallback(&models)
+            .expect("fallback candidate should exist");
+        assert_eq!(selected, "b_v1");
+    }
+
+    #[test]
+    fn test_deterministic_downloaded_fallback_returns_none_when_no_downloaded_models() {
+        let mut models = HashMap::new();
+        models.insert(
+            "a_v1".to_string(),
+            MlxModelInfo {
+                id: "a_v1".to_string(),
+                display_name: "A".to_string(),
+                description: String::new(),
+                hf_repo: "repo/a".to_string(),
+                size_bytes: 300,
+                status: MlxModelStatus::NotDownloaded,
+                download_progress: 0.0,
+                is_default: true,
+                parameters: "~1 GB".to_string(),
+            },
+        );
+
+        assert!(MlxModelManager::deterministic_downloaded_fallback(&models).is_none());
+    }
+
+    #[test]
+    fn test_resolve_selected_model_id_alias_migrates_to_canonical() {
+        let catalog = build_embedded_catalog(12).expect("catalog should build");
+        let registry = MlxModelManager::create_model_registry(&catalog);
+
+        let (normalized, changed) =
+            MlxModelManager::resolve_selected_model_id("qwen3_base_4b", &registry, &catalog);
+        assert_eq!(normalized, "qwen3_base_4b_v1");
+        assert!(changed);
+    }
+
+    #[test]
+    fn test_resolve_selected_model_id_unknown_uses_downloaded_fallback() {
+        let catalog = build_embedded_catalog(12).expect("catalog should build");
+        let mut registry = MlxModelManager::create_model_registry(&catalog);
+        registry
+            .get_mut("qwen3_base_1.7b_v1")
+            .expect("model should exist")
+            .status = MlxModelStatus::Downloaded;
+
+        let (normalized, changed) =
+            MlxModelManager::resolve_selected_model_id("unknown_model", &registry, &catalog);
+        assert_eq!(normalized, "qwen3_base_1.7b_v1");
+        assert!(changed);
     }
 }
