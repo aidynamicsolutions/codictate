@@ -197,9 +197,9 @@ fn normalize_for_matching(text: &str) -> String {
     expanded.chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
-fn is_one_char_prefix_extension(a: &str, b: &str) -> bool {
+fn is_short_prefix_extension(a: &str, b: &str) -> bool {
     let (shorter, longer) = if a.len() <= b.len() { (a, b) } else { (b, a) };
-    longer.len() == shorter.len() + 1 && longer.starts_with(shorter)
+    shorter.len() <= SHORT_WORD_THRESHOLD && longer.len() > shorter.len() && longer.starts_with(shorter)
 }
 
 fn ngram_all_guard_words(words: &[&str]) -> bool {
@@ -615,17 +615,16 @@ fn apply_custom_words_to_hypothesis(
                     "[CustomWords] Candidate score"
                 );
 
-                // Guard against over-aggressive one-char suffix expansions
-                // on short single-word candidates (e.g. "word" -> "words").
+                // Guard against over-aggressive prefix-extension matches
+                // on short single-word candidates (e.g. "word" -> "words", "click" -> "cli").
                 if !is_split_path
                     && n == 1
                     && phrase.source_word_count == 1
-                    && ngram_text.len().min(phrase.concatenated_input.len()) <= SHORT_WORD_THRESHOLD
-                    && is_one_char_prefix_extension(&ngram_text, &phrase.concatenated_input)
+                    && is_short_prefix_extension(&ngram_text, &phrase.concatenated_input)
                 {
-                    stats.reject("skip_one_char_prefix_extension");
+                    stats.reject("skip_short_prefix_extension");
                     debug!(
-                        reason = "skip_one_char_prefix_extension",
+                        reason = "skip_short_prefix_extension",
                         path = active_path,
                         ngram = %ngram_text,
                         n,
@@ -1478,6 +1477,51 @@ mod tests {
         let custom_words = vec![vocabulary("words", "words")];
         let result = apply_custom_words(text, &custom_words, 0.18);
         assert_eq!(result, "This word should stay as word.");
+    }
+
+    #[test]
+    fn test_no_false_positive_click_to_cli() {
+        // Short prefix abbreviations should not capture common longer words.
+        let text = "Click the banner to continue.";
+        let custom_words = vec![vocabulary("cli", "cli")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "Click the banner to continue.");
+    }
+
+    #[test]
+    fn test_no_false_positive_client_to_cli() {
+        // The same guard should prevent other prefix expansions into short abbreviations.
+        let text = "The client connected successfully.";
+        let custom_words = vec![vocabulary("cli", "cli")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "The client connected successfully.");
+    }
+
+    #[test]
+    fn test_exact_cli_still_matches() {
+        // Exact canonical match should continue to work for abbreviation terms.
+        let text = "Run cli command.";
+        let custom_words = vec![vocabulary("cli", "cli")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "Run cli command.");
+    }
+
+    #[test]
+    fn test_cli_spelled_out_exact_still_matches() {
+        // Spelled-out aliases should still match via exact n-gram normalization.
+        let text = "Run c l i command.";
+        let custom_words = vec![vocabulary_with_aliases("cli", &["c l i"], "cli")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "Run cli command.");
+    }
+
+    #[test]
+    fn test_non_prefix_short_fuzzy_still_matches() {
+        // Near-miss typos that are not prefix expansions should still correct.
+        let text = "Please click the button, not clik away.";
+        let custom_words = vec![vocabulary("click", "click")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "Please click the button, not click away.");
     }
 
     #[test]
