@@ -132,6 +132,7 @@ Reason-coded decisions include:
 - `skip_short_input`
 - `skip_word_count`
 - `skip_length_ratio`
+- `skip_short_prefix_extension`
 - `reject_score`
 - `accept_split_fuzzy`
 - `accept_standard_fuzzy`
