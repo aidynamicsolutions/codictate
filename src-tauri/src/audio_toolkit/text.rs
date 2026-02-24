@@ -197,9 +197,27 @@ fn normalize_for_matching(text: &str) -> String {
     expanded.chars().filter(|c| c.is_alphanumeric()).collect()
 }
 
-fn is_short_prefix_extension(a: &str, b: &str) -> bool {
-    let (shorter, longer) = if a.len() <= b.len() { (a, b) } else { (b, a) };
-    shorter.len() <= SHORT_WORD_THRESHOLD && longer.len() > shorter.len() && longer.starts_with(shorter)
+fn is_short_prefix_extension(ngram_text: &str, candidate_text: &str) -> bool {
+    // Prevent short abbreviation targets from capturing common longer words
+    // that only share a prefix (for example, "click" -> "cli").
+    if candidate_text.len() <= SHORT_WORD_THRESHOLD
+        && ngram_text.len() > candidate_text.len()
+        && ngram_text.starts_with(candidate_text)
+    {
+        return true;
+    }
+
+    // Keep the one-character extension guard in either direction for short words
+    // (for example, "word" <-> "words").
+    let (shorter, longer) = if ngram_text.len() <= candidate_text.len() {
+        (ngram_text, candidate_text)
+    } else {
+        (candidate_text, ngram_text)
+    };
+
+    shorter.len() <= SHORT_WORD_THRESHOLD
+        && longer.len() == shorter.len() + 1
+        && longer.starts_with(shorter)
 }
 
 fn ngram_all_guard_words(words: &[&str]) -> bool {
@@ -1495,6 +1513,23 @@ mod tests {
         let custom_words = vec![vocabulary("cli", "cli")];
         let result = apply_custom_words(text, &custom_words, 0.18);
         assert_eq!(result, "The client connected successfully.");
+    }
+
+    #[test]
+    fn test_short_to_long_prefix_multi_char_still_matches() {
+        // Multi-char truncations should not be blocked by the short-prefix guard.
+        let text = "The clie connected successfully.";
+        let custom_words = vec![vocabulary("client", "client")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "The client connected successfully.");
+    }
+
+    #[test]
+    fn test_short_prefix_extension_guard_shape() {
+        assert!(is_short_prefix_extension("click", "cli"));
+        assert!(is_short_prefix_extension("word", "words"));
+        assert!(!is_short_prefix_extension("cli", "click"));
+        assert!(!is_short_prefix_extension("clie", "client"));
     }
 
     #[test]
