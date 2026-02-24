@@ -1,5 +1,6 @@
 use crate::input::{self, EnigoState};
 use crate::i18n;
+use crate::growth::{self, FeatureEntrypoint, FeatureName};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{HistoryManager, StatsContribution};
 use crate::managers::transcription::TranscriptionManager;
@@ -911,7 +912,7 @@ fn feedback_event(code: &str) -> UndoUiEvent {
     }
 }
 
-pub fn trigger_undo_last_transcript(app: &AppHandle) {
+pub fn trigger_undo_last_transcript(app: &AppHandle, entrypoint: FeatureEntrypoint) {
     let audio_manager = app.state::<std::sync::Arc<AudioRecordingManager>>();
     let transcription_manager = app.state::<std::sync::Arc<TranscriptionManager>>();
 
@@ -1008,6 +1009,11 @@ pub fn trigger_undo_last_transcript(app: &AppHandle) {
 
                 set_slot_consumed(&app_clone, slot.paste_id);
                 request_stats_rollback(&app_clone, &slot);
+                growth::record_feature_success(
+                    &app_clone,
+                    FeatureName::UndoLastTranscript,
+                    entrypoint,
+                );
 
                 let mut evidence = load_evidence(&app_clone);
                 evidence.has_used_undo = true;

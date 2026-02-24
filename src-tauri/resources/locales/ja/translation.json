@@ -454,5 +454,13 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "いい流れです。さらに先へ。",
+      "description": "毎日の作業で、編集・整形・修正をもっと速くする高度な機能を利用できます。",
+      "cta": "プランを見る",
+      "dismiss": "今はしない"
+    }
   }
 }

@@ -641,6 +641,24 @@ pub fn change_update_checks_setting(app: AppHandle, enabled: bool) -> Result<(),
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_share_usage_analytics_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.share_usage_analytics = enabled;
+    settings::write_settings(&app, settings);
+
+    let _ = app.emit(
+        "settings-changed",
+        serde_json::json!({
+            "setting": "share_usage_analytics",
+            "value": enabled
+        }),
+    );
+
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn update_custom_words(app: AppHandle, words: Vec<CustomWordEntry>) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.dictionary = words;

@@ -456,6 +456,13 @@
         "description": "Điều chỉnh âm lượng của âm thanh phản hồi"
       }
     },
+    "application": {
+      "title": "Ứng dụng",
+      "analytics": {
+        "label": "Chia sẻ thống kê sử dụng ẩn danh",
+        "description": "Giúp cải thiện Codictate bằng cách chia sẻ ẩn danh cách bạn dùng tính năng và các sự kiện của ứng dụng. Nội dung văn bản chuyển đổi sẽ không được gửi đi."
+      }
+    },
     "advanced": {
       "title": "Nâng cao",
       "startHidden": {
@@ -833,5 +840,13 @@
   },
   "pasteLastTranscript": {
     "noHistory": "Không có lịch sử chuyển đổi để dán"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Bạn đã vào guồng. Làm được nhiều hơn nữa.",
+      "description": "Mở khóa các tính năng nâng cao để tăng tốc chỉnh sửa, làm sạch và sửa lỗi trong công việc hằng ngày.",
+      "cta": "Xem gói",
+      "dismiss": "Để sau"
+    }
   }
 }

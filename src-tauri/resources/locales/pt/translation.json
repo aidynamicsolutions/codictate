@@ -421,5 +421,13 @@
   },
   "overlay": {
     "transcribing": "Transcrevendo..."
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Você já entrou no ritmo. Faça ainda mais.",
+      "description": "Desbloqueie recursos avançados para acelerar edição, limpeza e correção no dia a dia.",
+      "cta": "Ver planos",
+      "dismiss": "Agora não"
+    }
   }
 }

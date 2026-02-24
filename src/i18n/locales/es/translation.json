@@ -456,6 +456,13 @@
         "description": "Ajusta el volumen de los sonidos de retroalimentación de audio"
       }
     },
+    "application": {
+      "title": "Aplicación",
+      "analytics": {
+        "label": "Compartir estadísticas de uso anónimas",
+        "description": "Ayúdanos a mejorar Codictate compartiendo de forma anónima cómo usas las funciones y los eventos de la aplicación. No se envía el texto transcrito."
+      }
+    },
     "advanced": {
       "title": "Avanzado",
       "startHidden": {
@@ -833,5 +840,13 @@
   },
   "pasteLastTranscript": {
     "noHistory": "No hay historial de transcripción para pegar"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Ya estás en ritmo. Haz aún más.",
+      "description": "Desbloquea funciones avanzadas para acelerar la edición, limpieza y corrección en tu trabajo diario.",
+      "cta": "Ver planes",
+      "dismiss": "Ahora no"
+    }
   }
 }

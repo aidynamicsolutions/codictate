@@ -454,5 +454,13 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Sei nel flusso. Fai ancora di più.",
+      "description": "Sblocca funzioni avanzate per velocizzare modifica, pulizia e correzione nel tuo lavoro quotidiano.",
+      "cta": "Vedi i piani",
+      "dismiss": "Non ora"
+    }
   }
 }

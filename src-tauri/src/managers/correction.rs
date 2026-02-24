@@ -10,6 +10,7 @@ use tauri::{AppHandle, Manager};
 use tracing::{debug, error, info, warn};
 
 use crate::accessibility::{CapturedContext, CorrectionResult};
+use crate::growth::{self, FeatureEntrypoint, FeatureName};
 use crate::settings::{get_settings, AppSettings};
 use regex::Regex;
 
@@ -361,7 +362,11 @@ impl CorrectionManager {
     }
 
     /// Accept a correction — replace text in the target app.
-    pub fn accept_correction(&self, correction: &CorrectionResult) {
+    pub fn accept_correction(
+        &self,
+        correction: &CorrectionResult,
+        entrypoint: FeatureEntrypoint,
+    ) -> Result<(), String> {
         info!(
             original_len = correction.original.len(),
             corrected_len = correction.corrected.len(),
@@ -372,7 +377,11 @@ impl CorrectionManager {
         {
             error!("Failed to replace text: {}", e);
             crate::notification::show_error(&self.app_handle, "errors.correctionReplaceFailed");
+            return Err(e);
         }
+
+        growth::record_feature_success(&self.app_handle, FeatureName::CorrectText, entrypoint);
+        Ok(())
     }
 
     /// Dismiss a correction — just hide the overlay.

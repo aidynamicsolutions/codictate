@@ -460,5 +460,13 @@
     "disabled": "L'affinage est désactivé. Activez-le dans les réglages d'affinage.",
     "failed": "Impossible d'affiner le texte. Vérifiez les réglages d'affinage et réessayez.",
     "replaceUnavailable": "Impossible de sélectionner automatiquement la transcription précédente. Nous collons à l'emplacement du curseur."
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Vous êtes lancé. Allez encore plus loin.",
+      "description": "Débloquez des fonctionnalités avancées pour accélérer l'édition, le nettoyage et la correction au quotidien.",
+      "cta": "Voir les offres",
+      "dismiss": "Pas maintenant"
+    }
   }
 }

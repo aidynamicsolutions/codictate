@@ -196,6 +196,26 @@ pub fn show_info_with_text(app: &AppHandle, body: &str) {
     show_notification_with_text(app, NotificationType::Info, &title, body);
 }
 
+/// Notify the user that an upgrade prompt is available after the aha moment.
+pub fn show_upgrade_prompt_nudge(app: &AppHandle) {
+    let title = i18n::t(app, "growth.upgradePrompt.title");
+    let body = i18n::t(app, "growth.upgradePrompt.description");
+    let fallback_title = "You're in the flow. Get even more done.";
+    let fallback_body =
+        "Unlock advanced features to speed up editing, cleanup, and correction in your daily workflow.";
+    let resolved_title = if title == "growth.upgradePrompt.title" {
+        fallback_title.to_string()
+    } else {
+        title
+    };
+    let resolved_body = if body == "growth.upgradePrompt.description" {
+        fallback_body.to_string()
+    } else {
+        body
+    };
+    show_notification_with_text(app, NotificationType::Info, &resolved_title, &resolved_body);
+}
+
 /// Notify user that microphone permission is required without forcing the app window to focus.
 pub fn show_microphone_permission_denied(app: &AppHandle) {
     if !should_emit_permission_notification(MIC_PERMISSION_NOTIFICATION_ID, Instant::now()) {

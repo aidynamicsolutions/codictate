@@ -733,6 +733,13 @@
         "description": "Microphone to use when laptop lid is closed"
       }
     },
+    "application": {
+      "title": "Application",
+      "analytics": {
+        "label": "Share Anonymous Usage Analytics",
+        "description": "Help improve Codictate by sharing anonymous feature usage and app lifecycle events. No transcript text is sent."
+      }
+    },
     "advanced": {
       "title": "Advanced",
       "startHidden": {
@@ -1184,5 +1191,13 @@
     "noHistory": "No transcription history to refine",
     "disabled": "Refine is disabled. Enable it in Refine settings first.",
     "failed": "Refinement failed. Check your AI model configuration."
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "You're in the flow. Get even more done.",
+      "description": "Unlock advanced features to speed up editing, cleanup, and correction in your daily workflow.",
+      "cta": "See plans",
+      "dismiss": "Not now"
+    }
   }
 }

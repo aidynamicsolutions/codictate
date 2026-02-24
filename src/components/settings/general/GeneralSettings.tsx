@@ -35,6 +35,7 @@ import { ResetAllSettings } from "../ResetAllSettings";
 import { UpdateChecksToggle } from "../UpdateChecksToggle";
 import { CheckForUpdates } from "../CheckForUpdates";
 import { AppLanguageSelector } from "../AppLanguageSelector";
+import { ShareUsageAnalytics } from "../ShareUsageAnalytics";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -137,6 +138,7 @@ export const GeneralSettings: React.FC = () => {
           <SettingsGroup title={t("settings.application.title", "Application")}>
             <CheckForUpdates />
             <UpdateChecksToggle descriptionMode="tooltip" grouped={true} />
+            <ShareUsageAnalytics descriptionMode="tooltip" grouped={true} />
             <AppLanguageSelector descriptionMode="tooltip" grouped={true} />
           </SettingsGroup>
       </div>

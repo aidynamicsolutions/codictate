@@ -695,5 +695,13 @@
     "disabled": "Refine is turned off. Turn it on in Refine settings.",
     "failed": "Refine didn't work. Check your Refine settings and try again.",
     "replaceUnavailable": "Couldn't select the previous transcript automatically. Pasting where your cursor is instead."
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "You're in the flow. Get even more done.",
+      "description": "Unlock advanced features to speed up editing, cleanup, and correction in your daily workflow.",
+      "cta": "See plans",
+      "dismiss": "Not now"
+    }
   }
 }

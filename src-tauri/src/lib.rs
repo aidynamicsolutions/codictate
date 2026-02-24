@@ -1,6 +1,8 @@
 #[cfg(target_os = "macos")]
 mod accessibility;
 mod actions;
+mod analytics;
+mod growth;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_device_info;
@@ -91,9 +93,18 @@ const HANDY_DISABLE_SENTRY_ENV_VAR: &str = "HANDY_DISABLE_SENTRY";
 const HANDY_SENTRY_TEST_PRIVACY_REDACTION_ON_START_ENV_VAR: &str =
     "HANDY_SENTRY_TEST_PRIVACY_REDACTION_ON_START";
 const BUILD_TIME_SENTRY_DSN: Option<&str> = option_env!("SENTRY_DSN");
+const APTABASE_APP_KEY_ENV_VAR: &str = "APTABASE_APP_KEY";
+const HANDY_DISABLE_ANALYTICS_ENV_VAR: &str = "HANDY_DISABLE_ANALYTICS";
+const BUILD_TIME_APTABASE_APP_KEY: Option<&str> = option_env!("APTABASE_APP_KEY");
 
 #[derive(Clone, Copy)]
 enum SentryDsnSource {
+    RuntimeEnv,
+    BuildTimeEmbedded,
+}
+
+#[derive(Clone, Copy)]
+enum AptabaseKeySource {
     RuntimeEnv,
     BuildTimeEmbedded,
 }
@@ -188,6 +199,67 @@ fn resolve_sentry_release() -> String {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| format!("codictate@{}", env!("CARGO_PKG_VERSION")))
+}
+
+impl AptabaseKeySource {
+    fn label(self) -> &'static str {
+        match self {
+            AptabaseKeySource::RuntimeEnv => "runtime-env",
+            AptabaseKeySource::BuildTimeEmbedded => "build-time-embedded",
+        }
+    }
+}
+
+fn resolve_aptabase_app_key() -> Option<(String, AptabaseKeySource)> {
+    if let Some(runtime_key) = std::env::var(APTABASE_APP_KEY_ENV_VAR)
+        .ok()
+        .and_then(|value| normalize_non_empty(&value))
+    {
+        return Some((runtime_key, AptabaseKeySource::RuntimeEnv));
+    }
+
+    BUILD_TIME_APTABASE_APP_KEY
+        .and_then(normalize_non_empty)
+        .map(|key| (key, AptabaseKeySource::BuildTimeEmbedded))
+}
+
+fn initialize_analytics_runtime() -> (
+    Option<String>,
+    analytics::AnalyticsRuntimeState,
+    String,
+) {
+    if let Ok(disable_value) = std::env::var(HANDY_DISABLE_ANALYTICS_ENV_VAR) {
+        if env_var_is_truthy(&disable_value) {
+            return (
+                None,
+                analytics::AnalyticsRuntimeState::disabled(),
+                format!(
+                    "Analytics disabled: {} is set to '{}'",
+                    HANDY_DISABLE_ANALYTICS_ENV_VAR, disable_value
+                ),
+            );
+        }
+    }
+
+    let Some((app_key, key_source)) = resolve_aptabase_app_key() else {
+        return (
+            None,
+            analytics::AnalyticsRuntimeState::disabled(),
+            format!(
+                "Analytics disabled: {} is missing or empty and no build-time fallback is embedded",
+                APTABASE_APP_KEY_ENV_VAR
+            ),
+        );
+    };
+
+    (
+        Some(app_key),
+        analytics::AnalyticsRuntimeState::enabled(),
+        format!(
+            "Analytics enabled with Aptabase key source: {}",
+            key_source.label()
+        ),
+    )
 }
 
 fn sanitize_text(input: &str) -> String {
@@ -829,6 +901,7 @@ pub fn run(cli_args: CliArgs) {
         shortcut::change_hallucination_filter_setting,
         shortcut::change_app_language_setting,
         shortcut::change_update_checks_setting,
+        shortcut::change_share_usage_analytics_setting,
         shortcut::change_show_tray_icon_setting,
         shortcut::change_show_unload_model_in_tray_setting,
         user_profile::get_user_profile_command,
@@ -846,6 +919,12 @@ pub fn run(cli_args: CliArgs) {
         commands::open_app_data_dir,
         commands::check_apple_intelligence_available,
         commands::log_from_frontend,
+        commands::track_ui_analytics_event,
+        commands::get_upgrade_prompt_eligibility,
+        commands::consume_upgrade_prompt_open_request,
+        commands::record_upgrade_prompt_shown,
+        commands::record_upgrade_prompt_action,
+        commands::record_upgrade_checkout_result,
         commands::set_onboarding_paste_override,
         commands::initialize_enigo,
         commands::initialize_shortcuts,
@@ -956,6 +1035,7 @@ pub fn run(cli_args: CliArgs) {
         shortcut::change_hallucination_filter_setting,
         shortcut::change_app_language_setting,
         shortcut::change_update_checks_setting,
+        shortcut::change_share_usage_analytics_setting,
         shortcut::change_show_tray_icon_setting,
         shortcut::change_show_unload_model_in_tray_setting,
         shortcut::change_auto_submit_setting,
@@ -975,6 +1055,12 @@ pub fn run(cli_args: CliArgs) {
         commands::open_app_data_dir,
         commands::check_apple_intelligence_available,
         commands::log_from_frontend,
+        commands::track_ui_analytics_event,
+        commands::get_upgrade_prompt_eligibility,
+        commands::consume_upgrade_prompt_open_request,
+        commands::record_upgrade_prompt_shown,
+        commands::record_upgrade_prompt_action,
+        commands::record_upgrade_checkout_result,
         commands::set_onboarding_paste_override,
         commands::initialize_enigo,
         commands::models::get_available_models,
@@ -1042,12 +1128,19 @@ pub fn run(cli_args: CliArgs) {
     // `sentry_guard` lives until `run()` returns (after `builder.run(...)`),
     // keeping the Sentry client active for the full app lifetime.
     let (sentry_guard, sentry_status_message) = initialize_sentry();
+    let (aptabase_app_key, analytics_runtime_state, analytics_status_message) =
+        initialize_analytics_runtime();
 
     let mut builder = tauri::Builder::default()
-        .device_event_filter(tauri::DeviceEventFilter::Always);
+        .device_event_filter(tauri::DeviceEventFilter::Always)
+        .manage(analytics_runtime_state);
 
     if let Some(client) = sentry_guard.as_ref() {
         builder = builder.plugin(tauri_plugin_sentry::init(client));
+    }
+
+    if let Some(app_key) = aptabase_app_key.as_deref() {
+        builder = builder.plugin(tauri_plugin_aptabase::Builder::new(app_key).build());
     }
 
     #[cfg(target_os = "macos")]
@@ -1102,7 +1195,14 @@ pub fn run(cli_args: CliArgs) {
 
             tracing_config::init_tracing(&log_dir).expect("Failed to initialize tracing");
             tracing::info!("{}", sentry_status_message);
+            tracing::info!("{}", analytics_status_message);
             trigger_sentry_privacy_redaction_smoke_if_requested();
+
+            let _ = analytics::track_backend_event(
+                app.handle(),
+                analytics::BackendAnalyticsEvent::AppStarted,
+                None,
+            );
 
             let mut settings = get_settings(app.handle());
 
@@ -1188,6 +1288,11 @@ pub fn run(cli_args: CliArgs) {
             tauri::WindowEvent::Focused(focused) => {
                 if *focused && window.label() == "main" {
                     undo::flush_pending_linux_toast(&window.app_handle());
+                    if growth::has_pending_upgrade_prompt_open_request(&window.app_handle()) {
+                        let _ = window
+                            .app_handle()
+                            .emit(growth::UPGRADE_PROMPT_OPEN_REQUEST_EVENT, ());
+                    }
                 }
             }
             _ => {}
@@ -1224,8 +1329,18 @@ pub fn run(cli_args: CliArgs) {
                                 "App reopen requested with no visible windows, showing main window"
                             );
                             show_main_window(app);
+                            if growth::has_pending_upgrade_prompt_open_request(app) {
+                                let _ = app.emit(growth::UPGRADE_PROMPT_OPEN_REQUEST_EVENT, ());
+                            }
                         }
                     }
+                }
+                tauri::RunEvent::ExitRequested { .. } => {
+                    let _ = analytics::track_backend_event(
+                        app,
+                        analytics::BackendAnalyticsEvent::AppExited,
+                        None,
+                    );
                 }
                 // Handle app exit to properly shutdown sidecar processes
                 tauri::RunEvent::Exit => {
@@ -1246,8 +1361,41 @@ pub fn run(cli_args: CliArgs) {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_sensitive_key, scrub_sentry_event};
+    use super::{
+        initialize_analytics_runtime, is_sensitive_key, scrub_sentry_event,
+        APTABASE_APP_KEY_ENV_VAR, HANDY_DISABLE_ANALYTICS_ENV_VAR,
+    };
     use sentry::protocol::{Event as SentryEvent, User};
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvVarGuard {
+        key: &'static str,
+        original: Option<String>,
+    }
+
+    impl EnvVarGuard {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let original = std::env::var(key).ok();
+            match value {
+                Some(next) => std::env::set_var(key, next),
+                None => std::env::remove_var(key),
+            }
+
+            Self { key, original }
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            if let Some(value) = &self.original {
+                std::env::set_var(self.key, value);
+            } else {
+                std::env::remove_var(self.key);
+            }
+        }
+    }
 
     #[test]
     fn scrubber_preserves_anon_user_id() {
@@ -1303,5 +1451,27 @@ mod tests {
         assert!(is_sensitive_key("access_token"));
         assert!(is_sensitive_key("accessToken"));
         assert!(is_sensitive_key("api_credentials"));
+    }
+
+    #[test]
+    fn analytics_runtime_prefers_runtime_key() {
+        let _lock = ENV_LOCK.lock().expect("env lock");
+        let _disable = EnvVarGuard::set(HANDY_DISABLE_ANALYTICS_ENV_VAR, None);
+        let _key = EnvVarGuard::set(APTABASE_APP_KEY_ENV_VAR, Some("A-US-TEST-RUNTIME"));
+
+        let (resolved_key, _runtime_state, status_message) = initialize_analytics_runtime();
+        assert_eq!(resolved_key.as_deref(), Some("A-US-TEST-RUNTIME"));
+        assert!(status_message.contains("runtime-env"));
+    }
+
+    #[test]
+    fn analytics_runtime_kill_switch_disables_even_with_key() {
+        let _lock = ENV_LOCK.lock().expect("env lock");
+        let _key = EnvVarGuard::set(APTABASE_APP_KEY_ENV_VAR, Some("A-US-TEST-RUNTIME"));
+        let _disable = EnvVarGuard::set(HANDY_DISABLE_ANALYTICS_ENV_VAR, Some("true"));
+
+        let (resolved_key, _runtime_state, status_message) = initialize_analytics_runtime();
+        assert!(resolved_key.is_none());
+        assert!(status_message.contains("Analytics disabled"));
     }
 }

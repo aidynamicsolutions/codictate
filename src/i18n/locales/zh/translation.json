@@ -384,6 +384,13 @@
     "deleteModel": "删除 {{modelName}}"
   },
   "settings": {
+    "application": {
+      "title": "应用",
+      "analytics": {
+        "label": "共享匿名使用统计",
+        "description": "通过匿名分享功能使用情况和应用运行事件，帮助我们改进 Codictate。不会上传转录文本内容。"
+      }
+    },
     "general": {
       "title": "通用",
       "shortcut": {
@@ -833,5 +840,13 @@
   },
   "pasteLastTranscript": {
     "noHistory": "没有可粘贴的转录历史"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "你已经进入状态，继续提升效率。",
+      "description": "解锁高级功能，让你在日常工作中更快完成编辑、整理和纠错。",
+      "cta": "查看方案",
+      "dismiss": "暂不"
+    }
   }
 }

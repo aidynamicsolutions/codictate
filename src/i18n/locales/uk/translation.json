@@ -383,6 +383,13 @@
     "deleteModel": "Видалити {{modelName}}"
   },
   "settings": {
+    "application": {
+      "title": "Застосунок",
+      "analytics": {
+        "label": "Ділитися анонімною статистикою використання",
+        "description": "Допоможіть покращувати Codictate: діліться анонімними даними про використання функцій і події застосунку. Текст транскрипції не надсилається."
+      }
+    },
     "general": {
       "title": "Загальні",
       "shortcut": {
@@ -806,5 +813,13 @@
     "infoTitle": "{{appName}}",
     "warningTitle": "{{appName}}"
   },
-  "appName": "Codictate"
+  "appName": "Codictate",
+  "growth": {
+    "upgradePrompt": {
+      "title": "Ви вже в потоці. Отримайте більше.",
+      "description": "Відкрийте розширені функції, щоб швидше редагувати, очищати й виправляти текст щодня.",
+      "cta": "Переглянути плани",
+      "dismiss": "Не зараз"
+    }
+  }
 }

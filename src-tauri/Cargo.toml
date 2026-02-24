@@ -79,6 +79,7 @@ tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 tauri-plugin-notification = "2.3.3"
 sentry = "0.36.0"
 tauri-plugin-sentry = "0.4.1"
+tauri-plugin-aptabase = "1.0.0"
 # Tracing stack for unified structured logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -125,6 +126,12 @@ gtk = "0.18"
 tauri-runtime = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.9.1" }
 tauri-runtime-wry = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.9.1" }
 tauri-utils = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.9.1" }
+# Temporary safety patch:
+# Aptabase plugin v1.0.0 uses `tokio::spawn` during plugin setup, which can panic
+# in this app context with "there is no reactor running".
+# We vendor a one-line fix (`tauri::async_runtime::spawn`) until upstream includes it.
+# Removal/upgrade steps: see `doc/analytic_error_monitoring/aptabase_plugin_patch_maintenance.md`.
+tauri-plugin-aptabase = { path = "vendor/tauri-plugin-aptabase" }
 
 [dev-dependencies]
 tempfile = "3"

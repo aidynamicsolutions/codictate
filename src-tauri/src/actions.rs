@@ -1,6 +1,8 @@
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::apple_intelligence;
+use crate::analytics::{self, BackendAnalyticsEvent};
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
+use crate::growth::{self, FeatureName};
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::{HistoryEntry, HistoryManager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -532,6 +534,17 @@ fn selected_refine_prompt_snapshot(settings: &AppSettings) -> Option<String> {
         .map(|prompt| prompt.prompt.clone())
 }
 
+fn transcription_delivery_succeeded(
+    paste_result: &crate::clipboard::PasteResult,
+    clipboard_handling: crate::settings::ClipboardHandling,
+) -> bool {
+    paste_result.did_paste
+        || matches!(
+            clipboard_handling,
+            crate::settings::ClipboardHandling::CopyToClipboard
+        )
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         // Generate session ID for log correlation
@@ -707,13 +720,14 @@ impl ShortcutAction for TranscribeAction {
         });
     }
 
-    fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         // We delay unregistering cancel shortcut until after transcription or cancellation
         // shortcut::unregister_cancel_shortcut(app);
 
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
         crate::undo::mark_stop_transition_marker(app);
+        let entrypoint = growth::classify_entrypoint(shortcut_str);
 
         let ah = app.clone();
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
@@ -786,6 +800,30 @@ impl ShortcutAction for TranscribeAction {
                                 transcription,
                                 filler_words_removed
                             );
+
+                            let mut analytics_props = serde_json::Map::new();
+                            analytics_props.insert(
+                                "result".to_string(),
+                                serde_json::Value::String(if transcription.trim().is_empty() {
+                                    "empty".to_string()
+                                } else {
+                                    "non_empty".to_string()
+                                }),
+                            );
+                            analytics_props.insert(
+                                "source_action".to_string(),
+                                serde_json::Value::String(if post_process {
+                                    "transcribe_with_post_process".to_string()
+                                } else {
+                                    "transcribe".to_string()
+                                }),
+                            );
+                            let _ = analytics::track_backend_event(
+                                &ah,
+                                BackendAnalyticsEvent::TranscriptionCompleted,
+                                Some(analytics_props),
+                            );
+
                             if !transcription.trim().is_empty() {
                                 let settings = get_settings(&ah);
                                 let mut final_text = transcription.clone();
@@ -834,10 +872,16 @@ impl ShortcutAction for TranscribeAction {
                                 } else {
                                     "transcribe"
                                 };
+                                let feature = if post_process {
+                                    FeatureName::TranscribeWithPostProcess
+                                } else {
+                                    FeatureName::Transcribe
+                                };
                                 let stats_token = crate::undo::reserve_stats_token(&ah);
                                 let auto_refined =
                                     auto_refined_from_post_processed_text(&post_processed_text);
                                 let suggestion_text = transcription.clone();
+                                let clipboard_handling = settings.clipboard_handling;
 
                                 let hm_clone = Arc::clone(&hm);
                                 let transcription_for_history = transcription.clone();
@@ -954,7 +998,7 @@ impl ShortcutAction for TranscribeAction {
                                     };
 
                                     if let (Some(saved), Some(paste_result)) =
-                                        (saved_transcription, paste_result)
+                                        (saved_transcription, paste_result.as_ref())
                                     {
                                         if let Some(inserted_text) =
                                             maybe_inserted_text_from_paste_result(&paste_result)
@@ -971,6 +1015,19 @@ impl ShortcutAction for TranscribeAction {
                                             }
                                         }
                                     }
+
+                                    if let Some(paste_result) = paste_result {
+                                        if transcription_delivery_succeeded(
+                                            &paste_result,
+                                            clipboard_handling,
+                                        ) {
+                                            growth::record_feature_success(
+                                                &app_for_paste_task,
+                                                feature,
+                                                entrypoint,
+                                            );
+                                        }
+                                    }
                                 });
                             } else {
                                 utils::hide_overlay_after_transcription(&ah);
@@ -979,6 +1036,16 @@ impl ShortcutAction for TranscribeAction {
                         }
                         Err(err) => {
                             debug!("Global Shortcut Transcription error: {}", err);
+                            let mut analytics_props = serde_json::Map::new();
+                            analytics_props.insert(
+                                "stage".to_string(),
+                                serde_json::Value::String("transcribe".to_string()),
+                            );
+                            let _ = analytics::track_backend_event(
+                                &ah,
+                                BackendAnalyticsEvent::TranscriptionFailed,
+                                Some(analytics_props),
+                            );
                             capture_handled_error(
                                 &META_TRANSCRIBE_FAILURE,
                                 err.as_ref() as &(dyn std::error::Error + 'static),
@@ -1031,8 +1098,9 @@ impl ShortcutAction for CancelAction {
 struct UndoLastTranscriptAction;
 
 impl ShortcutAction for UndoLastTranscriptAction {
-    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
-        crate::undo::trigger_undo_last_transcript(app);
+    fn start(&self, app: &AppHandle, _binding_id: &str, shortcut_str: &str) {
+        let entrypoint = growth::classify_entrypoint(shortcut_str);
+        crate::undo::trigger_undo_last_transcript(app, entrypoint);
     }
 
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
@@ -1067,8 +1135,9 @@ impl ShortcutAction for TestAction {
 struct PasteLastTranscriptAction;
 
 impl ShortcutAction for PasteLastTranscriptAction {
-    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, _binding_id: &str, shortcut_str: &str) {
         debug!("Paste last transcript triggered");
+        let entrypoint = growth::classify_entrypoint(shortcut_str);
 
         // Check if recording is active - don't interfere with recording/transcription flow
         let audio_manager = app.state::<Arc<AudioRecordingManager>>();
@@ -1153,6 +1222,11 @@ impl ShortcutAction for PasteLastTranscriptAction {
                                             &app_for_undo_slot,
                                             capture,
                                         );
+                                        growth::record_feature_success(
+                                            &app_for_undo_slot,
+                                            FeatureName::PasteLastTranscript,
+                                            entrypoint,
+                                        );
                                     }
                                 }
                                 Err(e) => error!("Failed to paste last transcript: {}", e),
@@ -1178,8 +1252,9 @@ impl ShortcutAction for PasteLastTranscriptAction {
 struct RefineLastTranscriptAction;
 
 impl ShortcutAction for RefineLastTranscriptAction {
-    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, _binding_id: &str, shortcut_str: &str) {
         debug!("Refine last transcript triggered");
+        let entrypoint = growth::classify_entrypoint(shortcut_str);
 
         // Check if recording is active - don't interfere with recording/transcription flow
         let audio_manager = app.state::<Arc<AudioRecordingManager>>();
@@ -1318,6 +1393,11 @@ impl ShortcutAction for RefineLastTranscriptAction {
                             crate::undo::register_successful_paste(
                                 &app_for_undo_slot,
                                 capture,
+                            );
+                            growth::record_feature_success(
+                                &app_for_undo_slot,
+                                FeatureName::RefineLastTranscript,
+                                entrypoint,
                             );
                         }
                         Some(result_for_history)
@@ -1517,10 +1597,11 @@ mod tests {
         auto_refined_from_post_processed_text, build_undo_paste_capture,
         maybe_inserted_text_from_paste_result, paste_last_preparation_mode, select_inserted_text_for_refine_replace,
         sanitize_refine_punctuation_artifacts, select_text_for_paste_last, select_text_for_refine_input,
-        should_commit_refine_history_from_paste_result,
+        should_commit_refine_history_from_paste_result, transcription_delivery_succeeded,
     };
     use crate::clipboard::PastePreparationMode;
     use crate::managers::history::HistoryEntry;
+    use crate::settings::ClipboardHandling;
 
     fn sample_history_entry() -> HistoryEntry {
         HistoryEntry {
@@ -1673,6 +1754,36 @@ mod tests {
 
         assert!(!should_commit_refine_history_from_paste_result(&failed));
         assert!(should_commit_refine_history_from_paste_result(&succeeded));
+    }
+
+    #[test]
+    fn transcription_delivery_detects_paste_success() {
+        let result = crate::clipboard::PasteResult {
+            pasted_text: "transformed".to_string(),
+            did_paste: true,
+        };
+
+        assert!(transcription_delivery_succeeded(
+            &result,
+            ClipboardHandling::DontModify,
+        ));
+    }
+
+    #[test]
+    fn transcription_delivery_detects_copy_to_clipboard_fallback() {
+        let result = crate::clipboard::PasteResult {
+            pasted_text: "transformed".to_string(),
+            did_paste: false,
+        };
+
+        assert!(transcription_delivery_succeeded(
+            &result,
+            ClipboardHandling::CopyToClipboard,
+        ));
+        assert!(!transcription_delivery_succeeded(
+            &result,
+            ClipboardHandling::DontModify,
+        ));
     }
 
     #[test]

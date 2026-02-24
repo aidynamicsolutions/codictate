@@ -456,6 +456,13 @@
         "description": "Ajuster le volume du signal sonore"
       }
     },
+    "application": {
+      "title": "Application",
+      "analytics": {
+        "label": "Partager des statistiques d'utilisation anonymes",
+        "description": "Aidez-nous à améliorer Codictate en partageant anonymement l'utilisation des fonctionnalités et les événements de l'application. Aucun texte transcrit n'est envoyé."
+      }
+    },
     "advanced": {
       "title": "Avancé",
       "startHidden": {
@@ -833,5 +840,13 @@
   },
   "pasteLastTranscript": {
     "noHistory": "Aucun historique de transcription à coller"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Vous êtes lancé. Allez encore plus loin.",
+      "description": "Débloquez des fonctionnalités avancées pour accélérer l'édition, le nettoyage et la correction au quotidien.",
+      "cta": "Voir les offres",
+      "dismiss": "Pas maintenant"
+    }
   }
 }

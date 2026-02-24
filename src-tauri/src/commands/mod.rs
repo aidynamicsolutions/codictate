@@ -11,6 +11,7 @@ pub mod menu;
 
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::cancel_current_operation;
+use std::collections::HashMap;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
@@ -172,6 +173,60 @@ pub fn log_from_frontend(
         &target,
         &message,
     );
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn track_ui_analytics_event(
+    app: AppHandle,
+    event: String,
+    props: Option<HashMap<String, String>>,
+) -> Result<(), String> {
+    crate::analytics::track_ui_event(&app, &event, props)
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn get_upgrade_prompt_eligibility(
+    app: AppHandle,
+) -> Result<crate::growth::UpgradePromptEligibility, String> {
+    Ok(crate::growth::get_upgrade_prompt_eligibility(&app))
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn consume_upgrade_prompt_open_request(app: AppHandle) -> Result<bool, String> {
+    Ok(crate::growth::consume_pending_upgrade_prompt_open_request(&app))
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn record_upgrade_prompt_shown(
+    app: AppHandle,
+    trigger: String,
+    variant: String,
+) -> Result<(), String> {
+    crate::growth::mark_upgrade_prompt_shown(&app, &trigger, &variant)
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn record_upgrade_prompt_action(
+    app: AppHandle,
+    action: String,
+    trigger: String,
+) -> Result<(), String> {
+    crate::growth::mark_upgrade_prompt_action(&app, &action, &trigger)
+}
+
+#[specta::specta]
+#[tauri::command]
+pub fn record_upgrade_checkout_result(
+    app: AppHandle,
+    result: String,
+    source: String,
+) -> Result<(), String> {
+    crate::growth::mark_upgrade_checkout_result(&app, &result, &source)
 }
 
 /// Set the onboarding paste override.

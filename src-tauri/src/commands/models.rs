@@ -1,3 +1,4 @@
+use crate::analytics::{self, BackendAnalyticsEvent};
 use crate::managers::model::{ModelInfo, ModelManager};
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, write_settings};
@@ -24,13 +25,29 @@ pub async fn get_model_info(
 #[tauri::command]
 #[specta::specta]
 pub async fn download_model(
+    app_handle: AppHandle,
     model_manager: State<'_, Arc<ModelManager>>,
     model_id: String,
 ) -> Result<(), String> {
-    model_manager
-        .download_model(&model_id)
-        .await
-        .map_err(|e| e.to_string())
+    let _ = analytics::track_backend_event(&app_handle, BackendAnalyticsEvent::ModelDownloadStarted, None);
+    match model_manager.download_model(&model_id).await {
+        Ok(()) => {
+            let _ = analytics::track_backend_event(
+                &app_handle,
+                BackendAnalyticsEvent::ModelDownloadCompleted,
+                None,
+            );
+            Ok(())
+        }
+        Err(error) => {
+            let _ = analytics::track_backend_event(
+                &app_handle,
+                BackendAnalyticsEvent::ModelDownloadFailed,
+                None,
+            );
+            Err(error.to_string())
+        }
+    }
 }
 
 #[tauri::command]

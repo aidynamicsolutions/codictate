@@ -877,6 +877,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-nspanel",
+ "tauri-plugin-aptabase",
  "tauri-plugin-autostart",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
@@ -6705,6 +6706,24 @@ dependencies = [
  "tauri-utils",
  "toml 0.9.8",
  "walkdir",
+]
+
+[[package]]
+name = "tauri-plugin-aptabase"
+version = "1.0.0"
+dependencies = [
+ "futures",
+ "log",
+ "os_info",
+ "rand 0.9.2",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_json",
+ "sys-locale",
+ "tauri",
+ "tauri-plugin",
+ "time",
+ "tokio",
 ]
 
 [[package]]

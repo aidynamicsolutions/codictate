@@ -460,5 +460,13 @@
     "disabled": "Tinh chỉnh đang tắt. Hãy bật trong phần cài đặt Tinh chỉnh.",
     "failed": "Không thể tinh chỉnh văn bản. Hãy kiểm tra cài đặt Tinh chỉnh rồi thử lại.",
     "replaceUnavailable": "Không thể tự động chọn bản phiên âm trước đó. Sẽ dán tại vị trí con trỏ hiện tại."
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Bạn đã vào guồng. Làm được nhiều hơn nữa.",
+      "description": "Mở khóa các tính năng nâng cao để tăng tốc chỉnh sửa, làm sạch và sửa lỗi trong công việc hằng ngày.",
+      "cta": "Xem gói",
+      "dismiss": "Để sau"
+    }
   }
 }

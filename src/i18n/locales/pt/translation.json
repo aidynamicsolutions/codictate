@@ -391,6 +391,13 @@
     "deleteModel": "Excluir {{modelName}}"
   },
   "settings": {
+    "application": {
+      "title": "Aplicativo",
+      "analytics": {
+        "label": "Compartilhar estatísticas de uso anônimas",
+        "description": "Ajude a melhorar o Codictate compartilhando, de forma anônima, o uso dos recursos e eventos do aplicativo. O texto transcrito não é enviado."
+      }
+    },
     "general": {
       "title": "Geral",
       "shortcut": {
@@ -814,5 +821,13 @@
     "infoTitle": "{{appName}}",
     "warningTitle": "{{appName}}"
   },
-  "appName": "Codictate"
+  "appName": "Codictate",
+  "growth": {
+    "upgradePrompt": {
+      "title": "Você já entrou no ritmo. Faça ainda mais.",
+      "description": "Desbloqueie recursos avançados para acelerar edição, limpeza e correção no dia a dia.",
+      "cta": "Ver planos",
+      "dismiss": "Agora não"
+    }
+  }
 }

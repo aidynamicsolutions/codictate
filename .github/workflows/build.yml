@@ -287,6 +287,7 @@ jobs:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN || '' }}
           SENTRY_RELEASE: codictate@${{ steps.get-version.outputs.version }}
           SENTRY_ENVIRONMENT: ${{ inputs.is-debug-build && 'development' || 'production' }}
+          APTABASE_APP_KEY: ${{ secrets.APTABASE_APP_KEY || '' }}
         with:
           tagName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}

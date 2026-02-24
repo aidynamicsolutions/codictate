@@ -1,13 +1,74 @@
 ## 1. Implementation
-- [ ] 1.1 Add `tauri-plugin-aptabase` to `src-tauri/Cargo.toml`
-- [ ] 1.2 Initialize Aptabase in `src-tauri/src/lib.rs` with App Key (env var)
-- [ ] 1.3 Configure permissions in `src-tauri/capabilities/default.json` (allow `aptabase:default`)
-- [ ] 1.4 Create `src/utils/analytics.ts` wrapper
-    - [ ] Implement `trackEvent` function
-    - [ ] Implement offline queue using `tauri-plugin-store` (lazy flush)
-    - [ ] Handle network status changes to flush queue
-- [ ] 1.5 Instrument `App.tsx` for `app_started`
-- [ ] 1.6 Instrument `transcription.rs` (or frontend success handler) for `transcription_completed`
-- [ ] 1.7 Add `APTABASE_APP_KEY` handling (env var or config)
-- [ ] 1.8 Verify event reception in Aptabase dashboard
-- [ ] 1.9 Verify offline queue mechanism (simulate offline, generate event, go online, verify flush)
+- [x] 1.1 Add `tauri-plugin-aptabase = "1.0.0"` to `src-tauri/Cargo.toml`.
+- [x] 1.2 Initialize Aptabase in `src-tauri/src/lib.rs` with safe key resolution precedence:
+  - runtime `APTABASE_APP_KEY` first
+  - build-time embedded fallback via `option_env!`
+  - graceful disable when missing/empty
+- [x] 1.3 Add analytics runtime kill switch (`HANDY_DISABLE_ANALYTICS`) and log effective analytics status on startup.
+- [x] 1.4 Add `share_usage_analytics` to `AppSettings` with default `true`, migration-safe serde defaults, and a backend setting mutation command.
+- [x] 1.5 Keep direct Aptabase frontend command permission disabled (`aptabase:allow-track-event` not granted) so all analytics flow through backend policy/allowlist.
+- [x] 1.6 Add a backend analytics policy module with:
+  - event ownership boundaries
+  - event/property allowlist validation
+  - sensitive key blocking
+  - low-cardinality/value constraints
+- [x] 1.7 Add typed frontend-to-backend analytics command for UI events (`settings_opened`, `onboarding_completed`, `analytics_toggle_changed`).
+- [x] 1.8 Instrument backend-owned domain/lifecycle events in Rust:
+  - `app_started`
+  - `app_exited`
+  - `transcription_completed`
+  - `transcription_failed`
+  - `model_download_started`
+  - `model_download_completed`
+  - `model_download_failed`
+- [x] 1.9 Ensure graceful-exit delivery behavior:
+  - track `app_exited` in `RunEvent::ExitRequested` (before plugin flush ordering on `Exit`)
+  - rely on Aptabase plugin exit flush handling (no duplicate manual flush call)
+- [x] 1.10 Add a thin frontend analytics wrapper and instrument UI events through the backend command only.
+- [x] 1.11 Add settings UI toggle ("Share anonymous usage analytics"), wire it to persisted settings, and add i18n keys for all supported locales.
+- [x] 1.12 Configure CI distributed builds to inject `APTABASE_APP_KEY` from secrets into the Tauri build environment.
+- [x] 1.13 Add growth state module (`src-tauri/src/growth.rs`) for:
+  - successful feature counting
+  - one-time aha milestone (`5` successful features)
+  - upgrade prompt cooldown and paid/onboarding gating
+- [x] 1.14 Add backend growth commands:
+  - `get_upgrade_prompt_eligibility`
+  - `record_upgrade_prompt_shown`
+  - `record_upgrade_prompt_action`
+  - `record_upgrade_checkout_result`
+- [x] 1.15 Extend analytics allowlist contract for growth/prompt events:
+  - backend: `feature_used`, `aha_moment_reached`
+  - frontend-via-backend: `upgrade_prompt_shown`, `upgrade_prompt_action`, `upgrade_checkout_result`
+- [x] 1.16 Instrument successful feature usage in backend success paths:
+  - transcribe / transcribe_with_post_process
+  - paste_last_transcript
+  - undo_last_transcript
+  - refine_last_transcript
+  - correct_text (accept path)
+- [x] 1.17 Add upgrade prompt UI (`UpgradePromptBanner`) and wire app-level eligibility handling in `App.tsx`.
+
+## 2. Documentation
+- [x] 2.1 Update `doc/analytic_error_monitoring/aptabase_integration.md` to remove custom queueing and panic-based key handling.
+- [x] 2.2 Update `doc/analytic_error_monitoring/aptabase_prerequisites.md` with key precedence, kill switch behavior, toggle behavior, and non-guaranteed delivery semantics.
+- [x] 2.3 Add a manual validation checklist covering enabled path, disabled path, missing-key path, offline/reconnect best-effort delivery, and graceful exit flush.
+- [x] 2.4 Update release/deployment docs with CI key provisioning requirements for distributed installers.
+- [x] 2.5 Update analytics event catalog with growth/prompt events and trigger definitions.
+- [x] 2.6 Add growth ops note documenting expected event cadence and manual prompt-funnel validation.
+
+## 3. Verification
+- [x] 3.1 Add Rust unit tests for analytics config precedence and disable behavior.
+- [x] 3.2 Add Rust unit tests for settings migration (`share_usage_analytics` defaults to `true` when field is missing).
+- [x] 3.3 Add Rust unit tests for analytics event/property allowlist enforcement.
+- [x] 3.4 Add Rust unit tests for growth state transitions and eligibility cooldown rules.
+- [ ] 3.5 Manually verify analytics delivery in Aptabase dashboard for enabled flows.
+- [ ] 3.6 Manually verify no analytics delivery when:
+  - settings toggle is disabled
+  - `HANDY_DISABLE_ANALYTICS=1`
+  - app key is missing
+- [ ] 3.7 Validate that MLX/exit shutdown behavior remains intact alongside Aptabase plugin exit flush handling.
+- [ ] 3.8 Verify release-like run succeeds with runtime `APTABASE_APP_KEY` unset when build-time key was embedded via CI.
+- [ ] 3.9 Manual growth-flow validation:
+  - 5 successful feature uses emits one `aha_moment_reached`
+  - upgrade prompt appears when eligible
+  - dismiss applies 14-day cooldown behavior
+  - prompt funnel events appear with expected properties

@@ -384,6 +384,13 @@
     "deleteModel": "{{modelName}}を削除"
   },
   "settings": {
+    "application": {
+      "title": "アプリ",
+      "analytics": {
+        "label": "匿名の利用状況データを共有する",
+        "description": "機能の利用状況やアプリの動作イベントを匿名で共有して、Codictate の改善にご協力ください。文字起こしした本文は送信されません。"
+      }
+    },
     "general": {
       "title": "一般",
       "shortcut": {
@@ -833,5 +840,13 @@
   },
   "pasteLastTranscript": {
     "noHistory": "貼り付ける文字起こし履歴がありません"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "いい流れです。さらに先へ。",
+      "description": "毎日の作業で、編集・整形・修正をもっと速くする高度な機能を利用できます。",
+      "cta": "プランを見る",
+      "dismiss": "今はしない"
+    }
   }
 }

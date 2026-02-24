@@ -460,5 +460,13 @@
     "disabled": "Refinar está desactivado. Actívalo en los ajustes de Refinar.",
     "failed": "No se pudo refinar el texto. Revisa los ajustes de Refinar y vuelve a intentarlo.",
     "replaceUnavailable": "No pudimos seleccionar automáticamente la transcripción anterior. Pegaremos donde esté el cursor."
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Ya estás en ritmo. Haz aún más.",
+      "description": "Desbloquea funciones avanzadas para acelerar la edición, limpieza y corrección en tu trabajo diario.",
+      "cta": "Ver planes",
+      "dismiss": "Ahora no"
+    }
   }
 }

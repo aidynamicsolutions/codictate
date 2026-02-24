@@ -454,5 +454,13 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Du bist im Flow. Hol noch mehr raus.",
+      "description": "Schalte erweiterte Funktionen frei, um Bearbeitung, Bereinigung und Korrektur im Alltag zu beschleunigen.",
+      "cta": "Tarife ansehen",
+      "dismiss": "Nicht jetzt"
+    }
   }
 }

@@ -333,6 +333,14 @@ async changeUpdateChecksSetting(enabled: boolean) : Promise<Result<null, string>
     else return { status: "error", error: e  as any };
 }
 },
+async changeShareUsageAnalyticsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_share_usage_analytics_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeShowTrayIconSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_show_tray_icon_setting", { enabled }) };
@@ -465,6 +473,54 @@ async checkAppleIntelligenceAvailable() : Promise<boolean> {
  */
 async logFromFrontend(level: string, sessionId: string | null, target: string, message: string) : Promise<void> {
     await TAURI_INVOKE("log_from_frontend", { level, sessionId, target, message });
+},
+async trackUiAnalyticsEvent(event: string, props: Partial<{ [key in string]: string }> | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("track_ui_analytics_event", { event, props }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getUpgradePromptEligibility() : Promise<Result<UpgradePromptEligibility, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_upgrade_prompt_eligibility") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async consumeUpgradePromptOpenRequest() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("consume_upgrade_prompt_open_request") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async recordUpgradePromptShown(trigger: string, variant: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("record_upgrade_prompt_shown", { trigger, variant }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async recordUpgradePromptAction(action: string, trigger: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("record_upgrade_prompt_action", { action, trigger }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async recordUpgradeCheckoutResult(result: string, source: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("record_upgrade_checkout_result", { result, source }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 /**
  * Set the onboarding paste override.
@@ -1032,7 +1088,7 @@ async overlayUpdateInteractionRegions(regions: OverlayInteractionRegionsPayload)
 
 /** user-defined types **/
 
-export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; saved_languages?: string[]; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; dictionary?: CustomWordEntry[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; word_correction_split_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
+export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; share_usage_analytics?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; saved_languages?: string[]; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; dictionary?: CustomWordEntry[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; word_correction_split_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; auto_submit?: boolean; auto_submit_key?: AutoSubmitKey; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; 
 /**
  * When true, all transcriptions are automatically refined (adds delay).
  * When false (default), user must manually trigger refinement with hotkey.
@@ -1142,6 +1198,7 @@ export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
+export type UpgradePromptEligibility = { eligible: boolean; reason: string }
 /**
  * User profile data - separate from app settings.
  * This stores onboarding and user identity information.

@@ -384,6 +384,13 @@
     "deleteModel": "{{modelName}} löschen"
   },
   "settings": {
+    "application": {
+      "title": "App",
+      "analytics": {
+        "label": "Anonyme Nutzungsstatistiken teilen",
+        "description": "Hilf uns, Codictate zu verbessern, indem du anonymisierte Nutzungsdaten zu Funktionen und App-Ereignissen teilst. Transkribierter Text wird nicht gesendet."
+      }
+    },
     "general": {
       "title": "Allgemein",
       "shortcut": {
@@ -833,5 +840,13 @@
   },
   "pasteLastTranscript": {
     "noHistory": "Keine Transkriptionshistorie zum Einfügen vorhanden"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Du bist im Flow. Hol noch mehr raus.",
+      "description": "Schalte erweiterte Funktionen frei, um Bearbeitung, Bereinigung und Korrektur im Alltag zu beschleunigen.",
+      "cta": "Tarife ansehen",
+      "dismiss": "Nicht jetzt"
+    }
   }
 }

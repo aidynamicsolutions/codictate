@@ -14,6 +14,7 @@ import LearnStep from "./LearnStep";
 import SuccessStep from "./SuccessStep";
 import ReferralStep from "./ReferralStep";
 import type { OnboardingStep } from "./OnboardingProgress";
+import { trackUiAnalyticsEvent } from "@/utils/analytics";
 
 interface OnboardingProps {
   onComplete: () => void;
@@ -227,6 +228,9 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const handleReferralComplete = async () => {
     await updateProfile("onboarding_completed", true);
     await updateProfile("onboarding_step", STEP_ORDER.length + 1);
+    await trackUiAnalyticsEvent("onboarding_completed", {
+      source: "onboarding_flow",
+    });
     onComplete();
   };
 

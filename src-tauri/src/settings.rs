@@ -274,6 +274,8 @@ pub struct AppSettings {
     pub autostart_enabled: bool,
     #[serde(default = "default_update_checks_enabled")]
     pub update_checks_enabled: bool,
+    #[serde(default = "default_share_usage_analytics")]
+    pub share_usage_analytics: bool,
     #[serde(default = "default_model")]
     pub selected_model: String,
     #[serde(default = "default_always_on_microphone")]
@@ -389,6 +391,10 @@ fn default_autostart_enabled() -> bool {
 }
 
 fn default_update_checks_enabled() -> bool {
+    true
+}
+
+fn default_share_usage_analytics() -> bool {
     true
 }
 
@@ -839,6 +845,7 @@ pub fn get_default_settings() -> AppSettings {
         start_hidden: default_start_hidden(),
         autostart_enabled: default_autostart_enabled(),
         update_checks_enabled: default_update_checks_enabled(),
+        share_usage_analytics: default_share_usage_analytics(),
         selected_model: "".to_string(),
         always_on_microphone: false,
         selected_microphone: None,
@@ -1045,6 +1052,7 @@ mod tests {
         assert!(!settings.auto_submit);
         assert_eq!(settings.auto_submit_key, AutoSubmitKey::Enter);
         assert!(!settings.paste_last_use_smart_insertion);
+        assert!(settings.share_usage_analytics);
     }
 
     #[test]
@@ -1058,5 +1066,18 @@ mod tests {
         let parsed: AppSettings =
             serde_json::from_value(serialized).expect("deserialize settings without new field");
         assert!(!parsed.paste_last_use_smart_insertion);
+    }
+
+    #[test]
+    fn missing_share_usage_analytics_field_defaults_to_true() {
+        let mut serialized = serde_json::to_value(get_default_settings())
+            .expect("serialize default settings");
+        if let Some(obj) = serialized.as_object_mut() {
+            obj.remove("share_usage_analytics");
+        }
+
+        let parsed: AppSettings =
+            serde_json::from_value(serialized).expect("deserialize settings without new field");
+        assert!(parsed.share_usage_analytics);
     }
 }

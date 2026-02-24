@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
 import { useTranslation } from "react-i18next";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { getLanguageDirection, initializeRTL } from "@/lib/utils/rtl";
 import "./App.css";
 import AccessibilityPermissions from "./components/AccessibilityPermissions";
@@ -16,10 +17,12 @@ import { useSettings } from "./hooks/useSettings";
 import { useTauriEvent } from "./hooks/useTauriEvent";
 import { commands } from "@/bindings";
 import { initLogging, logError, logInfo } from "@/utils/logging";
+import { trackUiAnalyticsEvent } from "@/utils/analytics";
 import { useModelStore } from "./stores/modelStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { AboutModal } from "./components/AboutModal";
+import { UpgradePromptBanner } from "./components/growth/UpgradePromptBanner";
 
 const renderSettingsContent = (
   section: SidebarSection,
@@ -41,14 +44,33 @@ function App() {
   const { i18n, t } = useTranslation();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
   const [showAbout, setShowAbout] = useState(false);
+  const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
+  const upgradePromptShownRecordedRef = useRef(false);
   const direction = getLanguageDirection(i18n.language);
   const [currentSection, setCurrentSection] = useState<SidebarSection>("home");
+  const previousSectionRef = useRef<SidebarSection>(currentSection);
+  const settingsOpenedSourceRef = useRef<"sidebar" | "menu">("sidebar");
   const { settings, updateSetting } = useSettings();
+
+  const navigateToSection = (
+    section: SidebarSection,
+    settingsSource: "sidebar" | "menu" = "sidebar",
+  ) => {
+    if (section === "settings") {
+      settingsOpenedSourceRef.current = settingsSource;
+    }
+    setCurrentSection(section);
+  };
 
   interface UndoMainToastPayload {
     kind: "feedback" | "discoverability_hint";
     code: string;
     shortcut?: string | null;
+  }
+
+  interface UpgradePromptEligibilityPayload {
+    eligible: boolean;
+    reason: string;
   }
 
   // Show window when the app is ready (prevents flash of white)
@@ -78,6 +100,14 @@ function App() {
   useEffect(() => {
     checkOnboardingStatus();
   }, []);
+
+  useEffect(() => {
+    if (showOnboarding !== false) {
+      return;
+    }
+
+    void consumePendingUpgradePromptOpenRequest("main_app_ready");
+  }, [showOnboarding]);
 
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
@@ -115,12 +145,47 @@ function App() {
 
     store.checkForUpdates(true);
     store.setShouldScrollToUpdates(true);
-    setCurrentSection("settings");
+    navigateToSection("settings", "menu");
   });
+
+  useEffect(() => {
+    const previousSection = previousSectionRef.current;
+    if (currentSection === "settings" && previousSection !== "settings") {
+      void trackUiAnalyticsEvent("settings_opened", {
+        source: settingsOpenedSourceRef.current,
+      });
+    }
+
+    previousSectionRef.current = currentSection;
+  }, [currentSection]);
 
   // Listen for about menu item
   useTauriEvent("open-about", () => {
     setShowAbout(true);
+  });
+
+  useTauriEvent<UpgradePromptEligibilityPayload>(
+    "upgrade-prompt-eligible",
+    (event) => {
+      const payload = event.payload;
+      if (!payload?.eligible) {
+        return;
+      }
+      if (showOnboarding !== false) {
+        return;
+      }
+      if (showUpgradeBanner) {
+        return;
+      }
+      setShowUpgradeBanner(true);
+    },
+  );
+
+  useTauriEvent("upgrade-prompt-open-requested", () => {
+    if (showOnboarding !== false) {
+      return;
+    }
+    void consumePendingUpgradePromptOpenRequest("upgrade_prompt_open_requested_event");
   });
 
   useTauriEvent<UndoMainToastPayload>("undo-main-toast", (event) => {
@@ -232,6 +297,32 @@ function App() {
     }
   };
 
+  const consumePendingUpgradePromptOpenRequest = async (source: string) => {
+    try {
+      const result = await commands.consumeUpgradePromptOpenRequest();
+      if (result.status === "error") {
+        logError(
+          `event=upgrade_prompt_open_request_consume_failed source=${source} error=${result.error}`,
+          "App",
+        );
+        return;
+      }
+
+      if (result.data) {
+        logInfo(
+          `event=upgrade_prompt_open_request_consumed source=${source}`,
+          "App",
+        );
+        setShowUpgradeBanner(true);
+      }
+    } catch (error) {
+      logError(
+        `event=upgrade_prompt_open_request_consume_failed source=${source} error=${error}`,
+        "App",
+      );
+    }
+  };
+
   const initializeInputAndShortcuts = async (source: string) => {
     logInfo(`event=shortcut_init_attempt source=${source} channel=frontend`, "App");
 
@@ -272,6 +363,103 @@ function App() {
     setShowOnboarding(false);
   };
 
+  const recordUpgradePromptShown = async (source: string) => {
+    try {
+      const result = await commands.recordUpgradePromptShown("aha_moment", "v1");
+      if (result.status === "error") {
+        logError(
+          `event=upgrade_prompt_shown_record_failed source=${source} error=${result.error}`,
+          "App",
+        );
+      }
+    } catch (error) {
+      logError(
+        `event=upgrade_prompt_shown_record_failed source=${source} error=${error}`,
+        "App",
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (!showUpgradeBanner) {
+      upgradePromptShownRecordedRef.current = false;
+      return;
+    }
+
+    if (upgradePromptShownRecordedRef.current) {
+      return;
+    }
+
+    upgradePromptShownRecordedRef.current = true;
+    void recordUpgradePromptShown("upgrade_banner_visible");
+  }, [showUpgradeBanner]);
+
+  const handleUpgradeBannerDismiss = async () => {
+    try {
+      const result = await commands.recordUpgradePromptAction(
+        "dismissed",
+        "aha_moment",
+      );
+      if (result.status === "error") {
+        logError(
+          `event=upgrade_prompt_action_record_failed action=dismissed error=${result.error}`,
+          "App",
+        );
+      }
+    } catch (error) {
+      logError(
+        `event=upgrade_prompt_action_record_failed action=dismissed error=${error}`,
+        "App",
+      );
+    }
+    setShowUpgradeBanner(false);
+  };
+
+  const handleUpgradeBannerClick = async () => {
+    setShowUpgradeBanner(false);
+
+    // Open pricing immediately; analytics calls run in the background.
+    try {
+      await openUrl("https://codictate.com/pricing");
+    } catch (error) {
+      logError(`event=upgrade_url_open_failed error=${error}`, "App");
+    }
+
+    void commands
+      .recordUpgradePromptAction("cta_clicked", "aha_moment")
+      .then((actionResult) => {
+        if (actionResult.status === "error") {
+          logError(
+            `event=upgrade_prompt_action_record_failed action=cta_clicked error=${actionResult.error}`,
+            "App",
+          );
+        }
+      })
+      .catch((error) => {
+        logError(
+          `event=upgrade_prompt_action_record_failed action=cta_clicked error=${error}`,
+          "App",
+        );
+      });
+
+    void commands
+      .recordUpgradeCheckoutResult("started", "aha_prompt")
+      .then((checkoutResult) => {
+        if (checkoutResult.status === "error") {
+          logError(
+            `event=upgrade_checkout_result_record_failed result=started error=${checkoutResult.error}`,
+            "App",
+          );
+        }
+      })
+      .catch((error) => {
+        logError(
+          `event=upgrade_checkout_result_record_failed result=started error=${error}`,
+          "App",
+        );
+      });
+  };
+
   if (showOnboarding) {
     return <Onboarding onComplete={handleOnboardingComplete} />;
   }
@@ -301,7 +489,7 @@ function App() {
       />
       <Sidebar
         activeSection={currentSection}
-        onSectionChange={setCurrentSection}
+        onSectionChange={(section) => navigateToSection(section, "sidebar")}
       />
       <SidebarInset>
         {/* Main content area */}
@@ -317,9 +505,16 @@ function App() {
             }`}
           >
             <div className="flex-1 flex flex-col items-center gap-4 min-h-0 w-full">
+              <UpgradePromptBanner
+                visible={showUpgradeBanner}
+                onUpgrade={handleUpgradeBannerClick}
+                onDismiss={handleUpgradeBannerDismiss}
+              />
               <AccessibilityPermissions />
               <MicrophonePermissions />
-              {renderSettingsContent(currentSection, setCurrentSection)}
+              {renderSettingsContent(currentSection, (section) =>
+                navigateToSection(section, "sidebar"),
+              )}
             </div>
           </div>
         </div>

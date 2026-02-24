@@ -21,7 +21,10 @@ fn load_translations(app: &AppHandle) -> HashMap<String, Value> {
     let mut translations = HashMap::new();
     
     // List of supported languages (matching src/i18n/locales/)
-    let languages = ["en", "es", "fr", "vi", "de", "it", "ja", "pl", "ru", "zh"];
+    let languages = [
+        "ar", "cs", "de", "en", "es", "fr", "it", "ja", "ko", "pl", "pt", "ru", "tr", "uk",
+        "vi", "zh", "zh-TW",
+    ];
     
     for lang in languages {
         let path = format!("resources/locales/{}/translation.json", lang);

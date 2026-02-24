@@ -86,6 +86,8 @@ const settingUpdaters: {
     commands.changeAutostartSetting(value as boolean),
   update_checks_enabled: (value) =>
     commands.changeUpdateChecksSetting(value as boolean),
+  share_usage_analytics: (value) =>
+    commands.changeShareUsageAnalyticsSetting(value as boolean),
 
   selected_microphone: (value) =>
     commands.setSelectedMicrophone(
@@ -188,6 +190,7 @@ export const useSettingsStore = create<SettingsStore>()(
             clamshell_microphone: settings.clamshell_microphone ?? "Default",
             selected_output_device:
               settings.selected_output_device ?? "Default",
+            share_usage_analytics: settings.share_usage_analytics ?? true,
           };
           set({ settings: normalizedSettings, isLoading: false });
         } else {

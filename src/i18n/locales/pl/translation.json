@@ -384,6 +384,13 @@
     "deleteModel": "Usuń {{modelName}}"
   },
   "settings": {
+    "application": {
+      "title": "Aplikacja",
+      "analytics": {
+        "label": "Udostępniaj anonimowe statystyki użycia",
+        "description": "Pomóż ulepszać Codictate, udostępniając anonimowe dane o użyciu funkcji i działaniu aplikacji. Treść transkrypcji nie jest wysyłana."
+      }
+    },
     "general": {
       "title": "Ogólne",
       "shortcut": {
@@ -833,5 +840,13 @@
   },
   "pasteLastTranscript": {
     "noHistory": "Brak historii transkrypcji do wklejenia"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Masz już rytm. Zrób jeszcze więcej.",
+      "description": "Odblokuj zaawansowane funkcje, aby szybciej edytować, czyścić i poprawiać tekst na co dzień.",
+      "cta": "Zobacz plany",
+      "dismiss": "Nie teraz"
+    }
   }
 }

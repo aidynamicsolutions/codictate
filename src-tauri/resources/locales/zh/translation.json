@@ -454,5 +454,13 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "你已经进入状态，继续提升效率。",
+      "description": "解锁高级功能，让你在日常工作中更快完成编辑、整理和纠错。",
+      "cta": "查看方案",
+      "dismiss": "暂不"
+    }
   }
 }

@@ -454,5 +454,13 @@
   "notifications": {
     "errorTitle": "{{appName}}",
     "infoTitle": "{{appName}}"
+  },
+  "growth": {
+    "upgradePrompt": {
+      "title": "Masz już rytm. Zrób jeszcze więcej.",
+      "description": "Odblokuj zaawansowane funkcje, aby szybciej edytować, czyścić i poprawiać tekst na co dzień.",
+      "cta": "Zobacz plany",
+      "dismiss": "Nie teraz"
+    }
   }
 }

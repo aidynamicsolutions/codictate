@@ -278,7 +278,12 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                                         use crate::managers::correction::CorrectionManager;
                                         let cm = app.state::<Arc<CorrectionManager>>();
                                         if let Some(result) = cm.get_last_result() {
-                                            cm.accept_correction(&result);
+                                            if let Err(error) = cm.accept_correction(
+                                                &result,
+                                                crate::growth::FeatureEntrypoint::Shortcut,
+                                            ) {
+                                                warn!("shortcut correction accept failed: {error}");
+                                            }
                                         }
                                         crate::overlay::hide_recording_overlay(&app);
                                     });

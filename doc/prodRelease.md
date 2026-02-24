@@ -143,6 +143,23 @@ This means CI **must** provide `SENTRY_DSN` during build so installed apps can s
    - `operation=transcribe` or `operation=correction`
 6. Restore any temporary failure setup and relaunch once for normal usage.
 
+### Aptabase Verification (Pre-Prod to Prod Readiness)
+
+- [ ] CI secret is configured: `APTABASE_APP_KEY`
+- [ ] Release build startup log confirms analytics key source is valid (`runtime-env` or `build-time-embedded`)
+- [ ] At least one analytics event is visible in Aptabase dashboard for the release candidate
+- [ ] Kill switch (`HANDY_DISABLE_ANALYTICS=1`) confirmed to disable analytics ingestion during smoke test
+
+#### Aptabase Key Provisioning for Installed Builds
+
+The app resolves analytics key in this order:
+
+1. Runtime `APTABASE_APP_KEY` (override path for local debugging/reroute)
+2. Build-time embedded key (`APTABASE_APP_KEY` from CI build environment)
+
+For production installers, users typically do not provide runtime env vars.
+This means CI **must** provide `APTABASE_APP_KEY` during build so installed apps can send analytics.
+
 #### Release Candidate Smoke Check (Frontend Symbolication)
 
 1. Trigger one frontend exception on the release candidate.
