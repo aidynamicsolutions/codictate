@@ -204,30 +204,44 @@ macOS sends spurious FlagsChanged events with missing modifiers even during norm
 
 ### Overlay Readiness Signal (Flicker Prevention)
 
-To prevent overlay flicker on the first Fn press after app startup, the system uses a **readiness handshake**:
+To prevent overlay flicker on the first Fn press after app startup, the system uses a **two-phase readiness handshake**:
 
-**Problem**: The overlay webview loads asynchronously after app startup. If the user presses Fn before React has registered its event listeners, the `show-overlay` event may be emitted too early, causing a race condition where the native window appears but React hasn't set `opacity: 1` yet.
+**Problem**: The overlay webview loads asynchronously after app startup. If `show-overlay` is emitted before the core React listeners are attached, the native window may appear before React applies `opacity: 1`. On remount/reload paths, replay-sensitive listeners (undo/time/correction/hover) can also attach slightly later than show/hide listeners.
 
-**Solution**:
+**Solution (two-phase)**:
 
 ```
-    App Startup                          React Ready                First Fn Press
-         │                                    │                          │
-         ▼                                    ▼                          ▼
-  ┌─────────────┐    ┌───────────────────────────────────┐    ┌─────────────────┐
-  │  Create     │───▶│ React registers event listeners   │───▶│ Check OVERLAY_  │
-  │  overlay    │    │ then emits "overlay-ready"        │    │ READY flag      │
-  │  panel      │    └───────────────────────────────────┘    └─────────────────┘
-  └─────────────┘                   │                                  │
-                                    ▼                                  ▼
-                         ┌───────────────────┐           If ready: proceed immediately
-                         │ Rust marks        │           If not ready: wait up to 500ms
-                         │ OVERLAY_READY=true│
-                         └───────────────────┘
+      App Startup                         React mount sequence                  First Fn Press
+           │                                       │                                 │
+           ▼                                       ▼                                 ▼
+   ┌─────────────┐                     ┌───────────────────────────┐       ┌─────────────────┐
+   │ Create      │                     │ Register show/hide         │       │ Check OVERLAY_  │
+   │ overlay     │────────────────────▶│ listeners                  │──────▶│ READY flag      │
+   │ panel       │                     │ emit("overlay-ready")      │       └─────────────────┘
+   └─────────────┘                     └───────────────────────────┘                 │
+                                               │                                      │
+                                               ▼                                      ▼
+                                   Rust marks visibility-ready             If ready: proceed immediately
+                                   + starts model preload                  If not ready: wait up to 500ms
+                                               │
+                                               ▼
+                                   Register replay-sensitive listeners
+                                   (recording-time, correction-result,
+                                    undo-overlay-event, hover/cursor)
+                                               │
+                                               ▼
+                                   emit("overlay-fully-ready")
+                                               │
+                                               ▼
+                                   Rust replays current overlay state
+                                   (mark_overlay_ready + show-overlay replay)
 ```
 
 **Always Mapped Strategy**:
 The overlay window is created at startup and kept `visible` but transparent (`opacity: 0`). This prevents macOS "App Nap" from suspending the webview.
+
+**Model Preload Triggering**:
+Startup model preload is now boot-once. `overlay-ready` and the delayed fallback both funnel through a one-shot gate so the app performs at most one startup preload attempt.
 
 **Show Sequence (Flicker-Free)**:
 
@@ -240,8 +254,9 @@ The overlay window is created at startup and kept `visible` but transparent (`op
 ```
 
 **Key Files**:
-- [overlay.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/overlay.rs): `OVERLAY_READY` atomic, `mark_overlay_ready()`, show sequence ordering
-- [RecordingOverlay.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/overlay/RecordingOverlay.tsx): Emits `overlay-ready` after listeners registered
+- [overlay.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/overlay.rs): `OVERLAY_READY` + `OVERLAY_REPLAY_READY` atomics, `mark_overlay_listener_ready()`, `mark_overlay_ready()`, show/replay delivery gating
+- [lib.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/lib.rs): Listens for `overlay-ready` (visibility-ready) and `overlay-fully-ready` (state replay-ready), then starts model preload via a one-shot startup gate
+- [RecordingOverlay.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/overlay/RecordingOverlay.tsx): Emits early `overlay-ready`, then `overlay-fully-ready` after replay-sensitive listeners are attached
 
 ## Implementation
 
@@ -302,7 +317,8 @@ RELEASE_DEBOUNCE_MS   // Debounce duration (150ms)
 
 // Overlay State (overlay.rs)
 OVERLAY_STATE         // Current mode: Hidden | Recording | Transcribing | Processing
-OVERLAY_READY         // True after React has registered event listeners
+OVERLAY_READY         // True after visibility listeners are ready (full replay-ready comes later)
+OVERLAY_REPLAY_READY  // True only after replay-sensitive listeners are attached
 ```
 
 ### Mutual Exclusivity

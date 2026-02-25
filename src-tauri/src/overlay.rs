@@ -539,6 +539,17 @@ pub fn is_overlay_available(app_handle: &AppHandle) -> bool {
     app_handle.get_webview_window("recording_overlay").is_some()
 }
 
+/// Returns true when overlay replay-sensitive listeners are attached.
+/// This is stricter than `is_overlay_available` and should gate event streams
+/// that are not replayed automatically (e.g. undo cards).
+fn is_overlay_replay_available(app_handle: &AppHandle) -> bool {
+    if !is_overlay_available(app_handle) {
+        return false;
+    }
+
+    OVERLAY_REPLAY_READY.load(Ordering::SeqCst)
+}
+
 fn apply_overlay_input_mode(
     app_handle: &AppHandle,
     requested_mode: OverlayInputMode,
@@ -722,7 +733,7 @@ pub fn set_overlay_input_mode_passthrough(app_handle: &AppHandle, source: &str) 
 
 /// Emits an undo overlay event. Returns true if delivery path was available.
 pub fn emit_undo_overlay_event<T: Serialize>(app_handle: &AppHandle, payload: &T) -> bool {
-    if !is_overlay_available(app_handle) {
+    if !is_overlay_replay_available(app_handle) {
         return false;
     }
 
@@ -796,9 +807,21 @@ pub fn clear_correcting_state() {
 /// This prevents the race condition where show-overlay events are emitted
 /// before the React component has registered its event listeners.
 static OVERLAY_READY: AtomicBool = AtomicBool::new(false);
+/// Track whether replay-sensitive listeners are attached.
+/// This can lag behind `OVERLAY_READY` during mount/remount.
+static OVERLAY_REPLAY_READY: AtomicBool = AtomicBool::new(false);
 
-/// Mark the overlay as ready to receive events.
-/// Called when the frontend emits the "overlay-ready" event.
+/// Mark the overlay as ready for visibility events only.
+/// This is emitted early by the frontend after core show/hide listeners are attached.
+/// Replay-sensitive state re-emission should happen via `mark_overlay_ready`.
+pub fn mark_overlay_listener_ready() {
+    OVERLAY_READY.store(true, Ordering::SeqCst);
+    OVERLAY_REPLAY_READY.store(false, Ordering::SeqCst);
+    tracing::debug!("mark_overlay_listener_ready: overlay can receive visibility events");
+}
+
+/// Mark the overlay as fully ready to receive replay-sensitive events.
+/// Called when the frontend emits the "overlay-fully-ready" event.
 /// If the current state is not Hidden, we re-emit the "show-overlay" event
 /// to ensure the reloaded/remounted frontend receives the correct state.
 pub fn mark_overlay_ready(app_handle: &AppHandle) {
@@ -806,6 +829,7 @@ pub fn mark_overlay_ready(app_handle: &AppHandle) {
 
     tracing::info!("mark_overlay_ready: Overlay webview signaled ready");
     OVERLAY_READY.store(true, Ordering::SeqCst);
+    OVERLAY_REPLAY_READY.store(true, Ordering::SeqCst);
 
     // Check current state
     if let Ok(state) = OVERLAY_STATE.lock() {

@@ -57,7 +57,7 @@ use signal_hook::consts::{SIGUSR1, SIGUSR2};
 use signal_hook::iterator::Signals;
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 pub use transcription_coordinator::TranscriptionCoordinator;
@@ -703,10 +703,12 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     // Warm up the recorder (loads VAD model) without opening the mic
     // This removes the ~700ms delay on first record
     recording_manager.warmup_recorder();
+    // Prime device enumeration in background so first shortcut can skip a slow CPAL scan.
+    recording_manager.prime_input_device_cache();
 
-    // Start background loading of the transcription model
-    // This removes the ~1.5s delay on first transcription
-    transcription_manager.initiate_model_load();
+    // Defer background model preload until overlay startup settles.
+    // This keeps app/overlay startup responsive so users can trigger recording sooner.
+    // We still trigger load on first shortcut press, and we keep a delayed fallback below.
 
     // Bootstrap global shortcuts during backend startup so hidden/background
     // launches can use one-shot actions (e.g. undo_last_transcript) without
@@ -829,14 +831,39 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         let _ = autostart_manager.disable();
     }
 
-    // Listen for "overlay-ready" event from the frontend
-    // This signals that the React component has registered its event listeners
-    // and is ready to receive show-overlay/hide-overlay events
-    let app_for_overlay_ready = app_handle.clone();
+    // Coordinate startup model preload so we do at most one boot-time attempt.
+    let startup_model_preload_started = Arc::new(AtomicBool::new(false));
+
+    // Listen for early overlay readiness from the frontend.
+    // This only guarantees show/hide visibility listeners are attached.
+    // Keep this path lightweight to preserve first overlay paint performance.
+    let transcription_manager_for_overlay_ready = transcription_manager.clone();
+    let startup_model_preload_started_for_overlay = startup_model_preload_started.clone();
     app_handle.listen("overlay-ready", move |_event| {
-        // Pass the app handle so mark_overlay_ready can re-emit state if needed
-        overlay::mark_overlay_ready(&app_for_overlay_ready);
-        tracing::debug!("Received overlay-ready event from frontend");
+        overlay::mark_overlay_listener_ready();
+        // Start model preload after overlay is ready so startup UI is not CPU-contended.
+        // Guarded to avoid duplicate startup attempts with the fallback path.
+        if !startup_model_preload_started_for_overlay.swap(true, Ordering::SeqCst) {
+            transcription_manager_for_overlay_ready.initiate_model_load();
+        }
+        tracing::debug!("Received overlay-ready event from frontend (visibility-ready)");
+    });
+
+    // Listen for full overlay readiness after replay-sensitive listeners are attached.
+    let app_for_overlay_fully_ready = app_handle.clone();
+    app_handle.listen("overlay-fully-ready", move |_event| {
+        overlay::mark_overlay_ready(&app_for_overlay_fully_ready);
+        tracing::debug!("Received overlay-fully-ready event from frontend");
+    });
+
+    // Safety fallback: if overlay-ready never arrives (unexpected), still preload after idle.
+    let transcription_manager_for_fallback = transcription_manager.clone();
+    let startup_model_preload_started_for_fallback = startup_model_preload_started.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        if !startup_model_preload_started_for_fallback.swap(true, Ordering::SeqCst) {
+            transcription_manager_for_fallback.initiate_model_load();
+        }
     });
 }
 

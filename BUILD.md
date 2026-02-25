@@ -65,5 +65,15 @@ bun install
 ### 3. Start Dev Server
 
 ```bash
-bun tauri dev
+bun run tauri:dev
 ```
+
+## Tailwind Source Scope (Startup Performance)
+
+Tailwind v4 source detection is intentionally scoped in
+`src/App.css` using `@import "tailwindcss" source(none);` plus explicit `@source` entries.
+This keeps `bun run tauri:dev` cold starts fast.
+
+- Keep Tailwind sources limited to UI files under `src/` and `index.html`.
+- Do not switch back to broad automatic scanning in this repository.
+- If you add UI files in new extensions/locations (for example `.jsx` or files outside `src/`), update the `@source` patterns in `src/App.css` accordingly.

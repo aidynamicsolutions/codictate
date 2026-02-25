@@ -655,6 +655,17 @@ const RecordingOverlay: React.FC = () => {
       }
       cleanupFns.push(unlistenHide);
 
+      // Signal visibility readiness as soon as core show/hide listeners are active.
+      // This keeps first overlay paint fast.
+      try {
+        await emit("overlay-ready");
+      } catch (error) {
+        logWarn(
+          `Failed to emit overlay-ready (continuing listener setup): ${error}`,
+          "fe-overlay",
+        );
+      }
+
       // Listen for mic-level updates
       const unlistenLevel = await listen<number[]>("mic-level", (event) => {
         if (ignore) return;
@@ -782,9 +793,17 @@ const RecordingOverlay: React.FC = () => {
       }
       cleanupFns.push(unlistenCursorIntent);
 
-      // Signal to Rust that the overlay is ready to receive events
-      // This prevents the race condition where events are emitted before listeners are registered
-      await emit("overlay-ready");
+      // Signal full readiness after replay-sensitive listeners are registered.
+      // Backend can safely re-emit the current overlay state now.
+      try {
+        await emit("overlay-fully-ready");
+      } catch (error) {
+        logWarn(
+          `Failed to emit overlay-fully-ready (continuing): ${error}`,
+          "fe-overlay",
+        );
+      }
+
     }
 
     setupListeners();

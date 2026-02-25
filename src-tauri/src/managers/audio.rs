@@ -164,6 +164,9 @@ pub struct AudioRecordingManager {
     
     /// The name of the device currently opened in the stream (for logging)
     current_device_name: Arc<Mutex<Option<String>>>,
+    /// Short-lived cache for input device enumeration to speed first trigger after startup.
+    device_cache:
+        Arc<Mutex<Option<(Instant, Vec<crate::audio_toolkit::audio::CpalDeviceInfo>)>>>,
 }
 
 impl AudioRecordingManager {
@@ -190,6 +193,7 @@ impl AudioRecordingManager {
             recording_start_time: Arc::new(Mutex::new(None)),
             timer_stop_tx: Arc::new(Mutex::new(None)),
             current_device_name: Arc::new(Mutex::new(None)),
+            device_cache: Arc::new(Mutex::new(None)),
         };
 
         // Always-on?  Open immediately.
@@ -202,13 +206,52 @@ impl AudioRecordingManager {
 
     /* ---------- helper methods --------------------------------------------- */
 
+    const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
+
+    fn update_device_cache(&self, devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>) {
+        *self.device_cache.lock().unwrap() = Some((Instant::now(), devices));
+    }
+
+    fn get_fresh_device_cache(
+        &self,
+    ) -> Option<(Duration, Vec<crate::audio_toolkit::audio::CpalDeviceInfo>)> {
+        let cache = self.device_cache.lock().unwrap();
+        let (cached_at, devices) = cache.as_ref()?;
+        let age = cached_at.elapsed();
+        if age > Self::DEVICE_CACHE_TTL {
+            return None;
+        }
+        Some((age, devices.clone()))
+    }
+
+    pub fn prime_input_device_cache(&self) {
+        let manager = self.clone();
+        std::thread::spawn(move || {
+            let start_time = Instant::now();
+            match list_input_devices() {
+                Ok(devices) => {
+                    let count = devices.len();
+                    manager.update_device_cache(devices);
+                    info!(
+                        "[TIMING] Primed input device cache in {:?} ({} devices)",
+                        start_time.elapsed(),
+                        count
+                    );
+                }
+                Err(e) => {
+                    debug!("Input device cache prime skipped: {}", e);
+                }
+            }
+        });
+    }
+
     /// Get the effective microphone device from a pre-fetched device list.
     /// This avoids calling list_input_devices() which is slow during failover.
     fn get_effective_device_from_list(
         &self,
         settings: &AppSettings,
         devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>,
-    ) -> Option<cpal::Device> {
+    ) -> Option<(cpal::Device, String)> {
         // Check if we're in clamshell mode and have a clamshell microphone configured
         let use_clamshell_mic = if let Ok(is_clamshell) = clamshell::is_clamshell() {
             is_clamshell && settings.clamshell_microphone.is_some()
@@ -221,7 +264,7 @@ impl AudioRecordingManager {
             return devices
                 .into_iter()
                 .find(|d| d.name == *device_name)
-                .map(|d| d.device);
+                .map(|d| (d.device, d.name));
         }
 
         // Logic for handling standard selection vs Default
@@ -232,7 +275,7 @@ impl AudioRecordingManager {
                 return devices
                     .into_iter()
                     .find(|d| d.name == *name)
-                    .map(|d| d.device);
+                    .map(|d| (d.device, d.name));
             }
         }
         
@@ -254,7 +297,7 @@ impl AudioRecordingManager {
                 
                 if let Some(builtin) = builtin_mic {
                     info!("Found Built-in fallback microphone: '{}'. Using it instead of Bluetooth default.", builtin.name);
-                    return Some(builtin.device.clone());
+                    return Some((builtin.device.clone(), builtin.name.clone()));
                 }
                 
                 // No built-in found — try any non-Bluetooth, non-virtual device
@@ -266,7 +309,7 @@ impl AudioRecordingManager {
                 
                 if let Some(alt) = non_bt_mic {
                     info!("No Built-in mic found, using non-Bluetooth alternative: '{}'", alt.name);
-                    return Some(alt.device.clone());
+                    return Some((alt.device.clone(), alt.name.clone()));
                 }
                 
                 info!("No non-Bluetooth microphone found. Falling back to Bluetooth default.");
@@ -274,80 +317,13 @@ impl AudioRecordingManager {
         }
         
         // Standard default behavior if not Bluetooth or no fallback found
-        devices.into_iter().find(|d| d.is_default).map(|d| d.device)
+        devices
+            .into_iter()
+            .find(|d| d.is_default)
+            .map(|d| (d.device, d.name))
     }
     
 
-    /// Get the name of the currently effective microphone device.
-    /// This considers clamshell mode overrides and falls back to the default device.
-    pub fn get_effective_device_name(&self) -> Option<String> {
-        let settings = get_settings(&self.app_handle);
-        
-        // Check if we're in clamshell mode and have a clamshell microphone configured
-        let use_clamshell_mic = if let Ok(is_clamshell) = clamshell::is_clamshell() {
-            is_clamshell && settings.clamshell_microphone.is_some()
-        } else {
-            false
-        };
-
-        // First try explicitly selected devices
-        if use_clamshell_mic {
-            if let Some(name) = settings.clamshell_microphone.clone() {
-                return Some(name);
-            }
-        }
-        
-        if let Some(name) = settings.selected_microphone.clone() {
-            return Some(name);
-        }
-
-        // No mic explicitly selected - prioritize built-in over Bluetooth default
-        debug!("No microphone selected in settings, checking available devices");
-        match list_input_devices() {
-            Ok(devices) => {
-                // First, try to find a built-in microphone
-                let builtin_device = devices.iter().find(|d| {
-                    crate::audio_device_info::is_device_builtin(&d.name) &&
-                    !crate::audio_device_info::is_device_virtual(&d.name)
-                });
-                
-                if let Some(device) = builtin_device {
-                    info!(device = %device.name, "Preferring built-in microphone over system default");
-                    return Some(device.name.clone());
-                }
-                
-                // If no built-in found, use system default (but not if Bluetooth)
-                let default_device = devices.iter().find(|d| d.is_default);
-                if let Some(device) = default_device {
-                    // If default is Bluetooth, try to find any non-Bluetooth alternative
-                    if crate::audio_device_info::is_device_bluetooth(&device.name) {
-                        let non_bt_device = devices.iter().find(|d| {
-                            !crate::audio_device_info::is_device_bluetooth(&d.name) &&
-                            !crate::audio_device_info::is_device_virtual(&d.name)
-                        });
-                        
-                        if let Some(alt_device) = non_bt_device {
-                            info!(
-                                default = %device.name, 
-                                alternative = %alt_device.name, 
-                                "Default is Bluetooth, using non-Bluetooth alternative"
-                            );
-                            return Some(alt_device.name.clone());
-                        }
-                    }
-                    
-                    debug!(device = %device.name, "Using default input device");
-                    return Some(device.name.clone());
-                }
-            }
-            Err(e) => {
-                debug!("Failed to list devices for default: {}", e);
-            }
-        }
-        
-        None
-    }
-    
     /// Get the device name from settings only (no device enumeration).
     /// This is faster but won't return the default device if nothing is selected.
     fn get_selected_device_name_fast(&self) -> Option<String> {
@@ -367,42 +343,66 @@ impl AudioRecordingManager {
         settings.selected_microphone.clone()
     }
 
-    /// Check if the currently selected microphone is a Bluetooth device.
-    /// Uses a fast path that avoids device enumeration when possible.
-    pub fn is_current_device_bluetooth(&self) -> bool {
-        // Fast path: check settings first (no CPAL calls)
-        if let Some(device_name) = self.get_selected_device_name_fast() {
+    /// Fast pre-start hint for showing the "connecting microphone" overlay.
+    /// Uses only explicit settings (no CPAL device enumeration).
+    pub fn should_show_connecting_overlay_pre_start(&self) -> bool {
+        let Some(device_name) = self.get_selected_device_name_fast() else {
+            return false;
+        };
+
+        // "Default" means no explicit device selection; avoid expensive detection here.
+        if device_name.eq_ignore_ascii_case("default") {
+            return false;
+        }
+
+        let is_bt = crate::audio_device_info::is_device_bluetooth(&device_name);
+        info!(
+            device = device_name,
+            is_bluetooth = is_bt,
+            method = "settings_fast_prestart",
+            "Bluetooth device check"
+        );
+        is_bt
+    }
+
+    /// Determine Bluetooth status from the currently opened stream device.
+    /// This reflects the actual device used for recording without extra enumeration.
+    pub fn is_active_stream_bluetooth(&self) -> bool {
+        // Only consider active-stream Bluetooth checks when the stream is open.
+        if !*self.is_open.lock().unwrap() {
+            return false;
+        }
+
+        if let Some(device_name) = self.current_device_name.lock().unwrap().clone() {
             let is_bt = crate::audio_device_info::is_device_bluetooth(&device_name);
             info!(
                 device = device_name,
                 is_bluetooth = is_bt,
-                method = "settings",
+                method = "active_stream",
                 "Bluetooth device check"
             );
             return is_bt;
         }
-        
-        // Slow path: need to enumerate devices to find the default
-        // Only do this if no device is explicitly selected in settings
-        debug!("No device in settings, checking default device (slow path)");
-        match self.get_effective_device_name() {
-            Some(device_name) => {
-                let is_bt = crate::audio_device_info::is_device_bluetooth(&device_name);
-                info!(
-                    device = device_name,
-                    is_bluetooth = is_bt,
-                    method = "default_device",
-                    "Bluetooth device check"
-                );
-                is_bt
-            }
-            None => {
-                debug!("No device name available, assuming not Bluetooth");
-                false
-            }
+
+        // Race fallback: stream is open but active device identity is not populated yet
+        // (e.g., narrow prewarm/start overlap). Use explicit settings as a conservative hint.
+        let Some(device_name) = self.get_selected_device_name_fast() else {
+            return false;
+        };
+        if device_name.eq_ignore_ascii_case("default") {
+            return false;
         }
+
+        let is_bt = crate::audio_device_info::is_device_bluetooth(&device_name);
+        info!(
+            device = device_name,
+            is_bluetooth = is_bt,
+            method = "active_stream_settings_fallback",
+            "Bluetooth device check"
+        );
+        is_bt
     }
-    
+
     /// Check if this is the first recording trigger since app start.
     /// Used to determine longer warmup times on first use.
     pub fn is_first_trigger(&self) -> bool {
@@ -456,6 +456,7 @@ impl AudioRecordingManager {
         let recorder = Arc::clone(&self.recorder);
         let app_handle = self.app_handle.clone();
         let did_mute = Arc::clone(&self.did_mute);
+        let current_device_name = Arc::clone(&self.current_device_name);
         
         std::thread::spawn(move || {
             // Open the microphone stream to trigger Bluetooth profile switch
@@ -493,7 +494,7 @@ impl AudioRecordingManager {
                 let mut recorder_guard = recorder.lock().unwrap();
                 if let Some(rec) = recorder_guard.as_mut() {
                     // Get the device to use by name lookup
-                    let selected_device = {
+                    let selected_target: Option<(cpal::Device, String)> = {
                         // Get effective device considering clamshell mode
                         let use_clamshell = if let Ok(is_clamshell) = clamshell::is_clamshell() {
                             is_clamshell && settings.clamshell_microphone.is_some()
@@ -512,16 +513,25 @@ impl AudioRecordingManager {
                             match list_input_devices() {
                                 Ok(devices) => devices.into_iter()
                                     .find(|d| &d.name == name)
-                                    .map(|d| d.device),
+                                    .map(|d| (d.device, d.name)),
                                 Err(_) => None
                             }
                         })
                     };
-                    
+
+                    let selected_device = selected_target.as_ref().map(|(device, _)| device.clone());
+
                     if let Err(e) = rec.open(selected_device) {
                         debug!("Pre-warm failed to open stream: {}", e);
                         return;
                     }
+
+                    // Capture active stream identity for downstream Bluetooth warmup decisions.
+                    let active_name = selected_target
+                        .as_ref()
+                        .map(|(_, name)| name.clone())
+                        .unwrap_or_else(|| "Default".to_string());
+                    *current_device_name.lock().unwrap() = Some(active_name);
                 }
             }
             
@@ -538,6 +548,7 @@ impl AudioRecordingManager {
                     let _ = rec.close();
                 }
                 *is_open.lock().unwrap() = false;
+                *current_device_name.lock().unwrap() = None;
                 
                 // Reset mute flag
                 *did_mute.lock().unwrap() = false;
@@ -604,6 +615,105 @@ impl AudioRecordingManager {
         }
     }
 
+    fn persist_auto_switched_microphone(&self, previous: &str, current: &str) {
+        // Persist only after a fresh device enumeration pass confirms the fallback.
+        let mut settings = get_settings(&self.app_handle);
+        settings.selected_microphone = Some(current.to_string());
+        crate::settings::write_settings(&self.app_handle, settings);
+
+        info!(
+            "Emitting audio-device-auto-switched event: {} -> {}",
+            previous, current
+        );
+        let _ = self.app_handle.emit(
+            "audio-device-auto-switched",
+            serde_json::json!({
+                "previous": previous,
+                "current": current
+            }),
+        );
+
+        let _ = self
+            .app_handle
+            .notification()
+            .builder()
+            .title("Microphone Changed")
+            .body(&format!(
+                "Switched to {} - {} is disconnected.",
+                current, previous
+            ))
+            .show();
+    }
+
+    fn resolve_device_open_target(
+        &self,
+        settings: &AppSettings,
+        target_device_name: &str,
+        devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>,
+        allow_persist_fallback: bool,
+    ) -> (Option<cpal::Device>, String) {
+        let selected_device = self.get_effective_device_from_list(settings, devices.clone());
+        let has_explicit_device = settings
+            .selected_microphone
+            .as_ref()
+            .is_some_and(|name| !name.eq_ignore_ascii_case("default"));
+
+        if selected_device.is_none() && has_explicit_device {
+            // Selected device not found in device list - it's disconnected
+            // Trigger fallback BEFORE attempting to open
+            warn!(
+                "Selected device '{}' not found in available devices - triggering fallback",
+                target_device_name
+            );
+
+            if let Some((fallback_name, fallback_device)) =
+                self.find_fallback_device_from_list(target_device_name, devices.clone())
+            {
+                info!("Switching to fallback device: {}", fallback_name);
+
+                if allow_persist_fallback {
+                    self.persist_auto_switched_microphone(target_device_name, &fallback_name);
+                } else {
+                    info!(
+                        "Deferred fallback persistence for '{}' -> '{}' until a fresh re-enumeration confirms topology",
+                        target_device_name, fallback_name
+                    );
+                }
+
+                (Some(fallback_device), fallback_name)
+            } else {
+                // No fallback found - will try default device
+                warn!("No fallback device found, attempting to use system default");
+                (None, "Default".to_string())
+            }
+        } else if let Some((selected_dev, selected_name)) = selected_device {
+            // Device found - proceed normally
+            (Some(selected_dev), selected_name)
+        } else {
+            // No specific device resolved — pick best available to avoid cpal
+            // defaulting to a Bluetooth device the OS just switched to
+            let best = devices
+                .iter()
+                .find(|d| crate::audio_device_info::is_device_builtin(&d.name))
+                .or_else(|| {
+                    devices.iter().find(|d| {
+                        !crate::audio_device_info::is_device_bluetooth(&d.name)
+                            && !crate::audio_device_info::is_device_virtual(&d.name)
+                            && !crate::audio_device_info::is_device_continuity_camera(&d.name)
+                    })
+                })
+                .or_else(|| devices.iter().find(|d| d.is_default));
+
+            match best {
+                Some(dev) => {
+                    info!("No device resolved, using best available: '{}'", dev.name);
+                    (Some(dev.device.clone()), dev.name.clone())
+                }
+                None => (None, "Default".to_string()),
+            }
+        }
+    }
+
     pub fn start_microphone_stream(&self) -> Result<(), anyhow::Error> {
         // ══════════════════════════════════════════════════════════════════════
         // PHASE 1: Quick check if already open (minimal lock, fast path)
@@ -623,17 +733,70 @@ impl AudioRecordingManager {
         // PHASE 2: Device enumeration OUTSIDE of locks (this is the slow part)
         // ══════════════════════════════════════════════════════════════════════
         let enum_start = Instant::now();
-        let devices = list_input_devices()
-            .map_err(|e| anyhow::anyhow!("Failed to enumerate devices: {}", e))?;
-        info!("[TIMING] Device enumeration completed in {:?} ({} devices)", enum_start.elapsed(), devices.len());
+        let (mut devices, mut used_cached_devices) =
+            if let Some((cache_age, cached_devices)) = self.get_fresh_device_cache() {
+                info!(
+                    "[TIMING] Device enumeration skipped via cache (age: {:?}, {} devices)",
+                    cache_age,
+                    cached_devices.len()
+                );
+                (cached_devices, true)
+            } else {
+                let enumerated = list_input_devices()
+                    .map_err(|e| anyhow::anyhow!("Failed to enumerate devices: {}", e))?;
+                info!(
+                    "[TIMING] Device enumeration completed in {:?} ({} devices)",
+                    enum_start.elapsed(),
+                    enumerated.len()
+                );
+                self.update_device_cache(enumerated.clone());
+                (enumerated, false)
+            };
 
         // Get settings and find the target device (still outside locks)
         let settings = get_settings(&self.app_handle);
-        let selected_device = self.get_effective_device_from_list(&settings, devices.clone());
-        
         // Determine failed device name for potential fallback logging
-        let target_device_name = settings.selected_microphone.clone().unwrap_or_else(|| "Default".to_string());
+        let target_device_name = settings
+            .selected_microphone
+            .clone()
+            .unwrap_or_else(|| "Default".to_string());
         debug!("Target device: {}", target_device_name);
+        let has_explicit_device = settings
+            .selected_microphone
+            .as_ref()
+            .is_some_and(|name| !name.eq_ignore_ascii_case("default"));
+
+        // Never trust cached topology when an explicit device appears missing.
+        // Refresh before making fallback/persistence decisions.
+        if used_cached_devices
+            && has_explicit_device
+            && self
+                .get_effective_device_from_list(&settings, devices.clone())
+                .is_none()
+        {
+            let refresh_start = Instant::now();
+            info!(
+                "Selected device '{}' missing in cached snapshot, refreshing topology before fallback",
+                target_device_name
+            );
+            let refreshed = list_input_devices()
+                .map_err(|e| anyhow::anyhow!("Failed to refresh devices: {}", e))?;
+            info!(
+                "[TIMING] Device enumeration refreshed in {:?} ({} devices) after cached selected-device miss",
+                refresh_start.elapsed(),
+                refreshed.len()
+            );
+            self.update_device_cache(refreshed.clone());
+            devices = refreshed;
+            used_cached_devices = false;
+        }
+
+        let (device_to_open, mut active_device_name) = self.resolve_device_open_target(
+            &settings,
+            &target_device_name,
+            devices.clone(),
+            !used_cached_devices,
+        );
 
         // ══════════════════════════════════════════════════════════════════════
         // PHASE 3: Prepare recorder (VAD path resolution - fast)
@@ -672,78 +835,53 @@ impl AudioRecordingManager {
                 &self.app_handle,
             )?);
         }
-        // Get the actual device to open - may differ from selected_device if fallback needed
-        // Treat "default"/"Default" the same as None (not an explicit device selection)
-        let has_explicit_device = settings.selected_microphone.as_ref()
-            .is_some_and(|name| !name.eq_ignore_ascii_case("default"));
-        let (device_to_open, active_device_name) = if selected_device.is_none() && has_explicit_device {
-            // Selected device not found in device list - it's disconnected
-            // Trigger fallback BEFORE attempting to open
-            warn!("Selected device '{}' not found in available devices - triggering fallback", target_device_name);
-            
-            if let Some((fallback_name, fallback_device)) = 
-                self.find_fallback_device_from_list(&target_device_name, devices.clone()) 
-            {
-                info!("Switching to fallback device: {}", fallback_name);
-                
-                // Update settings to persist the fallback choice
-                let mut settings = get_settings(&self.app_handle);
-                settings.selected_microphone = Some(fallback_name.clone());
-                crate::settings::write_settings(&self.app_handle, settings);
-                
-                // Notify frontend and system
-                info!("Emitting audio-device-auto-switched event: {} -> {}", target_device_name, fallback_name);
-                let _ = self.app_handle.emit("audio-device-auto-switched", serde_json::json!({
-                    "previous": target_device_name,
-                    "current": fallback_name
-                }));
-                
-                let _ = self.app_handle.notification().builder()
-                    .title("Microphone Changed")
-                    .body(&format!("Switched to {} - {} is disconnected.", fallback_name, target_device_name))
-                    .show();
-                
-                (Some(fallback_device), fallback_name)
-            } else {
-                // No fallback found - will try default device
-                warn!("No fallback device found, attempting to use system default");
-                (None, "Default".to_string())
-            }
-        } else if selected_device.is_some() {
-            // Device found - proceed normally
-            (selected_device.clone(), target_device_name.clone())
-        } else {
-            // No specific device resolved — pick best available to avoid cpal
-            // defaulting to a Bluetooth device the OS just switched to
-            let best = devices.iter().find(|d| {
-                crate::audio_device_info::is_device_builtin(&d.name)
-            }).or_else(|| devices.iter().find(|d| {
-                !crate::audio_device_info::is_device_bluetooth(&d.name)
-                && !crate::audio_device_info::is_device_virtual(&d.name)
-                && !crate::audio_device_info::is_device_continuity_camera(&d.name)
-            })).or_else(|| devices.iter().find(|d| d.is_default));
-
-            match best {
-                Some(dev) => {
-                    info!("No device resolved, using best available: '{}'", dev.name);
-                    (Some(dev.device.clone()), dev.name.clone())
-                }
-                None => (None, "Default".to_string()),
-            }
-        };
-
         if let Some(rec) = recorder_opt.as_mut() {
             // First attempt to open with the target device (already resolved via fallback if needed)
             if let Err(e) = rec.open(device_to_open.clone()) {
-                error!("Failed to open recorder: {}", e);
-                
-                // If we already did a fallback above, there's no more fallback to try
-                // Just fail with an error
-                return Err(anyhow::anyhow!("Failed to open microphone: {}", e));
-            } else {
-                // Successfully opened - track the active device
-                *self.current_device_name.lock().unwrap() = Some(active_device_name.clone());
+                if used_cached_devices {
+                    warn!(
+                        "Failed to open recorder from cached topology: {}. Retrying once with fresh enumeration",
+                        e
+                    );
+                    let refresh_start = Instant::now();
+                    let refreshed = list_input_devices().map_err(|refresh_err| {
+                        anyhow::anyhow!(
+                            "Failed to refresh devices after cached open failure (initial error: {}, refresh error: {})",
+                            e,
+                            refresh_err
+                        )
+                    })?;
+                    info!(
+                        "[TIMING] Device enumeration refreshed in {:?} ({} devices) after open failure",
+                        refresh_start.elapsed(),
+                        refreshed.len()
+                    );
+                    self.update_device_cache(refreshed.clone());
+
+                    let (retry_device_to_open, retry_active_device_name) =
+                        self.resolve_device_open_target(
+                            &settings,
+                            &target_device_name,
+                            refreshed,
+                            true,
+                        );
+
+                    if let Err(retry_e) = rec.open(retry_device_to_open) {
+                        error!(
+                            "Failed to open recorder after fresh retry (initial error: {}, retry error: {})",
+                            e, retry_e
+                        );
+                        return Err(anyhow::anyhow!("Failed to open microphone: {}", retry_e));
+                    }
+                    active_device_name = retry_active_device_name;
+                } else {
+                    error!("Failed to open recorder: {}", e);
+                    return Err(anyhow::anyhow!("Failed to open microphone: {}", e));
+                }
             }
+
+            // Successfully opened - track the active device
+            *self.current_device_name.lock().unwrap() = Some(active_device_name.clone());
         }
 
         *open_flag = true;
@@ -845,6 +983,7 @@ impl AudioRecordingManager {
         }
 
         *open_flag = false;
+        *self.current_device_name.lock().unwrap() = None;
         debug!("Microphone stream stopped");
     }
 

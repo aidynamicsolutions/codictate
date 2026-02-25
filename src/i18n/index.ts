@@ -2,6 +2,7 @@ import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import { locale } from "@tauri-apps/plugin-os";
 import { LANGUAGE_METADATA } from "./languages";
+import enTranslation from "./locales/en/translation.json";
 import { commands } from "@/bindings";
 import {
   getLanguageDirection,
@@ -9,23 +10,23 @@ import {
   updateDocumentLanguage,
 } from "@/lib/utils/rtl";
 
-// Auto-discover translation files using Vite's glob import
-const localeModules = import.meta.glob<{ default: Record<string, unknown> }>(
-  "./locales/*/translation.json",
-  { eager: true },
-);
+type LocaleModule = { default: Record<string, unknown> };
+type LocaleLoader = () => Promise<LocaleModule>;
 
-// Build resources from discovered locale files
-const resources: Record<string, { translation: Record<string, unknown> }> = {};
-for (const [path, module] of Object.entries(localeModules)) {
+// Keep locale discovery static but defer loading each JSON file until needed.
+const localeModules = import.meta.glob<LocaleModule>(
+  "./locales/*/translation.json",
+);
+const localeLoaders: Record<string, LocaleLoader> = {};
+for (const [path, loader] of Object.entries(localeModules)) {
   const langCode = path.match(/\.\/locales\/(.+)\/translation\.json/)?.[1];
   if (langCode) {
-    resources[langCode] = { translation: module.default };
+    localeLoaders[langCode] = loader as LocaleLoader;
   }
 }
 
 // Build supported languages list from discovered locales + metadata
-export const SUPPORTED_LANGUAGES = Object.keys(resources)
+export const SUPPORTED_LANGUAGES = Object.keys(localeLoaders)
   .map((code) => {
     const meta = LANGUAGE_METADATA[code];
     if (!meta) {
@@ -51,6 +52,34 @@ export const SUPPORTED_LANGUAGES = Object.keys(resources)
   });
 
 export type SupportedLanguageCode = string;
+const loadedLocales = new Set<string>(["en"]);
+
+const ensureLocaleLoaded = async (
+  langCode: SupportedLanguageCode,
+): Promise<boolean> => {
+  if (
+    loadedLocales.has(langCode) ||
+    i18n.hasResourceBundle(langCode, "translation")
+  ) {
+    loadedLocales.add(langCode);
+    return true;
+  }
+
+  const loader = localeLoaders[langCode];
+  if (!loader) {
+    return false;
+  }
+
+  try {
+    const module = await loader();
+    i18n.addResourceBundle(langCode, "translation", module.default, true, true);
+    loadedLocales.add(langCode);
+    return i18n.hasResourceBundle(langCode, "translation");
+  } catch (e) {
+    console.warn(`Failed to load locale "${langCode}"`, e);
+    return false;
+  }
+};
 
 // Check if a language code is supported
 const getSupportedLanguage = (
@@ -75,7 +104,9 @@ const getSupportedLanguage = (
 // Initialize i18n with English as default
 // Language will be synced from settings after init
 i18n.use(initReactI18next).init({
-  resources,
+  resources: {
+    en: { translation: enTranslation as Record<string, unknown> },
+  },
   lng: "en",
   fallbackLng: "en",
   interpolation: {
@@ -86,22 +117,37 @@ i18n.use(initReactI18next).init({
   },
 });
 
+export const changeLanguageSafely = async (
+  langCode: string | null | undefined,
+): Promise<boolean> => {
+  const supported = getSupportedLanguage(langCode);
+  if (!supported) {
+    return false;
+  }
+
+  const localeReady = await ensureLocaleLoaded(supported);
+  if (!localeReady || !i18n.hasResourceBundle(supported, "translation")) {
+    console.warn(`Skipping language switch to "${supported}" (bundle unavailable)`);
+    return false;
+  }
+
+  if (supported !== i18n.language) {
+    await i18n.changeLanguage(supported);
+  }
+
+  return true;
+};
+
 // Sync language from app settings
 export const syncLanguageFromSettings = async () => {
   try {
     const result = await commands.getAppSettings();
     if (result.status === "ok" && result.data.app_language) {
-      const supported = getSupportedLanguage(result.data.app_language);
-      if (supported && supported !== i18n.language) {
-        await i18n.changeLanguage(supported);
-      }
+      await changeLanguageSafely(result.data.app_language);
     } else {
       // Fall back to system locale detection if no saved preference
       const systemLocale = await locale();
-      const supported = getSupportedLanguage(systemLocale);
-      if (supported && supported !== i18n.language) {
-        await i18n.changeLanguage(supported);
-      }
+      await changeLanguageSafely(systemLocale);
     }
   } catch (e) {
     console.warn("Failed to sync language from settings:", e);

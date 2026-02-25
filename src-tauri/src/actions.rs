@@ -639,25 +639,22 @@ impl ShortcutAction for TranscribeAction {
                 // This allows the microphone to be activated before playing the sound
                 debug!("On-demand mode: Starting recording first (blocking), then audio feedback");
 
-                // Check if we're using a Bluetooth device and if this is the first trigger
-                // For Bluetooth: show "Starting microphone..." overlay during warmup
-                // For first trigger of ANY device: show "Starting microphone..." while initializing
-                // Note: Use catch_unwind to protect against any panics in device detection
-                let is_bluetooth = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    rm.is_current_device_bluetooth()
+                let is_first_trigger = rm.is_first_trigger();
+                // Fast pre-start hint only from explicit settings.
+                // Avoids an extra default-device enumeration in the startup hot path.
+                let likely_bluetooth = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    rm.should_show_connecting_overlay_pre_start()
                 }))
                 .unwrap_or_else(|e| {
-                    error!("Panic in Bluetooth detection: {:?}", e);
+                    error!("Panic in pre-start Bluetooth hint: {:?}", e);
                     false
                 });
-
-                let is_first_trigger = rm.is_first_trigger();
 
                 // Only show "Starting microphone..." for Bluetooth devices.
                 // Internal mics start fast enough (~100-200ms) that we can just wait
                 // and show the recording overlay directly - no confusing state transitions.
                 // Bluetooth mics need 1-2s warmup, so the connecting overlay sets expectations.
-                if is_bluetooth {
+                if likely_bluetooth {
                     info!("Bluetooth mic detected, showing connecting overlay");
                     utils::show_connecting_overlay(app);
                 }
@@ -668,6 +665,23 @@ impl ShortcutAction for TranscribeAction {
                 if rm.try_start_recording(binding_id, &session_id) {
                     recording_started = true;
                     debug!("Recording started in {:?}", recording_start_time.elapsed());
+
+                    // Determine Bluetooth status from the actual opened stream device.
+                    // This avoids redundant pre-start device scans and stays accurate.
+                    let is_bluetooth = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        rm.is_active_stream_bluetooth()
+                    }))
+                    .unwrap_or_else(|e| {
+                        error!("Panic in active-stream Bluetooth detection: {:?}", e);
+                        false
+                    });
+
+                    // If we couldn't infer Bluetooth from settings pre-start (e.g. Default mic),
+                    // but the active stream is Bluetooth, still show connecting state before delay.
+                    if is_bluetooth && !likely_bluetooth {
+                        info!("Bluetooth mic detected after stream open, showing connecting overlay");
+                        utils::show_connecting_overlay(app);
+                    }
 
                     // Add warmup delay for Bluetooth microphones.
                     // Bluetooth mics often send silence while waking up, causing first words to be lost.
