@@ -60,14 +60,14 @@
 - [x] 3.2 Add Rust unit tests for settings migration (`share_usage_analytics` defaults to `true` when field is missing).
 - [x] 3.3 Add Rust unit tests for analytics event/property allowlist enforcement.
 - [x] 3.4 Add Rust unit tests for growth state transitions and eligibility cooldown rules.
-- [ ] 3.5 Manually verify analytics delivery in Aptabase dashboard for enabled flows.
-- [ ] 3.6 Manually verify no analytics delivery when:
+- [x] 3.5 Manually verify analytics delivery in Aptabase dashboard for enabled flows.
+- [x] 3.6 Manually verify no analytics delivery when:
   - settings toggle is disabled
   - `HANDY_DISABLE_ANALYTICS=1`
   - app key is missing
-- [ ] 3.7 Validate that MLX/exit shutdown behavior remains intact alongside Aptabase plugin exit flush handling.
-- [ ] 3.8 Verify release-like run succeeds with runtime `APTABASE_APP_KEY` unset when build-time key was embedded via CI.
-- [ ] 3.9 Manual growth-flow validation:
+- [x] 3.7 Validate that MLX/exit shutdown behavior remains intact alongside Aptabase plugin exit flush handling.
+- [x] 3.8 Verify release-like run succeeds with runtime `APTABASE_APP_KEY` unset when build-time key was embedded via CI.
+- [x] 3.9 Manual growth-flow validation:
   - 5 successful feature uses emits one `aha_moment_reached`
   - upgrade prompt appears when eligible
   - dismiss applies 14-day cooldown behavior
