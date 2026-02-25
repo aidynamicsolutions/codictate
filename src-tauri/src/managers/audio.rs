@@ -106,6 +106,42 @@ const WHISPER_SAMPLE_RATE: usize = 16000;
 /* ──────────────────────────────────────────────────────────────── */
 
 #[derive(Clone, Debug)]
+pub struct StoppedRecording {
+    pub samples_for_transcription: Vec<f32>,
+    pub speech_duration_ms: i64,
+    pub recording_duration_ms: i64,
+}
+
+fn build_stopped_recording(
+    speech_samples: Vec<f32>,
+    mut recording_duration_ms: i64,
+) -> StoppedRecording {
+    let speech_sample_count = speech_samples.len();
+    let mut samples_for_transcription = speech_samples;
+    if speech_sample_count < WHISPER_SAMPLE_RATE && speech_sample_count > 0 {
+        samples_for_transcription.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
+    }
+
+    let mut speech_duration_ms = ((speech_sample_count as i64) * 1000) / WHISPER_SAMPLE_RATE as i64;
+
+    if recording_duration_ms <= 0 && speech_duration_ms > 0 {
+        recording_duration_ms = speech_duration_ms;
+    }
+
+    if recording_duration_ms > 0 {
+        speech_duration_ms = speech_duration_ms.min(recording_duration_ms);
+    }
+
+    StoppedRecording {
+        samples_for_transcription,
+        speech_duration_ms,
+        recording_duration_ms,
+    }
+}
+
+/* ──────────────────────────────────────────────────────────────── */
+
+#[derive(Clone, Debug)]
 pub enum RecordingState {
     Idle,
     Preparing { binding_id: String },
@@ -1214,7 +1250,7 @@ impl AudioRecordingManager {
         Ok(())
     }
 
-    pub fn stop_recording(&self, binding_id: &str) -> Option<Vec<f32>> {
+    pub fn stop_recording(&self, binding_id: &str) -> Option<StoppedRecording> {
         let mut state = self.state.lock().unwrap();
 
         match *state {
@@ -1233,6 +1269,18 @@ impl AudioRecordingManager {
             } if active == binding_id => {
                 *state = RecordingState::Idle;
                 drop(state);
+
+                let recording_duration_ms = {
+                    let recording_start = *self.recording_start_time.lock().unwrap();
+                    recording_start
+                        .map(|start| start.elapsed().as_millis() as i64)
+                        .unwrap_or_else(|| {
+                            warn!(
+                                "Recording start time missing at stop; falling back to speech duration for stats"
+                            );
+                            0
+                        })
+                };
                 
                 // Stop the recording timer
                 self.stop_recording_timer();
@@ -1257,23 +1305,16 @@ impl AudioRecordingManager {
                     self.stop_microphone_stream();
                 }
 
-                // Pad if very short
-                let s_len = samples.len();
+                let speech_sample_count = samples.len();
                 // debug!("Got {} samples", s_len);
                 
                 // Check for 0 samples - this likely means the audio stream died (e.g. device disconnected)
                 // User will see no audio movement in the visualizer and can switch manually
-                if s_len == 0 {
+                if speech_sample_count == 0 {
                     warn!("Recording yielded 0 samples - device may have stopped working. User should check audio visualizer and switch microphone if needed.");
                 }
 
-                if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
-                    let mut padded = samples;
-                    padded.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
-                    Some(padded)
-                } else {
-                    Some(samples)
-                }
+                Some(build_stopped_recording(samples, recording_duration_ms))
             }
             _ => {
                 // Idle or other binding active
@@ -1334,5 +1375,29 @@ impl AudioRecordingManager {
             }
             RecordingState::Idle => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_stopped_recording, WHISPER_SAMPLE_RATE};
+
+    #[test]
+    fn short_clip_padding_does_not_change_duration_fields() {
+        let short_speech_samples = vec![0.1_f32; 8_000];
+        let stopped = build_stopped_recording(short_speech_samples, 1_500);
+
+        assert_eq!(stopped.samples_for_transcription.len(), WHISPER_SAMPLE_RATE * 5 / 4);
+        assert_eq!(stopped.speech_duration_ms, 500);
+        assert_eq!(stopped.recording_duration_ms, 1_500);
+    }
+
+    #[test]
+    fn speech_duration_is_clamped_to_recording_duration() {
+        let speech_samples = vec![0.1_f32; 16_000];
+        let stopped = build_stopped_recording(speech_samples, 400);
+
+        assert_eq!(stopped.speech_duration_ms, 400);
+        assert_eq!(stopped.recording_duration_ms, 400);
     }
 }

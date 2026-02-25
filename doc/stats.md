@@ -7,9 +7,9 @@ The Home page displays aggregated statistics about the user's transcription acti
 | Stat | Description | Formula |
 |------|-------------|---------|
 | **Daily Streak** | Consecutive days with at least one transcription | Count of unbroken daily usage |
-| **WPM** | Words per minute (average dictation speed) | `total_words / total_duration_minutes` |
+| **WPM** | Words per minute (average dictation speed) | `total_words / total_speech_duration_minutes` |
 | **Total Words** | Total words dictated across all transcriptions | Sum of word counts |
-| **Time Saved** | Estimated time saved vs. typing | `(total_words / 40) - total_duration_minutes` |
+| **Time Saved** | Estimated time saved vs. typing | `(total_words / 40) - total_recording_duration_minutes` |
 | **Faster Than Typing %** | How much faster than average typing speed | `((wpm - 40) / 40) × 100` |
 | **Filler Words Removed** | Total filler words (uh, um, etc.) automatically removed | Count of matched filler patterns |
 
@@ -86,15 +86,15 @@ This dynamic tile alternates between **Daily Streak** and **Filler Words Removed
 
 ### Word Count
 - Uses **post-processed text** if available, otherwise raw transcription text
-- Simple whitespace-based word splitting (`split_whitespace()`)
+- Unicode-aware segmentation (`unicode_words()`)
 
 ### WPM (Words Per Minute)
-- Total words divided by total recording duration in minutes
+- Total words divided by total **speech-active** duration in minutes
 - Threshold: Minimum duration of **0.06 seconds** (0.001 min) required to calculate WPM
 - Returns `0.0` if no recordings exist or total duration is below threshold
 
 ### Time Saved
-- Compares dictation time to estimated typing time
+- Compares dictation **recording** time to estimated typing time
 - Assumes average typing speed of **40 WPM**
 - Can be negative if dictation is slower than typing
 
@@ -129,6 +129,23 @@ This dynamic tile alternates between **Daily Streak** and **Filler Words Removed
 - Backend emits `history-updated` event after each transcription save
 - Frontend listens for this event and refetches stats
 - Updates also trigger on: clear all (though stats persist)
+
+## Duration Semantics Migration
+
+- New entries store both:
+  - `duration_ms`: recording elapsed duration (wall-clock during hold-to-talk)
+  - `speech_duration_ms`: VAD-retained unpadded speech duration
+- WPM uses `total_speech_duration_ms`
+- Time Saved uses `total_duration_ms`
+- Existing installs run a one-time best-effort backfill that preserves lifetime totals while correcting duration semantics for available history rows.
+- A one-time visible shift in WPM/Time Saved is expected after this migration.
+
+## Stats Backup and Recovery
+
+- Before duration backfill mutates stats, the app writes:
+  - Filesystem snapshot: `app_data/stats-backups/user_stats-pre-duration-v1-<timestamp>.json`
+  - Database snapshot row: `user_stats_migration_backup`
+- If migration fails, transaction rollback preserves pre-mutation DB state and both backups remain available for recovery.
 
 ## History Management
 

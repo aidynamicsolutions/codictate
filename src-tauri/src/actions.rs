@@ -778,7 +778,7 @@ impl ShortcutAction for TranscribeAction {
                 );
 
                 let stop_recording_time = Instant::now();
-                if let Some(samples) = rm.stop_recording(&binding_id) {
+                if let Some(stopped_recording) = rm.stop_recording(&binding_id) {
                     // Register this session as active for transcription
                     tm.set_active_session(session_id_for_task.clone());
 
@@ -789,12 +789,14 @@ impl ShortcutAction for TranscribeAction {
                     debug!(
                         "Recording stopped and samples retrieved in {:?}, sample count: {}",
                         stop_recording_time.elapsed(),
-                        samples.len()
+                        stopped_recording.samples_for_transcription.len()
                     );
 
                     let transcription_time = Instant::now();
-                    let samples_clone = samples.clone(); // Clone for history saving
-                    match tm.transcribe(samples) {
+                    let samples_for_history = stopped_recording.samples_for_transcription.clone();
+                    let speech_duration_ms = stopped_recording.speech_duration_ms;
+                    let recording_duration_ms = stopped_recording.recording_duration_ms;
+                    match tm.transcribe(stopped_recording.samples_for_transcription) {
                         Ok((transcription, filler_words_removed)) => {
                             // Check if the session was cancelled during transcription (from llm)
                             if !tm.is_session_active(&session_id_for_task) {
@@ -904,16 +906,14 @@ impl ShortcutAction for TranscribeAction {
                                 let app_for_paste_task = ah.clone();
                                 let final_text_for_paste = final_text;
                                 tauri::async_runtime::spawn(async move {
-                                    // Calculate duration in milliseconds (sample rate is 16kHz)
-                                    let duration_ms =
-                                        (samples_clone.len() as f64 / 16000.0 * 1000.0) as i64;
                                     let saved_transcription = match hm_clone
                                         .save_transcription(
-                                            samples_clone,
+                                            samples_for_history,
                                             transcription_for_history,
                                             post_processed_text,
                                             post_process_prompt,
-                                            duration_ms,
+                                            recording_duration_ms,
+                                            speech_duration_ms,
                                             filler_count,
                                         )
                                         .await

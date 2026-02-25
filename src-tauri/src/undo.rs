@@ -594,7 +594,8 @@ fn apply_stats_rollback(
                 stats_token = stats_token,
                 source_action = %source_action,
                 word_count = contribution.word_count,
-                effective_duration_ms = contribution.effective_duration_ms,
+                recording_duration_ms = contribution.recording_duration_ms,
+                speech_duration_ms = contribution.speech_duration_ms,
                 filler_words_removed = contribution.filler_words_removed,
                 date_key = %contribution.date_key,
                 "Applied stats rollback for undone transcript"
@@ -1092,7 +1093,8 @@ mod tests {
     fn sample_contribution(word_count: i64) -> StatsContribution {
         StatsContribution {
             word_count,
-            effective_duration_ms: 1_000,
+            recording_duration_ms: 1_000,
+            speech_duration_ms: 900,
             filler_words_removed: 0,
             date_added_to_streak_list: false,
             date_key: "2026-02-17".to_string(),

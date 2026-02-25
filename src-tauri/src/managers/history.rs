@@ -6,7 +6,7 @@ use rusqlite_migration::{Migrations, M};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::audio_toolkit::save_wav_file;
@@ -46,6 +46,21 @@ static MIGRATIONS: &[M] = &[
     ),
     // Migration 6: Add filler word tracking for smart tile stats
     M::up("ALTER TABLE user_stats ADD COLUMN total_filler_words_removed INTEGER DEFAULT 0;"),
+    // Migration 7: Persist VAD-retained speech duration per history entry
+    M::up("ALTER TABLE transcription_history ADD COLUMN speech_duration_ms INTEGER DEFAULT 0;"),
+    // Migration 8: Track total speech duration for WPM (distinct from recording elapsed duration)
+    M::up("ALTER TABLE user_stats ADD COLUMN total_speech_duration_ms INTEGER DEFAULT 0;"),
+    // Migration 9: Mark completion of duration semantic backfill
+    M::up("ALTER TABLE user_stats ADD COLUMN duration_stats_semantics_version INTEGER DEFAULT 0;"),
+    // Migration 10: Keep append-only snapshots for stats migration safety
+    M::up(
+        "CREATE TABLE IF NOT EXISTS user_stats_migration_backup (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            backup_path TEXT,
+            payload_json TEXT NOT NULL
+        );",
+    ),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -86,10 +101,40 @@ pub struct HomeStats {
 #[derive(Clone, Debug, Serialize, Deserialize, Type, PartialEq, Eq)]
 pub struct StatsContribution {
     pub word_count: i64,
-    pub effective_duration_ms: i64,
+    pub recording_duration_ms: i64,
+    pub speech_duration_ms: i64,
     pub filler_words_removed: i64,
     pub date_added_to_streak_list: bool,
     pub date_key: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct UserStatsBackupSnapshot {
+    created_at_epoch_ms: i64,
+    duration_stats_semantics_version_before: i64,
+    total_words: i64,
+    total_duration_ms: i64,
+    total_speech_duration_ms: i64,
+    total_transcriptions: i64,
+    first_transcription_date: Option<i64>,
+    last_transcription_date: Option<i64>,
+    transcription_dates: String,
+    total_filler_words_removed: i64,
+}
+
+impl UserStatsBackupSnapshot {
+    fn matches_content(&self, other: &Self) -> bool {
+        self.duration_stats_semantics_version_before
+            == other.duration_stats_semantics_version_before
+            && self.total_words == other.total_words
+            && self.total_duration_ms == other.total_duration_ms
+            && self.total_speech_duration_ms == other.total_speech_duration_ms
+            && self.total_transcriptions == other.total_transcriptions
+            && self.first_transcription_date == other.first_transcription_date
+            && self.last_transcription_date == other.last_transcription_date
+            && self.transcription_dates == other.transcription_dates
+            && self.total_filler_words_removed == other.total_filler_words_removed
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type, PartialEq, Eq)]
@@ -104,6 +149,8 @@ pub struct HistoryManager {
     db_path: PathBuf,
 }
 
+const DURATION_SEMANTICS_VERSION_V1: i64 = 1;
+
 fn compute_effective_text(
     inserted_text: Option<&str>,
     post_processed_text: Option<&str>,
@@ -113,6 +160,56 @@ fn compute_effective_text(
         .or(post_processed_text)
         .unwrap_or(transcription_text)
         .to_string()
+}
+
+fn compute_duration_metrics(
+    total_words: i64,
+    total_duration_ms: i64,
+    total_speech_duration_ms: i64,
+    duration_stats_semantics_version: i64,
+) -> (f64, f64, f64, f64) {
+    let total_duration_minutes = total_duration_ms as f64 / 60000.0;
+    let speech_duration_minutes = if duration_stats_semantics_version >= DURATION_SEMANTICS_VERSION_V1
+    {
+        total_speech_duration_ms as f64 / 60000.0
+    } else {
+        // Backfill incomplete: preserve legacy semantics until marker flips.
+        total_duration_minutes
+    };
+
+    let wpm = if speech_duration_minutes > 0.001 {
+        total_words as f64 / speech_duration_minutes
+    } else {
+        0.0
+    };
+
+    let time_to_type_minutes = total_words as f64 / 40.0;
+    let time_saved_minutes = time_to_type_minutes - total_duration_minutes;
+
+    (
+        total_duration_minutes,
+        speech_duration_minutes,
+        wpm,
+        time_saved_minutes,
+    )
+}
+
+fn normalize_runtime_durations(recording_duration_ms: i64, speech_duration_ms: i64) -> (i64, i64) {
+    let mut normalized_recording = recording_duration_ms.max(0);
+    let mut normalized_speech = speech_duration_ms.max(0);
+
+    // If elapsed recording time is unavailable but speech time exists, preserve useful duration.
+    if normalized_recording == 0 && normalized_speech > 0 {
+        normalized_recording = normalized_speech;
+    }
+
+    if normalized_recording > 0 {
+        normalized_speech = normalized_speech.min(normalized_recording);
+    } else {
+        normalized_speech = 0;
+    }
+
+    (normalized_recording, normalized_speech)
 }
 
 fn map_history_entry(
@@ -216,6 +313,7 @@ impl HistoryManager {
 
         // Initialize user stats if needed
         self.initialize_user_stats(&conn)?;
+        self.ensure_duration_stats_semantics(&mut conn)?;
 
         Ok(())
     }
@@ -324,6 +422,12 @@ impl HistoryManager {
             "inserted_text",
             "TEXT",
         )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "transcription_history",
+            "speech_duration_ms",
+            "INTEGER DEFAULT 0",
+        )?;
 
         if !Self::table_exists(conn, "user_stats")? {
             conn.execute_batch(
@@ -347,14 +451,43 @@ impl HistoryManager {
             "total_filler_words_removed",
             "INTEGER DEFAULT 0",
         )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "user_stats",
+            "total_speech_duration_ms",
+            "INTEGER DEFAULT 0",
+        )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "user_stats",
+            "duration_stats_semantics_version",
+            "INTEGER DEFAULT 0",
+        )?;
+
+        if !Self::table_exists(conn, "user_stats_migration_backup")? {
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS user_stats_migration_backup (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at INTEGER NOT NULL,
+                    backup_path TEXT,
+                    payload_json TEXT NOT NULL
+                );",
+            )?;
+            schema_changed = true;
+            info!("Reconciled legacy schema: created missing table 'user_stats_migration_backup'");
+        }
 
         let history_complete = Self::table_exists(conn, "transcription_history")?
             && Self::column_exists(conn, "transcription_history", "post_processed_text")?
             && Self::column_exists(conn, "transcription_history", "post_process_prompt")?
             && Self::column_exists(conn, "transcription_history", "duration_ms")?
-            && Self::column_exists(conn, "transcription_history", "inserted_text")?;
+            && Self::column_exists(conn, "transcription_history", "inserted_text")?
+            && Self::column_exists(conn, "transcription_history", "speech_duration_ms")?;
         let stats_complete = Self::table_exists(conn, "user_stats")?
-            && Self::column_exists(conn, "user_stats", "total_filler_words_removed")?;
+            && Self::column_exists(conn, "user_stats", "total_filler_words_removed")?
+            && Self::column_exists(conn, "user_stats", "total_speech_duration_ms")?
+            && Self::column_exists(conn, "user_stats", "duration_stats_semantics_version")?
+            && Self::table_exists(conn, "user_stats_migration_backup")?;
 
         let target_version = MIGRATIONS.len() as i32;
         if history_complete && stats_complete && current_version < target_version {
@@ -387,6 +520,230 @@ impl HistoryManager {
             )?;
             debug!("Initialized empty user stats");
         }
+
+        Ok(())
+    }
+
+    fn legacy_effective_duration_ms(duration_ms: i64) -> i64 {
+        if duration_ms <= 0 {
+            return 0;
+        }
+
+        let vad_overhead_ms = 900;
+        if duration_ms > vad_overhead_ms {
+            duration_ms - vad_overhead_ms
+        } else {
+            std::cmp::max(duration_ms / 2, 100)
+        }
+    }
+
+    fn snapshot_user_stats(
+        conn: &Connection,
+        duration_stats_semantics_version_before: i64,
+    ) -> Result<UserStatsBackupSnapshot> {
+        let snapshot = conn.query_row(
+            "SELECT
+                COALESCE(total_words, 0),
+                COALESCE(total_duration_ms, 0),
+                COALESCE(total_speech_duration_ms, 0),
+                COALESCE(total_transcriptions, 0),
+                first_transcription_date,
+                last_transcription_date,
+                COALESCE(transcription_dates, '[]'),
+                COALESCE(total_filler_words_removed, 0)
+             FROM user_stats WHERE id = 1",
+            [],
+            |row| {
+                Ok(UserStatsBackupSnapshot {
+                    created_at_epoch_ms: Utc::now().timestamp_millis(),
+                    duration_stats_semantics_version_before,
+                    total_words: row.get(0).unwrap_or(0),
+                    total_duration_ms: row.get(1).unwrap_or(0),
+                    total_speech_duration_ms: row.get(2).unwrap_or(0),
+                    total_transcriptions: row.get(3).unwrap_or(0),
+                    first_transcription_date: row.get(4).unwrap_or(None),
+                    last_transcription_date: row.get(5).unwrap_or(None),
+                    transcription_dates: row.get(6).unwrap_or_else(|_| "[]".to_string()),
+                    total_filler_words_removed: row.get(7).unwrap_or(0),
+                })
+            },
+        )?;
+        Ok(snapshot)
+    }
+
+    fn write_user_stats_backup_snapshot(
+        snapshot: &UserStatsBackupSnapshot,
+        backup_root: &Path,
+    ) -> Result<PathBuf> {
+        let payload_json = serde_json::to_string_pretty(snapshot)?;
+        fs::create_dir_all(&backup_root)?;
+
+        let file_name = format!(
+            "user_stats-pre-duration-v1-{}.json",
+            snapshot.created_at_epoch_ms
+        );
+        let backup_path = backup_root.join(file_name);
+        fs::write(&backup_path, payload_json)?;
+        Ok(backup_path)
+    }
+
+    fn find_existing_backup_row_for_snapshot(
+        conn: &Connection,
+        snapshot: &UserStatsBackupSnapshot,
+    ) -> Result<Option<(i64, Option<String>)>> {
+        let mut stmt = conn.prepare(
+            "SELECT id, backup_path, payload_json FROM user_stats_migration_backup ORDER BY id DESC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+
+        for row in rows {
+            let (id, backup_path, payload_json) = row?;
+            let parsed_snapshot: UserStatsBackupSnapshot =
+                match serde_json::from_str(&payload_json) {
+                    Ok(parsed) => parsed,
+                    Err(_) => continue,
+                };
+
+            if parsed_snapshot.matches_content(snapshot) {
+                return Ok(Some((id, backup_path)));
+            }
+        }
+
+        Ok(None)
+    }
+
+    fn ensure_duration_stats_semantics(&self, conn: &mut Connection) -> Result<()> {
+        let backup_root = self.app_handle.path().app_data_dir()?.join("stats-backups");
+        Self::ensure_duration_stats_semantics_with_backup_root(conn, backup_root.as_path())
+    }
+
+    fn ensure_duration_stats_semantics_with_backup_root(
+        conn: &mut Connection,
+        backup_root: &Path,
+    ) -> Result<()> {
+        let semantics_version: i64 = conn
+            .query_row(
+                "SELECT COALESCE(duration_stats_semantics_version, 0) FROM user_stats WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        if semantics_version >= DURATION_SEMANTICS_VERSION_V1 {
+            return Ok(());
+        }
+
+        let snapshot = Self::snapshot_user_stats(conn, semantics_version)?;
+        let (backup_path, backup_row_id) = if let Some((existing_row_id, existing_backup_path)) =
+            Self::find_existing_backup_row_for_snapshot(conn, &snapshot)?
+        {
+            let mut resolved_path = existing_backup_path
+                .map(PathBuf::from)
+                .unwrap_or_else(|| backup_root.join("missing-backup-path.json"));
+            if !resolved_path.exists() {
+                resolved_path = Self::write_user_stats_backup_snapshot(&snapshot, backup_root)?;
+                conn.execute(
+                    "UPDATE user_stats_migration_backup SET backup_path = ?1 WHERE id = ?2",
+                    params![resolved_path.to_string_lossy().to_string(), existing_row_id],
+                )?;
+            }
+            (resolved_path, existing_row_id)
+        } else {
+            let backup_path = Self::write_user_stats_backup_snapshot(&snapshot, backup_root)?;
+            let payload_json = serde_json::to_string_pretty(&snapshot)?;
+            conn.execute(
+                "INSERT INTO user_stats_migration_backup (created_at, backup_path, payload_json)
+                 VALUES (?1, ?2, ?3)",
+                params![
+                    Utc::now().timestamp(),
+                    backup_path.to_string_lossy().to_string(),
+                    payload_json
+                ],
+            )?;
+            (backup_path, conn.last_insert_rowid())
+        };
+
+        let tx = conn.transaction()?;
+
+        let old_total_duration_ms: i64 = tx.query_row(
+            "SELECT COALESCE(total_duration_ms, 0) FROM user_stats WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )?;
+
+        let mut live_recording_sum_ms = 0_i64;
+        let mut live_speech_sum_ms = 0_i64;
+        let mut live_legacy_heuristic_sum_ms = 0_i64;
+        let mut malformed_speech_duration_rows = 0_i64;
+
+        {
+            let mut stmt = tx.prepare(
+                "SELECT COALESCE(duration_ms, 0), COALESCE(speech_duration_ms, 0) FROM transcription_history",
+            )?;
+            let mut rows = stmt.query([])?;
+            while let Some(row) = rows.next()? {
+                let recording_duration_ms: i64 = row.get(0).unwrap_or(0);
+                let stored_speech_duration_ms: i64 = row.get(1).unwrap_or(0);
+                let normalized_recording = recording_duration_ms.max(0);
+                let normalized_speech = if stored_speech_duration_ms > 0 {
+                    if stored_speech_duration_ms > normalized_recording {
+                        malformed_speech_duration_rows =
+                            malformed_speech_duration_rows.saturating_add(1);
+                    }
+                    stored_speech_duration_ms
+                        .max(0)
+                        .min(normalized_recording)
+                } else {
+                    normalized_recording
+                };
+
+                live_recording_sum_ms = live_recording_sum_ms.saturating_add(normalized_recording);
+                live_speech_sum_ms = live_speech_sum_ms.saturating_add(normalized_speech);
+                live_legacy_heuristic_sum_ms = live_legacy_heuristic_sum_ms
+                    .saturating_add(Self::legacy_effective_duration_ms(normalized_recording));
+            }
+        }
+
+        let legacy_residual_ms = old_total_duration_ms
+            .saturating_sub(live_legacy_heuristic_sum_ms)
+            .max(0);
+        let recomputed_recording_total = live_recording_sum_ms.saturating_add(legacy_residual_ms);
+        let recomputed_speech_total = live_speech_sum_ms.saturating_add(legacy_residual_ms);
+
+        tx.execute(
+            "UPDATE user_stats SET
+                total_duration_ms = ?1,
+                total_speech_duration_ms = ?2,
+                duration_stats_semantics_version = ?3
+             WHERE id = 1",
+            params![
+                recomputed_recording_total,
+                recomputed_speech_total,
+                DURATION_SEMANTICS_VERSION_V1
+            ],
+        )?;
+
+        tx.commit()?;
+
+        info!(
+            backup_path = %backup_path.to_string_lossy(),
+            backup_row_id = backup_row_id,
+            old_total_duration_ms = old_total_duration_ms,
+            live_recording_sum_ms = live_recording_sum_ms,
+            live_speech_sum_ms = live_speech_sum_ms,
+            live_legacy_heuristic_sum_ms = live_legacy_heuristic_sum_ms,
+            malformed_speech_duration_rows = malformed_speech_duration_rows,
+            legacy_residual_ms = legacy_residual_ms,
+            recomputed_recording_total = recomputed_recording_total,
+            recomputed_speech_total = recomputed_speech_total,
+            "Backfilled duration semantics and stored pre-migration stats backup"
+        );
 
         Ok(())
     }
@@ -529,7 +886,8 @@ impl HistoryManager {
         transcription_text: String,
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
-        duration_ms: i64,
+        recording_duration_ms: i64,
+        speech_duration_ms: i64,
         filler_words_removed: i64,
     ) -> Result<SavedTranscription> {
         let timestamp = Utc::now().timestamp();
@@ -548,7 +906,8 @@ impl HistoryManager {
             transcription_text,
             post_processed_text,
             post_process_prompt,
-            duration_ms,
+            recording_duration_ms,
+            speech_duration_ms,
             filler_words_removed,
         )?;
 
@@ -574,16 +933,41 @@ impl HistoryManager {
         transcription_text: String,
         post_processed_text: Option<String>,
         post_process_prompt: Option<String>,
-        duration_ms: i64,
+        recording_duration_ms: i64,
+        speech_duration_ms: i64,
         filler_words_removed: i64,
     ) -> Result<SavedTranscription> {
         let mut conn = self.get_connection()?;
         let tx = conn.transaction()?;
+        let (normalized_recording_duration_ms, normalized_speech_duration_ms) =
+            normalize_runtime_durations(recording_duration_ms, speech_duration_ms);
+
+        if normalized_recording_duration_ms != recording_duration_ms
+            || normalized_speech_duration_ms != speech_duration_ms
+        {
+            debug!(
+                input_recording_duration_ms = recording_duration_ms,
+                input_speech_duration_ms = speech_duration_ms,
+                normalized_recording_duration_ms = normalized_recording_duration_ms,
+                normalized_speech_duration_ms = normalized_speech_duration_ms,
+                "Normalized transcription duration pair before persisting stats"
+            );
+        }
 
         // 1. Insert into transcription_history
         tx.execute(
-            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![file_name, timestamp, false, title, transcription_text, post_processed_text, post_process_prompt, duration_ms],
+            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, duration_ms, speech_duration_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                file_name,
+                timestamp,
+                false,
+                title,
+                transcription_text,
+                post_processed_text,
+                post_process_prompt,
+                normalized_recording_duration_ms,
+                normalized_speech_duration_ms
+            ],
         )?;
         let entry_id = tx.last_insert_rowid();
 
@@ -619,29 +1003,26 @@ impl HistoryManager {
         }
         let new_dates_json = serde_json::to_string(&dates).unwrap_or_else(|_| "[]".to_string());
 
-        // Adjust duration for stats by removing VAD padding (approx 900ms: 15 pre + 15 post frames @ 30ms)
-        // This ensures WPM reflects "speech rate" rather than "recording efficiency", correcting for the
-        // "decreasing WPM" trend caused by the fixed overhead on short recordings.
-        let vad_overhead_ms = 900;
-        let effective_duration_ms = if duration_ms > vad_overhead_ms {
-            duration_ms - vad_overhead_ms
-        } else {
-            // For very short recordings, keep a fraction of the duration to represent the speech
-            std::cmp::max(duration_ms / 2, 100)
-        };
-
         // Upsert stats (assuming row 1 exists due to backfill/init)
         tx.execute(
             "UPDATE user_stats SET 
                 total_words = total_words + ?1,
                 total_duration_ms = total_duration_ms + ?2,
+                total_speech_duration_ms = total_speech_duration_ms + ?3,
                 total_transcriptions = total_transcriptions + 1,
-                last_transcription_date = ?3,
-                transcription_dates = ?4,
-                first_transcription_date = COALESCE(first_transcription_date, ?3),
-                total_filler_words_removed = total_filler_words_removed + ?5
+                last_transcription_date = ?4,
+                transcription_dates = ?5,
+                first_transcription_date = COALESCE(first_transcription_date, ?4),
+                total_filler_words_removed = total_filler_words_removed + ?6
              WHERE id = 1",
-            params![word_count, effective_duration_ms, timestamp, new_dates_json, filler_words_removed],
+            params![
+                word_count,
+                normalized_recording_duration_ms,
+                normalized_speech_duration_ms,
+                timestamp,
+                new_dates_json,
+                filler_words_removed
+            ],
         )?;
 
         tx.commit()?;
@@ -651,7 +1032,8 @@ impl HistoryManager {
             entry_id,
             contribution: StatsContribution {
                 word_count,
-                effective_duration_ms,
+                recording_duration_ms: normalized_recording_duration_ms,
+                speech_duration_ms: normalized_speech_duration_ms,
                 filler_words_removed,
                 date_added_to_streak_list,
                 date_key: if let Some(dt) = DateTime::from_timestamp(timestamp, 0) {
@@ -680,16 +1062,24 @@ impl HistoryManager {
     ) -> Result<()> {
         let tx = conn.transaction()?;
 
-        let (total_words, total_duration_ms, total_transcriptions, transcription_dates_json, total_filler_words_removed): (i64, i64, i64, String, i64) = tx.query_row(
-            "SELECT total_words, total_duration_ms, total_transcriptions, transcription_dates, COALESCE(total_filler_words_removed, 0) FROM user_stats WHERE id = 1",
+        let (
+            total_words,
+            total_duration_ms,
+            total_speech_duration_ms,
+            total_transcriptions,
+            transcription_dates_json,
+            total_filler_words_removed
+        ): (i64, i64, i64, i64, String, i64) = tx.query_row(
+            "SELECT total_words, total_duration_ms, COALESCE(total_speech_duration_ms, 0), total_transcriptions, transcription_dates, COALESCE(total_filler_words_removed, 0) FROM user_stats WHERE id = 1",
             [],
             |row| {
                 Ok((
                     row.get(0).unwrap_or(0),
                     row.get(1).unwrap_or(0),
                     row.get(2).unwrap_or(0),
-                    row.get(3).unwrap_or_else(|_| "[]".to_string()),
-                    row.get(4).unwrap_or(0),
+                    row.get(3).unwrap_or(0),
+                    row.get(4).unwrap_or_else(|_| "[]".to_string()),
+                    row.get(5).unwrap_or(0),
                 ))
             },
         )?;
@@ -702,7 +1092,10 @@ impl HistoryManager {
 
         let next_total_words = total_words.saturating_sub(contribution.word_count).max(0);
         let next_total_duration_ms = total_duration_ms
-            .saturating_sub(contribution.effective_duration_ms)
+            .saturating_sub(contribution.recording_duration_ms)
+            .max(0);
+        let next_total_speech_duration_ms = total_speech_duration_ms
+            .saturating_sub(contribution.speech_duration_ms)
             .max(0);
         let next_total_transcriptions = total_transcriptions.saturating_sub(1).max(0);
         let next_total_filler_words_removed = total_filler_words_removed
@@ -713,13 +1106,15 @@ impl HistoryManager {
             "UPDATE user_stats SET
                 total_words = ?1,
                 total_duration_ms = ?2,
-                total_transcriptions = ?3,
-                transcription_dates = ?4,
-                total_filler_words_removed = ?5
+                total_speech_duration_ms = ?3,
+                total_transcriptions = ?4,
+                transcription_dates = ?5,
+                total_filler_words_removed = ?6
              WHERE id = 1",
             params![
                 next_total_words,
                 next_total_duration_ms,
+                next_total_speech_duration_ms,
                 next_total_transcriptions,
                 new_dates_json,
                 next_total_filler_words_removed
@@ -1162,39 +1557,53 @@ impl HistoryManager {
     pub fn get_home_stats(&self) -> Result<HomeStats> {
         let conn = self.get_connection()?;
         
-        let (total_words, total_duration_ms, transcription_dates_json, total_filler_words_removed): (i64, i64, String, i64) = conn.query_row(
-            "SELECT total_words, total_duration_ms, transcription_dates, COALESCE(total_filler_words_removed, 0) FROM user_stats WHERE id = 1",
+        let (
+            total_words,
+            total_duration_ms,
+            total_speech_duration_ms,
+            duration_stats_semantics_version,
+            transcription_dates_json,
+            total_filler_words_removed
+        ): (i64, i64, i64, i64, String, i64) = conn.query_row(
+            "SELECT
+                total_words,
+                total_duration_ms,
+                COALESCE(total_speech_duration_ms, 0),
+                COALESCE(duration_stats_semantics_version, 0),
+                transcription_dates,
+                COALESCE(total_filler_words_removed, 0)
+             FROM user_stats WHERE id = 1",
             [],
             |row| Ok((
                 row.get(0).unwrap_or(0),
                 row.get(1).unwrap_or(0),
-                row.get(2).unwrap_or_else(|_| "[]".to_string()),
+                row.get(2).unwrap_or(0),
                 row.get(3).unwrap_or(0),
+                row.get(4).unwrap_or_else(|_| "[]".to_string()),
+                row.get(5).unwrap_or(0),
             )),
-        ).unwrap_or((0, 0, "[]".to_string(), 0));
+        ).unwrap_or((0, 0, 0, 0, "[]".to_string(), 0));
 
         // Read filler filter setting
         let filler_filter_active = crate::settings::get_settings(&self.app_handle).enable_filler_word_filter;
+        let (total_duration_minutes, _speech_duration_minutes, wpm, time_saved_minutes) =
+            compute_duration_metrics(
+                total_words,
+                total_duration_ms,
+                total_speech_duration_ms,
+                duration_stats_semantics_version,
+            );
 
-        let total_duration_minutes = total_duration_ms as f64 / 60000.0;
-        
-        // WPM Calculation
-        // Note: Ideally we should track "wpm_total_duration" separately to exclude
-        // legacy 0-duration entries if we want perfection, but for lifetime stats 
-        // across many entries, the impact shrinks. 
-        // For now, we utilize the global counters directly.
-        
-        let wpm = if total_duration_minutes > 0.001 {
-            total_words as f64 / total_duration_minutes
-        } else {
-            0.0
-        };
-
-        // Time Saved
-        let time_to_type_minutes = total_words as f64 / 40.0;
-        let time_saved_minutes = time_to_type_minutes - total_duration_minutes;
-
-        info!("Stats from DB: Words={}, Duration={}ms, WPM={:.2}, FillerWordsRemoved={}, FillerFilterActive={}", total_words, total_duration_ms, wpm, total_filler_words_removed, filler_filter_active);
+        info!(
+            "Stats from DB: Words={}, RecordingDuration={}ms, SpeechDuration={}ms, SemanticsVersion={}, WPM={:.2}, FillerWordsRemoved={}, FillerFilterActive={}",
+            total_words,
+            total_duration_ms,
+            total_speech_duration_ms,
+            duration_stats_semantics_version,
+            wpm,
+            total_filler_words_removed,
+            filler_filter_active
+        );
 
         // Streak calculation
         let dates: Vec<String> = serde_json::from_str(&transcription_dates_json).unwrap_or_default();
@@ -1257,6 +1666,8 @@ mod tests {
     use super::*;
     use rusqlite::{params, Connection};
     use rusqlite_migration::Migrations;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::{fs, path::PathBuf};
 
     fn setup_conn() -> Connection {
         let conn = Connection::open_in_memory().expect("open in-memory db");
@@ -1271,26 +1682,37 @@ mod tests {
                 post_processed_text TEXT,
                 inserted_text TEXT,
                 post_process_prompt TEXT,
-                duration_ms INTEGER DEFAULT 0
+                duration_ms INTEGER DEFAULT 0,
+                speech_duration_ms INTEGER DEFAULT 0
             );
             CREATE TABLE user_stats (
                 id INTEGER PRIMARY KEY DEFAULT 1,
                 total_words INTEGER DEFAULT 0,
                 total_duration_ms INTEGER DEFAULT 0,
+                total_speech_duration_ms INTEGER DEFAULT 0,
                 total_transcriptions INTEGER DEFAULT 0,
                 first_transcription_date INTEGER,
                 last_transcription_date INTEGER,
                 transcription_dates TEXT DEFAULT '[]',
-                total_filler_words_removed INTEGER DEFAULT 0
+                total_filler_words_removed INTEGER DEFAULT 0,
+                duration_stats_semantics_version INTEGER DEFAULT 0
+            );
+            CREATE TABLE user_stats_migration_backup (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at INTEGER NOT NULL,
+                backup_path TEXT,
+                payload_json TEXT NOT NULL
             );
             INSERT INTO user_stats (
                 id,
                 total_words,
                 total_duration_ms,
+                total_speech_duration_ms,
                 total_transcriptions,
                 transcription_dates,
-                total_filler_words_removed
-            ) VALUES (1, 0, 0, 0, '[]', 0);",
+                total_filler_words_removed,
+                duration_stats_semantics_version
+            ) VALUES (1, 0, 0, 0, 0, '[]', 0, 0);",
         )
         .expect("create transcription_history table");
         conn
@@ -1304,8 +1726,8 @@ mod tests {
         inserted: Option<&str>,
     ) {
         conn.execute(
-            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, inserted_text, post_process_prompt, duration_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, inserted_text, post_process_prompt, duration_ms, speech_duration_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 format!("codictate-{}.wav", timestamp),
                 timestamp,
@@ -1315,10 +1737,71 @@ mod tests {
                 post_processed,
                 inserted,
                 Option::<String>::None,
-                0 // duration_ms
+                0, // duration_ms
+                0 // speech_duration_ms
             ],
         )
         .expect("insert history entry");
+    }
+
+    fn insert_duration_entry(
+        conn: &Connection,
+        timestamp: i64,
+        recording_duration_ms: i64,
+        speech_duration_ms: i64,
+    ) {
+        conn.execute(
+            "INSERT INTO transcription_history (
+                file_name,
+                timestamp,
+                saved,
+                title,
+                transcription_text,
+                post_processed_text,
+                inserted_text,
+                post_process_prompt,
+                duration_ms,
+                speech_duration_ms
+            ) VALUES (?1, ?2, 0, ?3, 'test', NULL, NULL, NULL, ?4, ?5)",
+            params![
+                format!("codictate-{}.wav", timestamp),
+                timestamp,
+                format!("Recording {}", timestamp),
+                recording_duration_ms,
+                speech_duration_ms
+            ],
+        )
+        .expect("insert duration entry");
+    }
+
+    fn make_temp_backup_dir(prefix: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock is after unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "handy-{}-{}-{}",
+            prefix,
+            std::process::id(),
+            nanos
+        ));
+        fs::create_dir_all(&path).expect("create temporary backup directory");
+        path
+    }
+
+    #[test]
+    fn normalize_runtime_durations_enforces_invariants() {
+        let (recording, speech) = normalize_runtime_durations(1_000, 9_000);
+        assert_eq!(recording, 1_000);
+        assert_eq!(speech, 1_000);
+
+        let (recording_from_speech, speech_from_speech) = normalize_runtime_durations(0, 700);
+        assert_eq!(recording_from_speech, 700);
+        assert_eq!(speech_from_speech, 700);
+
+        let (recording_clamped, speech_clamped) = normalize_runtime_durations(-500, -10);
+        assert_eq!(recording_clamped, 0);
+        assert_eq!(speech_clamped, 0);
     }
 
     #[test]
@@ -1797,17 +2280,18 @@ mod tests {
         assert_eq!(ids.len(), 1);
     }
 
-    fn read_stats(conn: &Connection) -> (i64, i64, i64, String, i64) {
+    fn read_stats(conn: &Connection) -> (i64, i64, i64, i64, String, i64) {
         conn.query_row(
-            "SELECT total_words, total_duration_ms, total_transcriptions, transcription_dates, total_filler_words_removed FROM user_stats WHERE id = 1",
+            "SELECT total_words, total_duration_ms, total_speech_duration_ms, total_transcriptions, transcription_dates, total_filler_words_removed FROM user_stats WHERE id = 1",
             [],
             |row| {
                 Ok((
                     row.get(0).unwrap_or(0),
                     row.get(1).unwrap_or(0),
                     row.get(2).unwrap_or(0),
-                    row.get(3).unwrap_or_else(|_| "[]".to_string()),
-                    row.get(4).unwrap_or(0),
+                    row.get(3).unwrap_or(0),
+                    row.get(4).unwrap_or_else(|_| "[]".to_string()),
+                    row.get(5).unwrap_or(0),
                 ))
             },
         )
@@ -1818,14 +2302,15 @@ mod tests {
     fn rollback_stats_contribution_reverses_stats_and_removes_date_when_added() {
         let mut conn = setup_conn();
         conn.execute(
-            "UPDATE user_stats SET total_words = 120, total_duration_ms = 6000, total_transcriptions = 3, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 9 WHERE id = 1",
+            "UPDATE user_stats SET total_words = 120, total_duration_ms = 6000, total_speech_duration_ms = 5400, total_transcriptions = 3, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 9 WHERE id = 1",
             [],
         )
         .expect("seed stats");
 
         let contribution = StatsContribution {
             word_count: 40,
-            effective_duration_ms: 2000,
+            recording_duration_ms: 2000,
+            speech_duration_ms: 1500,
             filler_words_removed: 3,
             date_added_to_streak_list: true,
             date_key: "2026-02-15".to_string(),
@@ -1834,9 +2319,10 @@ mod tests {
         HistoryManager::rollback_stats_contribution_with_conn(&mut conn, &contribution)
             .expect("rollback stats");
 
-        let (words, duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
+        let (words, recording_duration, speech_duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
         assert_eq!(words, 80);
-        assert_eq!(duration, 4000);
+        assert_eq!(recording_duration, 4000);
+        assert_eq!(speech_duration, 3900);
         assert_eq!(total_transcriptions, 2);
         assert_eq!(dates_json, "[]");
         assert_eq!(filler_removed, 6);
@@ -1846,14 +2332,15 @@ mod tests {
     fn rollback_stats_contribution_keeps_date_when_not_added_by_contribution() {
         let mut conn = setup_conn();
         conn.execute(
-            "UPDATE user_stats SET total_words = 80, total_duration_ms = 3200, total_transcriptions = 2, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 4 WHERE id = 1",
+            "UPDATE user_stats SET total_words = 80, total_duration_ms = 3200, total_speech_duration_ms = 2800, total_transcriptions = 2, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 4 WHERE id = 1",
             [],
         )
         .expect("seed stats");
 
         let contribution = StatsContribution {
             word_count: 20,
-            effective_duration_ms: 1200,
+            recording_duration_ms: 1200,
+            speech_duration_ms: 900,
             filler_words_removed: 1,
             date_added_to_streak_list: false,
             date_key: "2026-02-15".to_string(),
@@ -1862,9 +2349,10 @@ mod tests {
         HistoryManager::rollback_stats_contribution_with_conn(&mut conn, &contribution)
             .expect("rollback stats");
 
-        let (words, duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
+        let (words, recording_duration, speech_duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
         assert_eq!(words, 60);
-        assert_eq!(duration, 2000);
+        assert_eq!(recording_duration, 2000);
+        assert_eq!(speech_duration, 1900);
         assert_eq!(total_transcriptions, 1);
         assert_eq!(dates_json, "[\"2026-02-15\"]");
         assert_eq!(filler_removed, 3);
@@ -1874,14 +2362,15 @@ mod tests {
     fn rollback_stats_contribution_clamps_values_to_zero() {
         let mut conn = setup_conn();
         conn.execute(
-            "UPDATE user_stats SET total_words = 5, total_duration_ms = 100, total_transcriptions = 0, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 1 WHERE id = 1",
+            "UPDATE user_stats SET total_words = 5, total_duration_ms = 100, total_speech_duration_ms = 50, total_transcriptions = 0, transcription_dates = '[\"2026-02-15\"]', total_filler_words_removed = 1 WHERE id = 1",
             [],
         )
         .expect("seed stats");
 
         let contribution = StatsContribution {
             word_count: 50,
-            effective_duration_ms: 5000,
+            recording_duration_ms: 5000,
+            speech_duration_ms: 4000,
             filler_words_removed: 9,
             date_added_to_streak_list: true,
             date_key: "2026-02-15".to_string(),
@@ -1890,11 +2379,250 @@ mod tests {
         HistoryManager::rollback_stats_contribution_with_conn(&mut conn, &contribution)
             .expect("rollback stats");
 
-        let (words, duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
+        let (words, recording_duration, speech_duration, total_transcriptions, dates_json, filler_removed) = read_stats(&conn);
         assert_eq!(words, 0);
-        assert_eq!(duration, 0);
+        assert_eq!(recording_duration, 0);
+        assert_eq!(speech_duration, 0);
         assert_eq!(total_transcriptions, 0);
         assert_eq!(dates_json, "[]");
         assert_eq!(filler_removed, 0);
+    }
+
+    #[test]
+    fn compute_duration_metrics_uses_hybrid_semantics_when_marker_active() {
+        let (recording_minutes, speech_minutes, wpm, time_saved) =
+            compute_duration_metrics(300, 120_000, 60_000, DURATION_SEMANTICS_VERSION_V1);
+
+        assert!((recording_minutes - 2.0).abs() < 0.000_1);
+        assert!((speech_minutes - 1.0).abs() < 0.000_1);
+        assert!((wpm - 300.0).abs() < 0.000_1);
+        assert!((time_saved - 5.5).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn compute_duration_metrics_falls_back_to_legacy_when_marker_inactive() {
+        let (recording_minutes, speech_minutes, wpm, _) =
+            compute_duration_metrics(300, 120_000, 60_000, 0);
+
+        assert!((recording_minutes - 2.0).abs() < 0.000_1);
+        assert!((speech_minutes - 2.0).abs() < 0.000_1);
+        assert!((wpm - 150.0).abs() < 0.000_1);
+    }
+
+    #[test]
+    fn duration_semantics_backfill_is_idempotent_and_creates_single_backup() {
+        let mut conn = setup_conn();
+        conn.execute(
+            "UPDATE user_stats
+             SET total_duration_ms = 6000,
+                 total_speech_duration_ms = 0,
+                 duration_stats_semantics_version = 0
+             WHERE id = 1",
+            [],
+        )
+        .expect("seed legacy totals");
+
+        insert_duration_entry(&conn, 1, 2000, 1500);
+        // Legacy compatibility: speech_duration_ms missing in old rows falls back to recording duration.
+        insert_duration_entry(&conn, 2, 1000, 0);
+
+        let backup_dir = make_temp_backup_dir("duration-idempotent");
+        HistoryManager::ensure_duration_stats_semantics_with_backup_root(&mut conn, backup_dir.as_path())
+            .expect("first backfill pass");
+        HistoryManager::ensure_duration_stats_semantics_with_backup_root(&mut conn, backup_dir.as_path())
+            .expect("second backfill pass");
+
+        let (recording_total, speech_total, version): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT total_duration_ms, total_speech_duration_ms, duration_stats_semantics_version
+                 FROM user_stats WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read backfilled totals");
+        assert_eq!(recording_total, 7800);
+        assert_eq!(speech_total, 7300);
+        assert_eq!(version, DURATION_SEMANTICS_VERSION_V1);
+
+        let backup_row_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM user_stats_migration_backup", [], |row| {
+                row.get(0)
+            })
+            .expect("read backup row count");
+        assert_eq!(backup_row_count, 1);
+
+        let backup_path: String = conn
+            .query_row(
+                "SELECT backup_path FROM user_stats_migration_backup ORDER BY id DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read backup path");
+        assert!(PathBuf::from(backup_path).exists());
+
+        let backup_file_count = fs::read_dir(&backup_dir)
+            .expect("read backup dir")
+            .count();
+        assert_eq!(backup_file_count, 1);
+
+        let _ = fs::remove_dir_all(backup_dir);
+    }
+
+    #[test]
+    fn duration_semantics_backfill_preserves_residual_when_history_rows_missing() {
+        let mut conn = setup_conn();
+        conn.execute(
+            "UPDATE user_stats
+             SET total_duration_ms = 9100,
+                 total_speech_duration_ms = 0,
+                 duration_stats_semantics_version = 0
+             WHERE id = 1",
+            [],
+        )
+        .expect("seed legacy totals");
+
+        // Simulates pruned/deleted history rows: no live rows to contribute to sums.
+        let backup_dir = make_temp_backup_dir("duration-residual");
+        HistoryManager::ensure_duration_stats_semantics_with_backup_root(&mut conn, backup_dir.as_path())
+            .expect("run backfill");
+
+        let (recording_total, speech_total, version): (i64, i64, i64) = conn
+            .query_row(
+                "SELECT total_duration_ms, total_speech_duration_ms, duration_stats_semantics_version
+                 FROM user_stats WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read backfilled totals");
+        assert_eq!(recording_total, 9100);
+        assert_eq!(speech_total, 9100);
+        assert_eq!(version, DURATION_SEMANTICS_VERSION_V1);
+
+        let _ = fs::remove_dir_all(backup_dir);
+    }
+
+    #[test]
+    fn duration_semantics_backfill_falls_back_to_recording_for_legacy_rows() {
+        let mut conn = setup_conn();
+        conn.execute(
+            "UPDATE user_stats
+             SET total_duration_ms = 100,
+                 total_speech_duration_ms = 0,
+                 duration_stats_semantics_version = 0
+             WHERE id = 1",
+            [],
+        )
+        .expect("seed legacy totals");
+        insert_duration_entry(&conn, 1, 1000, 0);
+
+        let backup_dir = make_temp_backup_dir("duration-legacy-speech-fallback");
+        HistoryManager::ensure_duration_stats_semantics_with_backup_root(&mut conn, backup_dir.as_path())
+            .expect("run backfill");
+
+        let (recording_total, speech_total): (i64, i64) = conn
+            .query_row(
+                "SELECT total_duration_ms, total_speech_duration_ms FROM user_stats WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read totals");
+        // old_total_duration_ms == legacy_effective_duration_ms(1000), so residual is zero.
+        assert_eq!(recording_total, 1000);
+        assert_eq!(speech_total, 1000);
+
+        let _ = fs::remove_dir_all(backup_dir);
+    }
+
+    #[test]
+    fn duration_semantics_backfill_clamps_malformed_speech_duration_rows() {
+        let mut conn = setup_conn();
+        conn.execute(
+            "UPDATE user_stats
+             SET total_duration_ms = 100,
+                 total_speech_duration_ms = 0,
+                 duration_stats_semantics_version = 0
+             WHERE id = 1",
+            [],
+        )
+        .expect("seed legacy totals");
+        insert_duration_entry(&conn, 1, 1000, 9000);
+
+        let backup_dir = make_temp_backup_dir("duration-malformed-clamp");
+        HistoryManager::ensure_duration_stats_semantics_with_backup_root(
+            &mut conn,
+            backup_dir.as_path(),
+        )
+        .expect("run backfill");
+
+        let (recording_total, speech_total): (i64, i64) = conn
+            .query_row(
+                "SELECT total_duration_ms, total_speech_duration_ms FROM user_stats WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read totals");
+        assert_eq!(recording_total, 1000);
+        assert_eq!(speech_total, 1000);
+
+        let _ = fs::remove_dir_all(backup_dir);
+    }
+
+    #[test]
+    fn duration_semantics_backfill_reuses_existing_backup_row_before_marker_flip() {
+        let mut conn = setup_conn();
+        conn.execute(
+            "UPDATE user_stats
+             SET total_duration_ms = 100,
+                 total_speech_duration_ms = 0,
+                 duration_stats_semantics_version = 0
+             WHERE id = 1",
+            [],
+        )
+        .expect("seed legacy totals");
+        insert_duration_entry(&conn, 1, 1000, 0);
+
+        let snapshot = HistoryManager::snapshot_user_stats(&conn, 0).expect("snapshot stats");
+        let payload_json = serde_json::to_string_pretty(&snapshot).expect("serialize snapshot");
+        conn.execute(
+            "INSERT INTO user_stats_migration_backup (created_at, backup_path, payload_json)
+             VALUES (?1, NULL, ?2)",
+            params![Utc::now().timestamp(), payload_json],
+        )
+        .expect("insert existing backup row");
+
+        let backup_dir = make_temp_backup_dir("duration-existing-backup");
+        HistoryManager::ensure_duration_stats_semantics_with_backup_root(
+            &mut conn,
+            backup_dir.as_path(),
+        )
+        .expect("run backfill");
+
+        let backup_row_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM user_stats_migration_backup", [], |row| {
+                row.get(0)
+            })
+            .expect("count backup rows");
+        assert_eq!(backup_row_count, 1);
+
+        let stored_backup_path: Option<String> = conn
+            .query_row(
+                "SELECT backup_path FROM user_stats_migration_backup WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read backup path");
+        let stored_backup_path = stored_backup_path.expect("backup path must be set");
+        assert!(PathBuf::from(stored_backup_path).exists());
+
+        let version: i64 = conn
+            .query_row(
+                "SELECT duration_stats_semantics_version FROM user_stats WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read semantics marker");
+        assert_eq!(version, DURATION_SEMANTICS_VERSION_V1);
+
+        let _ = fs::remove_dir_all(backup_dir);
     }
 }
