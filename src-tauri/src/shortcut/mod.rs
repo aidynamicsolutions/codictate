@@ -760,8 +760,15 @@ pub fn change_clipboard_handling_setting(app: AppHandle, handling: String) -> Re
             ClipboardHandling::DontModify
         }
     };
+    info!(
+        requested = handling.as_str(),
+        parsed = ?parsed,
+        "Updating clipboard handling setting"
+    );
     settings.clipboard_handling = parsed;
     settings::write_settings(&app, settings);
+    let persisted = get_settings(&app).clipboard_handling;
+    info!(persisted = ?persisted, "Clipboard handling setting persisted");
     Ok(())
 }
 

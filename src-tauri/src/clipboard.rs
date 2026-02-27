@@ -3,7 +3,7 @@ use crate::input::{self, EnigoState};
 use crate::settings::TypingTool;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
 use enigo::{Direction, Enigo, Key, Keyboard};
-use tracing::info;
+use tracing::{debug, info, warn};
 use std::process::Command;
 
 use std::time::Duration;
@@ -23,7 +23,22 @@ fn paste_via_clipboard(
     paste_restore_delay_ms: u64,
 ) -> Result<(), String> {
     let clipboard = app_handle.clipboard();
-    let clipboard_content = clipboard.read_text().unwrap_or_default();
+    let clipboard_content = match clipboard.read_text() {
+        Ok(value) => {
+            debug!(
+                backup_chars = value.chars().count(),
+                "Captured clipboard backup before paste"
+            );
+            value
+        }
+        Err(err) => {
+            warn!(
+                error = %err,
+                "Failed to read clipboard backup before paste; using empty fallback"
+            );
+            String::new()
+        }
+    };
 
     // Write text to clipboard first
     // On Wayland, prefer wl-copy for better compatibility (especially with umlauts)
@@ -43,6 +58,10 @@ fn paste_via_clipboard(
         .map_err(|e| format!("Failed to write to clipboard: {}", e));
 
     write_result?;
+    debug!(
+        text_chars = text.chars().count(),
+        "Wrote prepared text to clipboard for paste"
+    );
 
     std::thread::sleep(Duration::from_millis(paste_delay_ms));
 
@@ -68,14 +87,31 @@ fn paste_via_clipboard(
     // Restore original clipboard content
     // On Wayland, prefer wl-copy for better compatibility
     #[cfg(target_os = "linux")]
-    if is_wayland() && is_wl_copy_available() {
-        let _ = write_clipboard_via_wl_copy(&clipboard_content);
+    let restore_result = if is_wayland() && is_wl_copy_available() {
+        write_clipboard_via_wl_copy(&clipboard_content)
     } else {
-        let _ = clipboard.write_text(&clipboard_content);
-    }
+        clipboard
+            .write_text(&clipboard_content)
+            .map_err(|e| format!("Failed to restore clipboard: {}", e))
+    };
 
     #[cfg(not(target_os = "linux"))]
-    let _ = clipboard.write_text(&clipboard_content);
+    let restore_result = clipboard
+        .write_text(&clipboard_content)
+        .map_err(|e| format!("Failed to restore clipboard: {}", e));
+
+    if let Err(err) = restore_result {
+        warn!(
+            error = %err,
+            backup_chars = clipboard_content.chars().count(),
+            "Clipboard restore failed after paste"
+        );
+    } else {
+        debug!(
+            backup_chars = clipboard_content.chars().count(),
+            "Clipboard restored after paste"
+        );
+    }
 
     Ok(())
 }
@@ -676,8 +712,12 @@ pub fn paste_with_mode(
     );
 
     info!(
-        "Using paste method: {:?}, delay: {}ms",
-        paste_method, paste_delay_ms
+        paste_method = ?paste_method,
+        clipboard_handling = ?settings.clipboard_handling,
+        paste_delay_ms,
+        paste_restore_delay_ms,
+        preparation_mode = ?preparation_mode,
+        "Resolved paste settings"
     );
 
     // Get the managed Enigo instance
@@ -741,12 +781,23 @@ pub fn paste_with_mode(
         send_return_key(enigo, settings.auto_submit_key)?;
     }
 
+    let should_copy_after_paste = settings.clipboard_handling == ClipboardHandling::CopyToClipboard;
+    debug!(
+        should_copy_after_paste,
+        did_paste,
+        "Evaluated post-paste clipboard handling branch"
+    );
+
     // After pasting, optionally copy to clipboard based on settings
-    if settings.clipboard_handling == ClipboardHandling::CopyToClipboard {
+    if should_copy_after_paste {
         let clipboard = app_handle.clipboard();
         clipboard
             .write_text(&prepared_text)
             .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
+        info!(
+            prepared_chars = prepared_text.chars().count(),
+            "Copied prepared text to clipboard per clipboard_handling setting"
+        );
     }
 
     Ok(PasteResult {
