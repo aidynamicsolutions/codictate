@@ -2,6 +2,12 @@
 
 This document outlines the general configuration options available in Codictate.
 
+## Storage Model
+
+- General app settings are stored in `settings_store.json`.
+- Dictionary entries are stored separately in `user_dictionary.json`.
+- Resetting app settings only resets `settings_store.json`; dictionary entries are not modified.
+
 ## General
 
 ### Keyboard Shortcuts
@@ -48,13 +54,13 @@ Manage how the application receives updates.
 ### Changing Default Values
 When changing a default value for an existing setting in `src-tauri/src/settings.rs`, simply updating the default function (e.g., `default_some_setting()`) is **not sufficient** for existing users.
 
-The configuration file (`settings.json`) persists the previous value. If the key exists in the user's file, the new default in code will be ignored.
+The configuration file (`settings_store.json`) persists the previous value. If the key exists in the user's file, the new default in code will be ignored.
 
 **Reset All Settings:**
 You can reset all settings to their default values in the **General > Advanced** section.
 1. Scroll down to the "Advanced" group.
 2. Click "Reset All Settings".
 3. Confirm the action in the dialog.
-*Note: This will not delete your recordings, history, or custom words.*
+*Note: This will not delete your recordings, history, or dictionary entries (custom words).*
 
 This forces `serde` to treat it as a missing key for existing users, effectively applying the new default value.

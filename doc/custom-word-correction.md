@@ -110,9 +110,26 @@ graph TD
 
 ## Configuration
 
+Dictionary entries are persisted independently from app settings in:
+
+- `app_data_dir()/user_dictionary.json`
+
+Dictionary file envelope:
+
+- `version: u32` (current supported value: `1`)
+- `entries: CustomWordEntry[]`
+
+Load behavior:
+
+- Missing file -> empty dictionary
+- Malformed file -> empty dictionary + warning log
+- Unsupported version (`version != 1`) -> empty dictionary + warning log
+
+> [!IMPORTANT]
+> Unsupported/newer versions intentionally fall back to empty in this pre-production hard-reset policy. If the user saves afterward, that file may be overwritten with version `1` data.
+
 | Setting                           | Default | Description                                               |
 | --------------------------------- | ------- | --------------------------------------------------------- |
-| `dictionary`                      | `[]`    | List of `CustomWordEntry` objects                         |
 | `word_correction_threshold`       | `0.18`  | Standard fuzzy acceptance threshold (lower = stricter)    |
 | `word_correction_split_threshold` | `0.14`  | Split-token fuzzy threshold (stricter than standard path) |
 
@@ -128,14 +145,12 @@ graph TD
 | `"Anthrapik"`         | `Anthropic` -> `Anthropic`                  | `false`          | `true`          | Standard fuzzy            | `"Anthropic"`        |
 | `"btw"`               | `btw` -> `by the way`                       | `true`           | `false`         | Exact replacement         | `"by the way"`       |
 
-## Legacy Migration
+## Migration Policy
 
-Legacy entries that do not define `fuzzy_enabled` are migrated on settings load:
+This implementation intentionally does not migrate or import dictionary data from legacy `settings.dictionary`.
 
-- `is_replacement = true` -> `fuzzy_enabled = false`
-- vocabulary with single-word normalized canonical character length `<= 4` -> `fuzzy_enabled = false`
-- all other vocabulary entries with unset `fuzzy_enabled` -> `fuzzy_enabled = true`
-- invalid short single-word entries with `fuzzy_enabled = true` are coerced to `false`
+- Existing `settings.dictionary` bytes may remain on disk in `settings_store.json` until settings are rewritten/reset.
+- Runtime dictionary reads come only from `user_dictionary.json` and in-memory dictionary state.
 
 ## Debug Logging
 
@@ -171,7 +186,7 @@ Per-session summary logs include:
 ## Technical Details
 
 - **Matcher**: `src-tauri/src/audio_toolkit/text.rs`
-- **Settings schema**: `src-tauri/src/settings.rs`
+- **Dictionary persistence/runtime state**: `src-tauri/src/user_dictionary.rs`
 - **Dictionary UI**: `src/components/dictionary/DictionaryEntryModal.tsx`
 - **Dictionary list/search**: `src/components/dictionary/DictionaryPage.tsx`
 

@@ -10,7 +10,7 @@ import {
   ArrowUpDown,
   BookOpen,
 } from "lucide-react";
-import { useSettings } from "@/hooks/useSettings";
+import { useDictionary } from "@/hooks/useDictionary";
 import { Card, CardContent } from "@/components/shared/ui/card";
 import { Button } from "@/components/shared/ui/button";
 import { Input } from "@/components/shared/ui/input";
@@ -47,7 +47,6 @@ import {
 } from "@/components/shared/ui/dialog";
 import { DictionaryEntryModal } from "./DictionaryEntryModal";
 import { CustomWordEntry } from "@/bindings";
-import { commands } from "@/bindings";
 import { toast } from "sonner";
 
 type SortOption = "newest" | "oldest" | "az" | "za";
@@ -66,7 +65,7 @@ function entriesEqual(a: CustomWordEntry, b: CustomWordEntry): boolean {
 
 export function DictionaryPage() {
   const { t } = useTranslation();
-  const { settings, updateSetting } = useSettings();
+  const { entries, setDictionary } = useDictionary();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortOption, setSortOption] = useState<SortOption>("newest");
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -80,11 +79,6 @@ export function DictionaryPage() {
   const [isHeroDismissed, setIsHeroDismissed] = useState(() => {
     return localStorage.getItem("dictionary-hero-dismissed") === "true";
   });
-
-  const entries = useMemo(
-    () => settings?.dictionary || [],
-    [settings?.dictionary],
-  );
 
   // Filter entries based on search
   const filteredEntries = useMemo(() => {
@@ -137,8 +131,7 @@ export function DictionaryPage() {
     }
 
     try {
-      await commands.updateCustomWords(newEntries);
-      updateSetting("dictionary", newEntries);
+      await setDictionary(newEntries);
       toast.success(t("dictionary.saved_success", "Dictionary updated"));
     } catch (error) {
       console.error("Failed to update dictionary:", error);
@@ -152,8 +145,7 @@ export function DictionaryPage() {
     const newEntries = entries.filter((e) => !entriesEqual(e, entryToDelete));
 
     try {
-      await commands.updateCustomWords(newEntries);
-      updateSetting("dictionary", newEntries);
+      await setDictionary(newEntries);
       toast.success(t("dictionary.deleted_success", "Entry deleted"));
     } catch (error) {
       console.error("Failed to delete entry:", error);
@@ -180,8 +172,7 @@ export function DictionaryPage() {
     );
 
     try {
-      await commands.updateCustomWords(newEntries);
-      updateSetting("dictionary", newEntries);
+      await setDictionary(newEntries);
       toast.success(t("dictionary.alias_removed", "Alias removed"));
     } catch (error) {
       console.error("Failed to remove alias:", error);

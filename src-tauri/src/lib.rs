@@ -33,6 +33,7 @@ mod transcription_coordinator;
 mod tray;
 mod tray_i18n;
 mod undo;
+mod user_dictionary;
 mod user_profile;
 mod utils;
 
@@ -919,7 +920,6 @@ pub fn run(cli_args: CliArgs) {
         shortcut::update_post_process_prompt,
         shortcut::delete_post_process_prompt,
         shortcut::set_post_process_selected_prompt,
-        shortcut::update_custom_words,
         shortcut::suspend_binding,
         shortcut::resume_binding,
         shortcut::change_mute_while_recording_setting,
@@ -938,6 +938,8 @@ pub fn run(cli_args: CliArgs) {
         commands::cancel_operation,
         commands::get_app_dir_path,
         commands::get_app_settings,
+        commands::dictionary::get_user_dictionary,
+        commands::dictionary::set_user_dictionary,
         commands::get_default_settings,
         commands::reset_app_settings,
         commands::get_log_dir_path,
@@ -1053,7 +1055,6 @@ pub fn run(cli_args: CliArgs) {
         shortcut::update_post_process_prompt,
         shortcut::delete_post_process_prompt,
         shortcut::set_post_process_selected_prompt,
-        shortcut::update_custom_words,
         shortcut::suspend_binding,
         shortcut::resume_binding,
         shortcut::change_mute_while_recording_setting,
@@ -1074,6 +1075,8 @@ pub fn run(cli_args: CliArgs) {
         commands::cancel_operation,
         commands::get_app_dir_path,
         commands::get_app_settings,
+        commands::dictionary::get_user_dictionary,
+        commands::dictionary::set_user_dictionary,
         commands::get_default_settings,
         commands::reset_app_settings,
         commands::get_log_dir_path,
@@ -1231,6 +1234,9 @@ pub fn run(cli_args: CliArgs) {
                 analytics::BackendAnalyticsEvent::AppStarted,
                 None,
             );
+
+            let dictionary_state = user_dictionary::initialize_dictionary_state(app.handle());
+            app.manage(dictionary_state);
 
             let mut settings = get_settings(app.handle());
 

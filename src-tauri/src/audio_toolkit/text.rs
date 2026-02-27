@@ -6,7 +6,7 @@ use strsim::{damerau_levenshtein, jaro_winkler};
 use tracing::{debug, info};
 use unicode_segmentation::UnicodeSegmentation;
 use crate::dictionary_normalization::normalize_for_dictionary_matching;
-use crate::settings::CustomWordEntry;
+use crate::user_dictionary::CustomWordEntry;
 
 /// Threshold for using Jaro-Winkler vs Damerau-Levenshtein
 /// Jaro-Winkler is better for short strings due to prefix emphasis

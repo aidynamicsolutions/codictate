@@ -12,8 +12,8 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::ShortcutBinding;
 use crate::settings::{
-    self, get_settings, AutoSubmitKey, ClipboardHandling, CustomWordEntry, LLMPrompt,
-    OverlayPosition, PasteMethod, SoundTheme, TypingTool, APPLE_INTELLIGENCE_DEFAULT_MODEL_ID,
+    self, get_settings, AutoSubmitKey, ClipboardHandling, LLMPrompt, OverlayPosition,
+    PasteMethod, SoundTheme, TypingTool, APPLE_INTELLIGENCE_DEFAULT_MODEL_ID,
     APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray;
@@ -654,15 +654,6 @@ pub fn change_share_usage_analytics_setting(app: AppHandle, enabled: bool) -> Re
         }),
     );
 
-    Ok(())
-}
-
-#[tauri::command]
-#[specta::specta]
-pub fn update_custom_words(app: AppHandle, words: Vec<CustomWordEntry>) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.dictionary = words;
-    settings::write_settings(&app, settings);
     Ok(())
 }
 

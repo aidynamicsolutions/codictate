@@ -4,6 +4,7 @@ use crate::audio_toolkit::{
 use crate::managers::model::{EngineType, ModelManager};
 use crate::sentry_observability::{capture_handled_error, HandledErrorMeta};
 use crate::settings::{get_settings, ModelUnloadTimeout};
+use crate::user_dictionary;
 use anyhow::Result;
 use serde::Serialize;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -634,17 +635,19 @@ impl TranscriptionManager {
         // Log raw result before any processing
         info!("Raw transcription output: '{}'", result.text);
 
+        let dictionary_entries = user_dictionary::get_dictionary_snapshot(&self.app_handle);
+
         // Apply word correction if custom words are configured
-        let corrected_result = if !settings.dictionary.is_empty() {
+        let corrected_result = if !dictionary_entries.is_empty() {
             info!(
-                dictionary_entries = settings.dictionary.len(),
+                dictionary_entries = dictionary_entries.len(),
                 threshold = settings.word_correction_threshold,
                 split_threshold = settings.word_correction_split_threshold,
                 "Applying custom word correction"
             );
             let corrected = apply_custom_words_with_thresholds(
                 &result.text,
-                &settings.dictionary,
+                dictionary_entries.as_ref(),
                 settings.word_correction_threshold,
                 settings.word_correction_split_threshold,
             );

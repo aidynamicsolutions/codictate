@@ -185,26 +185,6 @@ The system SHALL block single-word fuzzy matching when the normalized dictionary
 - **THEN** the candidate is rejected before fuzzy score acceptance
 - **AND** no fuzzy replacement is applied
 
-### Requirement: Legacy Dictionary Migration Compatibility
-The system SHALL support migration of legacy dictionary entries that do not define `fuzzy_enabled`.
-
-#### Scenario: Legacy non-short vocabulary entry retains fuzzy capability
-- **GIVEN** a legacy non-replacement entry that is not a single-word canonical target with normalized character length `<= 4`
-- **AND** `fuzzy_enabled` is unset
-- **WHEN** settings are loaded
-- **THEN** `fuzzy_enabled` is migrated to `true`
-
-#### Scenario: Legacy short vocabulary entry is hardened to exact
-- **GIVEN** a legacy non-replacement entry with single-word normalized canonical character length `<= 4`
-- **AND** `fuzzy_enabled` is unset
-- **WHEN** settings are loaded
-- **THEN** `fuzzy_enabled` is migrated to `false`
-
-#### Scenario: Replacement entries remain exact-only
-- **GIVEN** a replacement entry (`is_replacement = true`)
-- **WHEN** settings are loaded
-- **THEN** `fuzzy_enabled` is enforced as `false`
-
 ### Requirement: Intent-First Dictionary Entry Flow
 The Dictionary modal SHALL require users to choose between recognition and replacement intent before configuring optional fuzzy behavior.
 
@@ -249,4 +229,57 @@ Dictionary SHALL keep correction/recognition terminology and defer reusable long
 - **WHEN** users configure replacement inside Dictionary
 - **THEN** UI uses `Replace spoken phrase` terminology
 - **AND** does not rename the mode to `Snippet`
+
+### Requirement: Independent Dictionary Persistence
+The system SHALL persist dictionary entries in a dedicated app-data file independent of `AppSettings` payload storage.
+
+#### Scenario: Dictionary persisted outside settings
+- **WHEN** dictionary entries are saved
+- **THEN** they are written to `user_dictionary.json` under app data
+- **AND** `get_app_settings` payload does not include a `dictionary` field
+
+### Requirement: Runtime Dictionary State Uses In-Memory Snapshot
+The system SHALL load dictionary entries into managed in-memory state at startup and runtime consumers SHALL read from that in-memory snapshot.
+
+#### Scenario: Hot-path consumers avoid per-request file I/O
+- **WHEN** transcription or correction logic needs dictionary entries
+- **THEN** it reads from managed in-memory dictionary state
+- **AND** it does not perform dictionary file reads on each request
+
+### Requirement: Serialized Disk-First Dictionary Writes
+The system SHALL serialize dictionary updates and apply a disk-write-first consistency policy.
+
+#### Scenario: Successful write swaps memory after disk
+- **WHEN** `set_user_dictionary` is called
+- **THEN** the write operation is serialized behind a dedicated write gate
+- **AND** dictionary file persistence completes before in-memory state is swapped
+
+#### Scenario: Disk write failure preserves memory
+- **WHEN** dictionary file persistence fails
+- **THEN** the command returns an error
+- **AND** in-memory dictionary state remains unchanged
+
+### Requirement: Dictionary File Version Fallback
+The system SHALL accept dictionary envelope version `1` and treat other versions as unsupported.
+
+#### Scenario: Unsupported dictionary version fallback
+- **WHEN** dictionary file version is not `1`
+- **THEN** the system logs a warning with diagnostic context
+- **AND** initializes runtime dictionary state as empty
+
+### Requirement: Settings Reset Does Not Affect Dictionary
+Resetting settings SHALL not reset or mutate dictionary data.
+
+#### Scenario: Reset settings keeps dictionary
+- **WHEN** `reset_app_settings` is executed
+- **THEN** settings payload is reset to defaults
+- **AND** `user_dictionary.json` remains unchanged
+
+### Requirement: Legacy Settings Dictionary Is Not Imported
+The system SHALL not import legacy dictionary values from settings payload during startup or runtime.
+
+#### Scenario: Legacy settings dictionary remains ignored
+- **WHEN** settings storage still contains legacy `settings.dictionary` bytes
+- **THEN** dictionary runtime state is sourced only from `user_dictionary.json`
+- **AND** legacy settings dictionary values are ignored
 

@@ -29,7 +29,7 @@ import { type HistoryEntry } from "@/bindings";
 import { logError, logInfo } from "@/utils/logging";
 import { GroupedVirtuoso, GroupedVirtuosoHandle } from "react-virtuoso";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { useSettings } from "@/hooks/useSettings";
+import { useDictionary } from "@/hooks/useDictionary";
 import {
   dictionaryEntryIdentity,
   normalizeAliases,
@@ -39,7 +39,7 @@ import {
   suggestAliasFromTranscript,
 } from "@/utils/dictionaryAliasSuggestion";
 import { toast } from "sonner";
-import { useSettingsStore } from "@/stores/settingsStore";
+import { useDictionaryStore } from "@/stores/dictionaryStore";
 import {
   getHistoryCopyText,
   getHistoryPrimaryText,
@@ -87,18 +87,13 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(
     onNavigate,
   }) => {
     const { t } = useTranslation();
-    const { settings, updateSetting } = useSettings();
+    const { entries: dictionaryEntries, setDictionary } = useDictionary();
     const [currentGroupIndex, setCurrentGroupIndex] = useState(0);
     const [addingAliasByEntryId, setAddingAliasByEntryId] = useState<
       Record<number, boolean>
     >({});
     const virtuosoRef = useRef<GroupedVirtuosoHandle>(null);
     const aliasApplyInFlightRef = useRef(new Set<number>());
-    const dictionaryEntries = useMemo(
-      () => settings?.dictionary ?? [],
-      [settings?.dictionary],
-    );
-
     const copyToClipboard = async (text: string) => {
       try {
         await navigator.clipboard.writeText(text);
@@ -170,8 +165,7 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(
         }));
 
         try {
-          const latestDictionary =
-            useSettingsStore.getState().settings?.dictionary ?? [];
+          const latestDictionary = useDictionaryStore.getState().entries ?? [];
           const targetEntry = latestDictionary.find(
             (entry) =>
               dictionaryEntryIdentity(entry) === suggestion.entryIdentity,
@@ -210,7 +204,7 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(
               : entry,
           );
 
-          await updateSetting("dictionary", nextDictionary);
+          await setDictionary(nextDictionary);
           toast.success(
             t("settings.history.aliasAction.addedTitle", "Alias added"),
             {
@@ -260,7 +254,7 @@ export const HistoryList: React.FC<HistoryListProps> = React.memo(
           });
         }
       },
-      [onNavigate, t, updateSetting],
+      [onNavigate, setDictionary, t],
     );
 
     if (loading && historyEntries.length === 0) {

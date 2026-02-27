@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod correction;
+pub mod dictionary;
 pub mod history;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 pub mod mlx;
@@ -47,16 +48,7 @@ pub fn get_default_settings() -> Result<AppSettings, String> {
 #[tauri::command]
 #[specta::specta]
 pub fn reset_app_settings(app: AppHandle) -> Result<AppSettings, String> {
-    // Get current settings to preserve dictionary
-    let current_settings = get_settings(&app);
-    let dictionary = current_settings.dictionary;
-
-    // Get default settings
-    let mut default_settings = crate::settings::get_default_settings();
-    
-    // Restore dictionary
-    default_settings.dictionary = dictionary;
-    
+    let default_settings = crate::settings::get_default_settings();
     write_settings(&app, default_settings.clone());
     Ok(default_settings)
 }

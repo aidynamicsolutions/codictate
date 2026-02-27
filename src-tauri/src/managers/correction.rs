@@ -12,6 +12,7 @@ use tracing::{debug, error, info, warn};
 use crate::accessibility::{CapturedContext, CorrectionResult};
 use crate::growth::{self, FeatureEntrypoint, FeatureName};
 use crate::settings::{get_settings, AppSettings};
+use crate::user_dictionary::{self, CustomWordEntry};
 use regex::Regex;
 
 use once_cell::sync::Lazy;
@@ -122,7 +123,12 @@ impl CorrectionManager {
 
         // 2. Build prompt — send the full context as ${output} so LLM sees the sentence
         let settings = get_settings(&self.app_handle);
-        let prompt = self.build_correction_prompt(&settings, &text_for_llm, &context)?;
+        let dictionary_entries = user_dictionary::get_dictionary_snapshot(&self.app_handle);
+        let prompt = self.build_correction_prompt(
+            dictionary_entries.as_ref(),
+            &text_for_llm,
+            &context,
+        )?;
         debug!(prompt_len = prompt.len(), prompt = %prompt, "Built correction prompt");
 
         // 3. Send to LLM
@@ -215,17 +221,17 @@ impl CorrectionManager {
     /// refine prompts. This ensures the Fn+Z correction always uses the tested prompt.
     fn build_correction_prompt(
         &self,
-        settings: &AppSettings,
+        dictionary_entries: &[CustomWordEntry],
         target_text: &str,
         context: &CapturedContext,
     ) -> Result<String, String> {
         let prompt_template = CORRECTION_PROMPT_TEMPLATE;
 
-        let dict_total = settings.dictionary.len();
+        let dict_total = dictionary_entries.len();
         let dict_used = dict_total.min(50);
 
         let mut hints_lines = Vec::new();
-        for entry in settings.dictionary.iter().take(50) {
+        for entry in dictionary_entries.iter().take(50) {
             // If it's a replacement (is_replacement=true), it's a strict fix.
             // If it's vocabulary (is_replacement=false), it's a biasing term.
             if entry.is_replacement {
