@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { isDuplicateEntry, normalizeAliases } from "./dictionaryUtils";
+import {
+  deriveIntentFromEntry,
+  isDuplicateEntry,
+  isReplacementOutputValid,
+  isShortSingleWordFuzzyBlocked,
+  normalizeAliases,
+  normalizeDictionaryForMatching,
+} from "./dictionaryUtils";
 import type { CustomWordEntry } from "@/bindings";
 
 // Helper to create a CustomWordEntry for tests
@@ -8,12 +15,14 @@ function createEntry(
   replacement?: string,
   isReplacement = false,
   aliases: string[] = [],
+  fuzzyEnabled?: boolean | null,
 ): CustomWordEntry {
   return {
     input,
     aliases,
     replacement: replacement ?? input,
     is_replacement: isReplacement,
+    fuzzy_enabled: fuzzyEnabled ?? null,
   };
 }
 
@@ -159,5 +168,81 @@ describe("isDuplicateEntry", () => {
       expect(isDuplicateEntry("word500", [], entries)).toBe(true);
       expect(isDuplicateEntry("notfound", [], entries)).toBe(false);
     });
+  });
+});
+
+describe("normalizeDictionaryForMatching", () => {
+  it("expands symbols and strips punctuation", () => {
+    expect(normalizeDictionaryForMatching("C++")).toBe("cplusplus");
+    expect(normalizeDictionaryForMatching("Node.js")).toBe("nodejs");
+    expect(normalizeDictionaryForMatching("R&D")).toBe("randd");
+  });
+
+  it("keeps unicode letters and numbers", () => {
+    expect(normalizeDictionaryForMatching("猫咪")).toBe("猫咪");
+    expect(normalizeDictionaryForMatching("CAFÉ")).toBe("café");
+  });
+});
+
+describe("isShortSingleWordFuzzyBlocked", () => {
+  it("blocks short ascii single-word terms", () => {
+    expect(isShortSingleWordFuzzyBlocked("qwen")).toBe(true);
+  });
+
+  it("blocks short non-ascii single-word terms by character length", () => {
+    expect(isShortSingleWordFuzzyBlocked("猫咪")).toBe(true);
+  });
+
+  it("does not block long single-word terms", () => {
+    expect(isShortSingleWordFuzzyBlocked("anthropic")).toBe(false);
+    expect(isShortSingleWordFuzzyBlocked("C++")).toBe(false);
+  });
+
+  it("does not block multi-word terms, even when normalized length is short", () => {
+    expect(isShortSingleWordFuzzyBlocked("c l i")).toBe(false);
+  });
+});
+
+describe("deriveIntentFromEntry", () => {
+  it("defaults to recognize when entry is undefined", () => {
+    expect(deriveIntentFromEntry()).toBe("recognize");
+  });
+
+  it("returns recognize for non-replacement entries", () => {
+    expect(deriveIntentFromEntry(createEntry("ChatGPT"))).toBe("recognize");
+  });
+
+  it("returns replace for explicit replacement entries", () => {
+    expect(
+      deriveIntentFromEntry(
+        createEntry("btw", "by the way", true, ["by the way shortcut"]),
+      ),
+    ).toBe("replace");
+  });
+
+  it("returns replace when replacement differs from input", () => {
+    expect(deriveIntentFromEntry(createEntry("my email", "john@example.com"))).toBe(
+      "replace",
+    );
+  });
+});
+
+describe("isReplacementOutputValid", () => {
+  it("rejects empty input or output", () => {
+    expect(isReplacementOutputValid("", "by the way")).toBe(false);
+    expect(isReplacementOutputValid("btw", "")).toBe(false);
+  });
+
+  it("rejects output equal to input after trimming", () => {
+    expect(isReplacementOutputValid("btw", "btw")).toBe(false);
+    expect(isReplacementOutputValid("btw", " btw ")).toBe(false);
+  });
+
+  it("accepts output that differs from input", () => {
+    expect(isReplacementOutputValid("btw", "by the way")).toBe(true);
+  });
+
+  it("treats case-only differences as valid output", () => {
+    expect(isReplacementOutputValid("chatgpt", "ChatGPT")).toBe(true);
   });
 });

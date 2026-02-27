@@ -11,6 +11,7 @@ pub mod audio_toolkit;
 pub mod cli;
 mod clipboard;
 mod commands;
+mod dictionary_normalization;
 #[cfg(target_os = "macos")]
 mod fn_key_monitor;
 mod helpers;

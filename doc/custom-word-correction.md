@@ -6,27 +6,31 @@ For a non-technical, UI-first walkthrough, see `doc/dictionary-user-guide.md`.
 
 ## Dictionary Entry Types
 
-Each dictionary entry has four fields:
+Each dictionary entry has five fields:
 
 | Field            | Description                                                          |
 | ---------------- | -------------------------------------------------------------------- |
 | `input`          | Canonical word/phrase to recognize                                   |
 | `aliases`        | Additional spoken variants for the same canonical term               |
 | `replacement`    | What to output when a match is accepted                              |
-| `is_replacement` | `true` = exact match only, `false` = fuzzy/phonetic matching enabled |
+| `is_replacement` | `true` = replacement mode (exact-only), `false` = vocabulary mode    |
+| `fuzzy_enabled`  | Per-entry fuzzy opt-in for vocabulary mode (`true` = allow fuzzy)    |
 
 > [!NOTE]
 > Legacy dictionary entries without `aliases` are supported. Missing `aliases` default to an empty list.
 
 ### Two Modes
 
-| Mode            | `is_replacement`  | Toggle State | Matching                 | Use Case                                      |
-| --------------- | ----------------- | ------------ | ------------------------ | --------------------------------------------- |
-| **Vocabulary**  | `false` (default) | OFF          | Exact + Fuzzy + Phonetic | Learn terms and names (`shadcn`, `Anthropic`) |
-| **Replacement** | `true`            | ON           | Case-insensitive exact   | Expand text (`btw` -> `by the way`)           |
+| Intent UI                    | `is_replacement` | Matching                        | Use Case                                         |
+| --------------------------- | ---------------- | ------------------------------- | ------------------------------------------------ |
+| **Recognize this term**     | `false`          | Exact canonical + exact aliases | Learn terms and names (`shadcn`, `Anthropic`)    |
+| **Replace spoken phrase**   | `true`           | Case-insensitive exact          | Expand text (`btw` -> `by the way`)              |
 
 > [!NOTE]
-> **Fuzzy matching is the default.** Toggle ON "Replace with different text" for exact-only replacements.
+> Fuzzy matching is not default. In vocabulary mode, fuzzy is evaluated only when `fuzzy_enabled = true`.
+
+> [!IMPORTANT]
+> Single-word targets (canonical input or active alias) with normalized character length `<= 4` are hard-blocked from fuzzy matching even if `fuzzy_enabled = true`.
 
 ### Case Adaptation for Replacements
 
@@ -50,6 +54,8 @@ The matcher combines **N-gram analysis** with **phonetic and fuzzy matching** to
    - Fuzzy pass scans up to 1-3 word windows
 3. **Exact-first pass**: Canonical `input` and all `aliases` are checked before fuzzy matching.
 4. **Fuzzy pass**:
+   - Skip unless `fuzzy_enabled = true` on the entry
+   - Hard-block short single-word targets (`normalized canonical or alias character length <= 4`)
    - **Split-token fuzzy path** for 2-3 word n-grams against single-token targets (strict guards + strict threshold)
    - **Standard fuzzy path** for regular matching
 5. **Scoring stack**:
@@ -77,7 +83,11 @@ graph TD
     E -- Yes --> F[Apply Replacement and Preserve Punctuation]
     E -- No --> G{is_replacement?}
     G -- Yes --> H[Skip Fuzzy for this entry]
-    G -- No --> I{Split-token path? 2-3 tokens to single-token target}
+    G -- No --> FZ{fuzzy_enabled?}
+    FZ -- No --> H
+    FZ -- Yes --> ST{Single-word target && normalized <=4?}
+    ST -- Yes --> H
+    ST -- No --> I{Split-token path? 2-3 tokens to single-token target}
     I -- Yes --> J{Split guards pass?}
     J -- No --> H
     J -- Yes --> K{Split score < split threshold?}
@@ -106,15 +116,26 @@ graph TD
 | `word_correction_threshold`       | `0.18`  | Standard fuzzy acceptance threshold (lower = stricter)    |
 | `word_correction_split_threshold` | `0.14`  | Split-token fuzzy threshold (stricter than standard path) |
 
+`word_correction_threshold` remains at `0.18` in this rollout.
+
 ## Examples
 
-| Transcription         | Entry (input/aliases -> replacement)        | `is_replacement` | Match Type                | Result               |
-| --------------------- | ------------------------------------------- | ---------------- | ------------------------- | -------------------- |
-| `"chat gpt"`          | `ChatGPT`, aliases: `chat gpt` -> `ChatGPT` | `false`          | Exact alias               | `"ChatGPT"`          |
-| `"shad c n?"`         | `shadcn`, aliases: `shad c n` -> `shadcn`   | `false`          | Exact alias + punctuation | `"shadcn?"`          |
-| `"Shat CN component"` | `shadcn` -> `shadcn`                        | `false`          | Split-token fuzzy         | `"Shadcn component"` |
-| `"Anthrapik"`         | `Anthropic` -> `Anthropic`                  | `false`          | Standard fuzzy            | `"Anthropic"`        |
-| `"btw"`               | `btw` -> `by the way`                       | `true`           | Exact replacement         | `"by the way"`       |
+| Transcription         | Entry (input/aliases -> replacement)        | `is_replacement` | `fuzzy_enabled` | Match Type                | Result               |
+| --------------------- | ------------------------------------------- | ---------------- | --------------- | ------------------------- | -------------------- |
+| `"chat gpt"`          | `ChatGPT`, aliases: `chat gpt` -> `ChatGPT` | `false`          | `false`         | Exact alias               | `"ChatGPT"`          |
+| `"shad c n?"`         | `shadcn`, aliases: `shad c n` -> `shadcn`   | `false`          | `false`         | Exact alias + punctuation | `"shadcn?"`          |
+| `"Shat CN component"` | `shadcn` -> `shadcn`                        | `false`          | `true`          | Split-token fuzzy         | `"Shadcn component"` |
+| `"Anthrapik"`         | `Anthropic` -> `Anthropic`                  | `false`          | `true`          | Standard fuzzy            | `"Anthropic"`        |
+| `"btw"`               | `btw` -> `by the way`                       | `true`           | `false`         | Exact replacement         | `"by the way"`       |
+
+## Legacy Migration
+
+Legacy entries that do not define `fuzzy_enabled` are migrated on settings load:
+
+- `is_replacement = true` -> `fuzzy_enabled = false`
+- vocabulary with single-word normalized canonical character length `<= 4` -> `fuzzy_enabled = false`
+- all other vocabulary entries with unset `fuzzy_enabled` -> `fuzzy_enabled = true`
+- invalid short single-word entries with `fuzzy_enabled = true` are coerced to `false`
 
 ## Debug Logging
 
@@ -128,6 +149,8 @@ Reason-coded decisions include:
 
 - `exact_alias_match`
 - `exact_canonical_match`
+- `skip_fuzzy_disabled`
+- `skip_short_target`
 - `skip_guard_word`
 - `skip_short_input`
 - `skip_word_count`
@@ -162,10 +185,12 @@ Per-session summary logs include:
 
 ## UI Features
 
-| Feature             | Description                                                                          |
-| ------------------- | ------------------------------------------------------------------------------------ |
-| Alias editing       | Add multiple spoken variants per canonical term                                      |
-| Duplicate detection | Prevents collisions across canonical inputs and aliases                              |
-| Search coverage     | Search includes input, replacement, and aliases                                      |
-| Character limits    | Input: 100 chars, Replacement: 300 chars, Alias input: 100 chars each, max 8 aliases |
-| Auto-grow textarea  | Input fields expand up to 3 lines                                                    |
+| Feature                | Description                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| Intent-first modal     | Choose `Recognize this term` or `Replace spoken phrase` before configuring details   |
+| Alias editing          | Add multiple spoken variants per canonical term                                       |
+| Conditional fuzzy row  | Fuzzy toggle appears only for recognize intent when input is fuzzy-eligible          |
+| Duplicate detection    | Prevents collisions across canonical inputs and aliases                               |
+| Search coverage        | Search includes input, replacement, and aliases                                       |
+| Character limits       | Input: 100 chars, Replacement: 300 chars, Alias input: 100 chars each, max 8 aliases |
+| Auto-grow textarea     | Default inputs expand up to 3 lines; replacement mapping inputs expand up to 4 lines  |

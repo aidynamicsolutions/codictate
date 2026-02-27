@@ -4,8 +4,94 @@ function normalizeSpaces(value: string): string {
   return value.trim().replace(/\s+/g, " ");
 }
 
+function trimValue(value: string): string {
+  return value.trim();
+}
+
+const DICTIONARY_SHORT_TARGET_FUZZY_BLOCK_LEN = 4;
+const ALPHANUMERIC_CHAR_RE = /[\p{L}\p{N}]/u;
+const WHITESPACE_CHAR_RE = /\s/u;
+
+export type DictionaryEntryIntent = "recognize" | "replace";
+
 export function normalizeDictionaryTerm(value: string): string {
   return normalizeSpaces(value).toLowerCase();
+}
+
+export function normalizeDictionaryForMatching(value: string): string {
+  const lower = value.toLowerCase();
+  let expanded = "";
+
+  for (const ch of lower) {
+    switch (ch) {
+      case "+":
+        expanded += " plus ";
+        break;
+      case "#":
+        expanded += " sharp ";
+        break;
+      case "&":
+        expanded += " and ";
+        break;
+      default:
+        if (ALPHANUMERIC_CHAR_RE.test(ch) || WHITESPACE_CHAR_RE.test(ch)) {
+          expanded += ch;
+        } else {
+          expanded += " ";
+        }
+        break;
+    }
+  }
+
+  return [...expanded].filter((ch) => ALPHANUMERIC_CHAR_RE.test(ch)).join("");
+}
+
+export function isShortSingleWordFuzzyBlocked(input: string): boolean {
+  const wordCount = normalizeSpaces(input).split(" ").filter(Boolean).length;
+  if (wordCount !== 1) {
+    return false;
+  }
+  return (
+    [...normalizeDictionaryForMatching(input)].length <=
+    DICTIONARY_SHORT_TARGET_FUZZY_BLOCK_LEN
+  );
+}
+
+export function deriveIntentFromEntry(
+  entry?: CustomWordEntry,
+): DictionaryEntryIntent {
+  if (!entry) {
+    return "recognize";
+  }
+
+  if (entry.is_replacement) {
+    return "replace";
+  }
+
+  const trimmedInput = trimValue(entry.input);
+  const trimmedReplacement = trimValue(entry.replacement);
+  if (
+    trimmedReplacement.length > 0 &&
+    trimmedReplacement !== trimmedInput
+  ) {
+    return "replace";
+  }
+
+  return "recognize";
+}
+
+export function isReplacementOutputValid(
+  input: string,
+  replacement: string,
+): boolean {
+  const trimmedInput = trimValue(input);
+  const trimmedReplacement = trimValue(replacement);
+
+  if (trimmedInput.length === 0 || trimmedReplacement.length === 0) {
+    return false;
+  }
+
+  return trimmedInput !== trimmedReplacement;
 }
 
 export function normalizeAliases(aliases: string[], input: string): string[] {

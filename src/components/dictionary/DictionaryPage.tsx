@@ -247,11 +247,11 @@ export function DictionaryPage() {
     {
       title: t(
         "dictionary.quick_tips.tip2_title",
-        "Use replacement mode for shortcuts",
+        "Use replace intent for spoken corrections",
       ),
       description: t(
         "dictionary.quick_tips.tip2_description",
-        "Turn on \"Replace with different text\" for entries like 'btw' -> 'by the way'.",
+        "Choose \"Replace spoken phrase\" for entries like 'btw' -> 'by the way'.",
       ),
     },
     {

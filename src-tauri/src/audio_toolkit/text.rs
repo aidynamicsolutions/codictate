@@ -1,11 +1,12 @@
-use crate::settings::CustomWordEntry;
-use std::sync::LazyLock;
 use regex::Regex;
 use rphonetic::{DoubleMetaphone, Encoder};
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 use strsim::{damerau_levenshtein, jaro_winkler};
 use tracing::{debug, info};
 use unicode_segmentation::UnicodeSegmentation;
+use crate::dictionary_normalization::normalize_for_dictionary_matching;
+use crate::settings::CustomWordEntry;
 
 /// Threshold for using Jaro-Winkler vs Damerau-Levenshtein
 /// Jaro-Winkler is better for short strings due to prefix emphasis
@@ -39,6 +40,10 @@ const MAX_EXACT_NGRAM_WORDS: usize = 8;
 /// Maximum n-gram length for fuzzy matching.
 /// Fuzzy matching on long phrases tends to increase false positives and cost.
 const MAX_FUZZY_NGRAM_WORDS: usize = 3;
+
+/// Single-word dictionary targets with normalized length <= this value are
+/// never eligible for fuzzy matching.
+const SINGLE_WORD_FUZZY_BLOCK_MAX_TARGET_LEN: usize = 4;
 
 use crate::audio_toolkit::stop_words::{FUZZY_GUARD_WORDS, SELF_CORRECTION_PROTECTED_SHORT_WORDS};
 
@@ -86,8 +91,14 @@ struct CustomPhrase {
     source_text: String,
     /// Number of words in `source_text`.
     source_word_count: usize,
+    /// Normalized character length of `source_text`.
+    source_normalized_len: usize,
     /// True when `source_text` is an alias.
     is_alias: bool,
+    /// Word count of canonical dictionary input.
+    canonical_word_count: usize,
+    /// Normalized length of canonical dictionary input.
+    canonical_normalized_len: usize,
     /// Phonetic codes of concatenated input (for fuzzy matching)
     phonetic: PhoneticCodes,
     /// Concatenated lowercase input for matching
@@ -126,11 +137,20 @@ impl CustomPhrase {
         if source_word_count == 0 {
             return None;
         }
+        let canonical_word_count = entry.input.split_whitespace().count();
+        if canonical_word_count == 0 {
+            return None;
+        }
+        let canonical_normalized_len = normalize_for_matching(&entry.input).chars().count();
+        if canonical_normalized_len == 0 {
+            return None;
+        }
 
         let concatenated_input = normalize_for_matching(&source_text);
         if concatenated_input.is_empty() {
             return None;
         }
+        let source_normalized_len = concatenated_input.chars().count();
 
         let phonetic = PhoneticCodes::new(encoder, &concatenated_input);
 
@@ -138,7 +158,10 @@ impl CustomPhrase {
             entry,
             source_text,
             source_word_count,
+            source_normalized_len,
             is_alias,
+            canonical_word_count,
+            canonical_normalized_len,
             phonetic,
             concatenated_input,
         })
@@ -181,20 +204,7 @@ fn build_ngram(words: &[&str]) -> String {
 /// This keeps exact matching consistent between dictionary entries and transcript n-grams,
 /// including punctuated terms like "don't", "node.js", and "c++".
 fn normalize_for_matching(text: &str) -> String {
-    let lower = text.to_lowercase();
-    let mut expanded = String::with_capacity(lower.len() + 8);
-
-    for ch in lower.chars() {
-        match ch {
-            '+' => expanded.push_str(" plus "),
-            '#' => expanded.push_str(" sharp "),
-            '&' => expanded.push_str(" and "),
-            c if c.is_alphanumeric() || c.is_whitespace() => expanded.push(c),
-            _ => expanded.push(' '),
-        }
-    }
-
-    expanded.chars().filter(|c| c.is_alphanumeric()).collect()
+    normalize_for_dictionary_matching(text)
 }
 
 fn is_short_prefix_extension(ngram_text: &str, candidate_text: &str) -> bool {
@@ -449,6 +459,42 @@ fn apply_custom_words_to_hypothesis(
                         n,
                         entry_input = %phrase.entry.input,
                         entry_alias = %phrase.source_text,
+                        "[CustomWords] Rejected candidate"
+                    );
+                    continue;
+                }
+
+                if phrase.entry.fuzzy_enabled != Some(true) {
+                    stats.reject("skip_fuzzy_disabled");
+                    debug!(
+                        reason = "skip_fuzzy_disabled",
+                        path = "fuzzy",
+                        ngram = %ngram_text,
+                        n,
+                        entry_input = %phrase.entry.input,
+                        entry_alias = %phrase.source_text,
+                        "[CustomWords] Rejected candidate"
+                    );
+                    continue;
+                }
+
+                let canonical_short_single = phrase.canonical_word_count == 1
+                    && phrase.canonical_normalized_len <= SINGLE_WORD_FUZZY_BLOCK_MAX_TARGET_LEN;
+                let source_short_single = phrase.source_word_count == 1
+                    && phrase.source_normalized_len <= SINGLE_WORD_FUZZY_BLOCK_MAX_TARGET_LEN;
+                if canonical_short_single || source_short_single {
+                    stats.reject("skip_short_target");
+                    debug!(
+                        reason = "skip_short_target",
+                        path = "fuzzy",
+                        ngram = %ngram_text,
+                        n,
+                        entry_input = %phrase.entry.input,
+                        entry_alias = %phrase.source_text,
+                        canonical_short_single = canonical_short_single,
+                        source_short_single = source_short_single,
+                        canonical_normalized_len = phrase.canonical_normalized_len,
+                        source_normalized_len = phrase.source_normalized_len,
                         "[CustomWords] Rejected candidate"
                     );
                     continue;
@@ -1080,6 +1126,7 @@ mod tests {
             aliases: Vec::new(),
             replacement: replacement.to_string(),
             is_replacement: false, // Fuzzy matching enabled
+            fuzzy_enabled: Some(true),
         }
     }
 
@@ -1090,6 +1137,27 @@ mod tests {
             aliases: Vec::new(),
             replacement: replacement.to_string(),
             is_replacement: true, // Exact match only
+            fuzzy_enabled: Some(false),
+        }
+    }
+
+    fn vocabulary_exact_only(input: &str, replacement: &str) -> CustomWordEntry {
+        CustomWordEntry {
+            input: input.to_string(),
+            aliases: Vec::new(),
+            replacement: replacement.to_string(),
+            is_replacement: false,
+            fuzzy_enabled: Some(false),
+        }
+    }
+
+    fn vocabulary_legacy(input: &str, replacement: &str) -> CustomWordEntry {
+        CustomWordEntry {
+            input: input.to_string(),
+            aliases: Vec::new(),
+            replacement: replacement.to_string(),
+            is_replacement: false,
+            fuzzy_enabled: None,
         }
     }
 
@@ -1103,6 +1171,7 @@ mod tests {
             aliases: aliases.iter().map(|alias| alias.to_string()).collect(),
             replacement: replacement.to_string(),
             is_replacement: true, // Exact match only
+            fuzzy_enabled: Some(false),
         }
     }
 
@@ -1116,6 +1185,7 @@ mod tests {
             aliases: aliases.iter().map(|alias| alias.to_string()).collect(),
             replacement: replacement.to_string(),
             is_replacement: false,
+            fuzzy_enabled: Some(true),
         }
     }
 
@@ -1504,6 +1574,64 @@ mod tests {
         let custom_words = vec![vocabulary("cli", "cli")];
         let result = apply_custom_words(text, &custom_words, 0.18);
         assert_eq!(result, "Click the banner to continue.");
+    }
+
+    #[test]
+    fn test_no_false_positive_went_to_qwen() {
+        // Short single-word target ("qwen", len=4) must never use fuzzy matching.
+        let text = "went well";
+        let custom_words = vec![vocabulary("qwen", "qwen")];
+        let result = apply_custom_words(text, &custom_words, 1.0);
+        assert_eq!(result, "went well");
+    }
+
+    #[test]
+    fn test_short_alias_exact_match_still_works_for_qwen() {
+        // Exact aliases are still allowed for short entries.
+        let text = "gwen is running";
+        let custom_words = vec![vocabulary_with_aliases("qwen", &["gwen"], "qwen")];
+        let result = apply_custom_words(text, &custom_words, 0.18);
+        assert_eq!(result, "qwen is running");
+    }
+
+    #[test]
+    fn test_non_ascii_short_target_does_not_fuzzy_match() {
+        // Non-ASCII short targets should follow the same <=4 character hard block.
+        let text = "描咪";
+        let custom_words = vec![vocabulary("猫咪", "猫咪")];
+        let result = apply_custom_words(text, &custom_words, 1.0);
+        assert_eq!(result, "描咪");
+    }
+
+    #[test]
+    fn test_short_alias_under_long_canonical_does_not_fuzzy_match() {
+        // Guard must apply to active alias shape too, not just canonical input.
+        // Long canonical + short alias should not permit fuzzy rewrites via alias.
+        let text = "went";
+        let custom_words = vec![vocabulary_with_aliases(
+            "qwenengine",
+            &["qwen"],
+            "QwenEngine",
+        )];
+        let result = apply_custom_words(text, &custom_words, 1.0);
+        assert_eq!(result, "went");
+    }
+
+    #[test]
+    fn test_fuzzy_disabled_blocks_long_term_near_miss() {
+        let text = "I use Anthrapik daily";
+        let custom_words = vec![vocabulary_exact_only("Anthropic", "Anthropic")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I use Anthrapik daily");
+    }
+
+    #[test]
+    fn test_legacy_none_fuzzy_treated_as_disabled_in_matcher() {
+        // Runtime matcher contract: fuzzy_enabled != Some(true) means no fuzzy path.
+        let text = "I use Anthrapik daily";
+        let custom_words = vec![vocabulary_legacy("Anthropic", "Anthropic")];
+        let result = apply_custom_words(text, &custom_words, 0.5);
+        assert_eq!(result, "I use Anthrapik daily");
     }
 
     #[test]

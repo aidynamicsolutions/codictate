@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Info, ArrowRight, X, Plus } from "lucide-react";
+import { ArrowRight, Check, Info, X, Plus } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,14 @@ import {
 } from "@/components/shared/ui/tooltip";
 import { CustomWordEntry } from "@/bindings";
 import { cn } from "@/lib/utils";
-import { isDuplicateEntry, normalizeAliases } from "@/utils/dictionaryUtils";
+import {
+  deriveIntentFromEntry,
+  DictionaryEntryIntent,
+  isDuplicateEntry,
+  isReplacementOutputValid,
+  isShortSingleWordFuzzyBlocked,
+  normalizeAliases,
+} from "@/utils/dictionaryUtils";
 
 // Character limits based on UX best practices:
 // - Input (trigger phrase): 100 chars (~10-15 words) - longer phrases are unlikely to be consistently spoken
@@ -53,6 +60,7 @@ function AutoGrowTextarea({
   onKeyDown,
   placeholder,
   maxLength,
+  maxRows = 3,
   autoFocus,
   id,
   className,
@@ -62,6 +70,7 @@ function AutoGrowTextarea({
   onKeyDown?: (e: React.KeyboardEvent) => void;
   placeholder?: string;
   maxLength: number;
+  maxRows?: number;
   autoFocus?: boolean;
   id?: string;
   className?: string;
@@ -81,9 +90,9 @@ function AutoGrowTextarea({
     // Calculate line height (approx 20px per line)
     const lineHeight = 20;
     const minRows = 1;
-    const maxRows = 3;
+    const maxVisibleRows = maxRows;
     const minHeight = lineHeight * minRows + 16; // 16px for padding
-    const maxHeight = lineHeight * maxRows + 16;
+    const maxHeight = lineHeight * maxVisibleRows + 16;
 
     // Set height based on content, clamped to min/max
     const newHeight = Math.min(
@@ -91,7 +100,7 @@ function AutoGrowTextarea({
       maxHeight,
     );
     textarea.style.height = `${newHeight}px`;
-  }, []);
+  }, [maxRows]);
 
   useEffect(() => {
     adjustHeight();
@@ -152,12 +161,42 @@ export function DictionaryEntryModal({
   existingEntries = [],
 }: DictionaryEntryModalProps) {
   const { t } = useTranslation();
+  const recognizeIntentRef = useRef<HTMLButtonElement>(null);
+  const replaceIntentRef = useRef<HTMLButtonElement>(null);
+  const [intent, setIntent] = useState<DictionaryEntryIntent>("recognize");
   const [input, setInput] = useState("");
   const [replacement, setReplacement] = useState("");
   const [aliases, setAliases] = useState<string[]>([]);
   const [aliasDraft, setAliasDraft] = useState("");
-  const [isReplacement, setIsReplacement] = useState(false);
+  const [fuzzyEnabled, setFuzzyEnabled] = useState(false);
   const [duplicateError, setDuplicateError] = useState(false);
+  const [showReplacementEqualityError, setShowReplacementEqualityError] =
+    useState(false);
+
+  const trimmedInput = useMemo(() => input.trim(), [input]);
+  const trimmedReplacement = useMemo(() => replacement.trim(), [replacement]);
+  const isReplacementMode = intent === "replace";
+  const hasReplacementOutput = trimmedReplacement.length > 0;
+  const hasValidReplacementOutput = useMemo(
+    () => isReplacementOutputValid(input, replacement),
+    [input, replacement],
+  );
+
+  const isFuzzyBlockedByShortTarget = useMemo(() => {
+    if (isReplacementMode) {
+      return false;
+    }
+    return isShortSingleWordFuzzyBlocked(input);
+  }, [input, isReplacementMode]);
+  const shouldShowFuzzyToggle = useMemo(() => {
+    if (isReplacementMode) {
+      return false;
+    }
+    if (!trimmedInput) {
+      return false;
+    }
+    return !isFuzzyBlockedByShortTarget;
+  }, [isReplacementMode, trimmedInput, isFuzzyBlockedByShortTarget]);
 
   const addAliasesFromRaw = useCallback(
     (raw: string) => {
@@ -189,47 +228,82 @@ export function DictionaryEntryModal({
   useEffect(() => {
     if (isOpen) {
       if (initialEntry) {
+        const initialIntent = deriveIntentFromEntry(initialEntry);
         setInput(initialEntry.input);
-        setReplacement(initialEntry.replacement);
+        setIntent(initialIntent);
+        setReplacement(initialIntent === "replace" ? initialEntry.replacement : "");
         setAliases(
           normalizeAliases(initialEntry.aliases ?? [], initialEntry.input),
         );
         setAliasDraft("");
-        setIsReplacement(initialEntry.is_replacement);
+        setFuzzyEnabled(
+          initialIntent === "recognize" && initialEntry.fuzzy_enabled === true,
+        );
+        setShowReplacementEqualityError(false);
       } else {
+        setIntent("recognize");
         setInput("");
         setReplacement("");
         setAliases([]);
         setAliasDraft("");
-        setIsReplacement(false);
+        setFuzzyEnabled(false);
+        setShowReplacementEqualityError(false);
       }
     }
   }, [isOpen, initialEntry]);
 
+  useEffect(() => {
+    if (isFuzzyBlockedByShortTarget) {
+      setFuzzyEnabled(false);
+    }
+  }, [isFuzzyBlockedByShortTarget]);
+
+  useEffect(() => {
+    if (!isReplacementMode || !hasReplacementOutput || hasValidReplacementOutput) {
+      setShowReplacementEqualityError(false);
+    }
+  }, [isReplacementMode, hasReplacementOutput, hasValidReplacementOutput]);
+
   const canSave = useCallback(() => {
-    if (!input.trim()) return false;
-    if (isReplacement && !replacement.trim()) return false;
+    if (!trimmedInput) return false;
     if (duplicateError) return false;
+    if (isReplacementMode && !hasReplacementOutput) return false;
     return true;
-  }, [input, replacement, isReplacement, duplicateError]);
+  }, [trimmedInput, duplicateError, isReplacementMode, hasReplacementOutput]);
 
   const handleSave = useCallback(() => {
     if (!canSave()) return;
+    if (isReplacementMode && !hasValidReplacementOutput) {
+      setShowReplacementEqualityError(true);
+      return;
+    }
 
+    const enforceExactOnly = isReplacementMode || isFuzzyBlockedByShortTarget;
     onSave({
-      input: input.trim(),
+      input: trimmedInput,
       aliases,
-      // When replacement mode is on, use custom replacement; otherwise same as input
-      replacement: isReplacement ? replacement.trim() : input.trim(),
-      is_replacement: isReplacement,
+      replacement: isReplacementMode ? trimmedReplacement : trimmedInput,
+      is_replacement: isReplacementMode,
+      fuzzy_enabled: enforceExactOnly ? false : fuzzyEnabled,
     });
     onClose();
-  }, [input, replacement, aliases, isReplacement, canSave, onSave, onClose]);
+  }, [
+    trimmedInput,
+    trimmedReplacement,
+    aliases,
+    isReplacementMode,
+    fuzzyEnabled,
+    isFuzzyBlockedByShortTarget,
+    hasValidReplacementOutput,
+    canSave,
+    onSave,
+    onClose,
+  ]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      // Save on Enter (since we're using single-line style now) or Cmd/Ctrl + Enter
-      if (e.key === "Enter" && !e.shiftKey && canSave()) {
+      // Preserve Enter for multi-line input; save with Cmd/Ctrl+Enter.
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && canSave()) {
         e.preventDefault();
         handleSave();
       }
@@ -258,6 +332,49 @@ export function DictionaryEntryModal({
     [addAliasesFromRaw, aliasDraft, aliases.length],
   );
 
+  const handleIntentKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLButtonElement>) => {
+      const focusIntentButton = (nextIntent: DictionaryEntryIntent) => {
+        if (nextIntent === "recognize") {
+          recognizeIntentRef.current?.focus();
+        } else {
+          replaceIntentRef.current?.focus();
+        }
+      };
+
+      if (
+        e.key === "ArrowRight" ||
+        e.key === "ArrowDown" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowUp"
+      ) {
+        e.preventDefault();
+        const orderedIntents: DictionaryEntryIntent[] = [
+          "recognize",
+          "replace",
+        ];
+        const currentIndex = orderedIntents.indexOf(intent);
+        const direction =
+          e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : -1;
+        const nextIndex =
+          (currentIndex + direction + orderedIntents.length) %
+          orderedIntents.length;
+        const nextIntent = orderedIntents[nextIndex];
+        setIntent(nextIntent);
+        focusIntentButton(nextIntent);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        setIntent("recognize");
+        focusIntentButton("recognize");
+      } else if (e.key === "End") {
+        e.preventDefault();
+        setIntent("replace");
+        focusIntentButton("replace");
+      }
+    },
+    [intent],
+  );
+
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-[520px] border-border/60 shadow-2xl dark:border-border dark:shadow-black/50 dark:bg-card">
@@ -276,117 +393,196 @@ export function DictionaryEntryModal({
         </DialogHeader>
 
         <div className="space-y-5 py-4">
-          {/* Replacement Toggle */}
-          <TooltipProvider delayDuration={800}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Label
-                  htmlFor="is-replacement"
-                  className="text-sm font-medium cursor-pointer"
-                >
-                  {t(
-                    "dictionary.replace_with_text",
-                    "Replace with different text",
-                  )}
-                </Label>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      tabIndex={-1}
-                      className="text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-                    >
-                      <Info className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="top"
-                    className="max-w-[320px] bg-foreground text-background p-3"
-                  >
-                    <p className="text-sm leading-relaxed">
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">
+              {t("dictionary.intent_label", "Entry intent")}
+            </Label>
+            <div
+              role="radiogroup"
+              aria-label={t("dictionary.intent_group_aria", "Entry intent")}
+              className="grid gap-2 sm:grid-cols-2"
+            >
+              <button
+                type="button"
+                role="radio"
+                ref={recognizeIntentRef}
+                aria-checked={intent === "recognize"}
+                tabIndex={intent === "recognize" ? 0 : -1}
+                onClick={() => setIntent("recognize")}
+                onKeyDown={handleIntentKeyDown}
+                className={cn(
+                  "rounded-xl border px-3 py-2.5 text-left transition-colors",
+                  intent === "recognize"
+                    ? "border-primary/50 bg-primary/10"
+                    : "border-border/60 bg-muted/20 hover:bg-muted/35",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
                       {t(
-                        "dictionary.replacement_description",
-                        "Enable this to replace phrases with different text. Examples: 'chat gpt' → 'ChatGPT', 'btw' → 'by the way', 'my email' → 'john@example.com'. Tip: match the word count (e.g. 'chat gpt' is 2 words, so it matches when you say 2 words).",
+                        "dictionary.intent_recognize_title",
+                        "Recognize this term",
                       )}
                     </p>
-                  </TooltipContent>
-                </Tooltip>
-              </div>
-              <Switch
-                id="is-replacement"
-                checked={isReplacement}
-                onCheckedChange={(checked) => {
-                  setIsReplacement(checked);
-                  // Clear replacement when toggling off to avoid stale data
-                  if (!checked) setReplacement("");
-                }}
-              />
-            </div>
-          </TooltipProvider>
-
-          {/* Input Fields - conditional based on isReplacement */}
-          {isReplacement ? (
-            /* Two-field layout for replacement mode */
-            <div className="space-y-4">
-              {/* Side by side layout with arrow */}
-              <div className="flex items-start gap-3">
-                <div className="flex-1 space-y-1.5">
-                  <Label
-                    htmlFor="input"
-                    className="text-xs font-medium text-muted-foreground"
-                  >
-                    {t("dictionary.when_i_say", "When I say...")}
-                  </Label>
-                  <AutoGrowTextarea
-                    id="input"
-                    autoFocus
-                    value={input}
-                    onChange={setInput}
-                    onKeyDown={handleKeyDown}
-                    className={
-                      duplicateError
-                        ? "border-destructive focus-visible:ring-destructive"
-                        : undefined
-                    }
-                    placeholder={t("dictionary.input_example", "e.g. my email")}
-                    maxLength={INPUT_MAX_LENGTH}
-                  />
-                </div>
-                <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 mt-7" />
-                <div className="flex-1 space-y-1.5">
-                  <Label
-                    htmlFor="replacement"
-                    className="text-xs font-medium text-muted-foreground"
-                  >
-                    {t("dictionary.replace_with", "Replace with...")}
-                  </Label>
-                  <AutoGrowTextarea
-                    id="replacement"
-                    value={replacement}
-                    onChange={setReplacement}
-                    onKeyDown={handleKeyDown}
-                    placeholder={t(
-                      "dictionary.replacement_example",
-                      "e.g. john@example.com",
-                    )}
-                    maxLength={REPLACEMENT_MAX_LENGTH}
-                  />
-                </div>
-              </div>
-              {duplicateError && (
-                <p className="text-xs text-destructive">
-                  {t(
-                    "dictionary.duplicate_error",
-                    "This term or alias already exists in your dictionary",
+                  </div>
+                  {intent === "recognize" && (
+                    <Check className="h-4 w-4 shrink-0 text-primary" />
                   )}
-                </p>
-              )}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                role="radio"
+                ref={replaceIntentRef}
+                aria-checked={intent === "replace"}
+                tabIndex={intent === "replace" ? 0 : -1}
+                onClick={() => setIntent("replace")}
+                onKeyDown={handleIntentKeyDown}
+                className={cn(
+                  "rounded-xl border px-3 py-2.5 text-left transition-colors",
+                  intent === "replace"
+                    ? "border-primary/50 bg-primary/10"
+                    : "border-border/60 bg-muted/20 hover:bg-muted/35",
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">
+                      {t(
+                        "dictionary.intent_replace_title",
+                        "Replace spoken phrase",
+                      )}
+                    </p>
+                  </div>
+                  {intent === "replace" && (
+                    <Check className="h-4 w-4 shrink-0 text-primary" />
+                  )}
+                </div>
+              </button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              {intent === "recognize"
+                ? t(
+                    "dictionary.intent_selected_helper_recognize",
+                    "Match this term exactly, with aliases.",
+                  )
+                : t(
+                    "dictionary.intent_selected_helper_replace",
+                    "When you say this, output different text.",
+                  )}
+            </p>
+          </div>
+
+          {isReplacementMode ? (
+            <TooltipProvider delayDuration={500}>
+              <div className="space-y-2">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-[1fr_auto_1fr] md:gap-x-2 md:gap-y-1 md:items-start">
+                  <div className="space-y-1 md:contents">
+                    <Label htmlFor="input" className="text-sm font-medium md:col-start-1 md:row-start-1">
+                      {t("dictionary.what_you_say_label", "What you say")}
+                    </Label>
+                    <div className="md:col-start-1 md:row-start-2">
+                      <AutoGrowTextarea
+                        id="input"
+                        autoFocus
+                        value={input}
+                        onChange={setInput}
+                        onKeyDown={handleKeyDown}
+                        placeholder={t(
+                          "dictionary.input_placeholder_replace",
+                          "e.g. btw",
+                        )}
+                        maxLength={INPUT_MAX_LENGTH}
+                        maxRows={4}
+                        className={
+                          duplicateError
+                            ? "border-destructive focus-visible:ring-destructive"
+                            : undefined
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-center pt-0.5 md:pt-2 md:col-start-2 md:row-start-2 md:self-start">
+                    <ArrowRight className="h-4 w-4 rotate-90 text-muted-foreground/70 md:rotate-0" />
+                  </div>
+
+                  <div className="space-y-1 md:contents">
+                    <div className="flex items-center gap-2 md:col-start-3 md:row-start-1">
+                      <Label
+                        htmlFor="replacement"
+                        className="text-sm font-medium"
+                      >
+                        {t("dictionary.output_text_label", "Output text")}
+                      </Label>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            tabIndex={-1}
+                            className="text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                            aria-label={t(
+                              "dictionary.replacement_help_tooltip_label",
+                              "Replacement tips",
+                            )}
+                          >
+                            <Info className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="max-w-[320px] bg-foreground text-background p-3"
+                        >
+                          <p className="text-sm leading-relaxed">
+                            {t(
+                              "dictionary.replacement_help_tooltip",
+                              "Exact-only mapping. Add aliases for alternate spoken forms that should trigger this output.",
+                            )}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    <div className="md:col-start-3 md:row-start-2">
+                      <AutoGrowTextarea
+                        id="replacement"
+                        value={replacement}
+                        onChange={setReplacement}
+                        onKeyDown={handleKeyDown}
+                        placeholder={t(
+                          "dictionary.replacement_example",
+                          "e.g. by the way",
+                        )}
+                        maxLength={REPLACEMENT_MAX_LENGTH}
+                        maxRows={4}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {duplicateError && (
+                  <p className="text-xs text-destructive">
+                    {t(
+                      "dictionary.duplicate_error",
+                      "This term or alias already exists in your dictionary",
+                    )}
+                  </p>
+                )}
+                {showReplacementEqualityError && (
+                  <p className="text-xs text-destructive">
+                    {t(
+                      "dictionary.replacement_inline_error",
+                      "Output text must be different from what you say.",
+                    )}
+                  </p>
+                )}
+              </div>
+            </TooltipProvider>
           ) : (
-            /* Single-field layout for vocabulary mode */
             <div className="space-y-2">
               <Label htmlFor="input" className="text-sm font-medium">
-                {t("dictionary.word_to_recognize", "Word to recognize")}
+                {t("dictionary.word_or_phrase_label", "Word or phrase")}
               </Label>
               <AutoGrowTextarea
                 id="input"
@@ -419,7 +615,7 @@ export function DictionaryEntryModal({
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <Label htmlFor="aliases" className="text-sm font-medium">
-                {isReplacement
+                {isReplacementMode
                   ? t(
                       "dictionary.aliases_label_replacement",
                       "Also when I say... (optional)",
@@ -448,7 +644,7 @@ export function DictionaryEntryModal({
                     <p className="text-sm leading-relaxed">
                       {t(
                         "dictionary.aliases_help_tooltip",
-                        "Add alternate spoken forms. Press Enter or comma to add. For symbols, add spoken aliases like c plus plus for c++.",
+                        "Aliases are exact alternatives that trigger this entry.",
                       )}
                     </p>
                   </TooltipContent>
@@ -482,10 +678,10 @@ export function DictionaryEntryModal({
                 }}
                 maxLength={ALIAS_MAX_LENGTH}
                 placeholder={t(
-                  isReplacement
+                  isReplacementMode
                     ? "dictionary.aliases_placeholder_replacement"
                     : "dictionary.aliases_placeholder",
-                  isReplacement
+                  isReplacementMode
                     ? "Type alternate phrase and press Enter or comma (e.g. email address)"
                     : "Type alias and press Enter or comma (e.g. shad cn)",
                 )}
@@ -498,9 +694,7 @@ export function DictionaryEntryModal({
                   addAliasesFromRaw(aliasDraft);
                   setAliasDraft("");
                 }}
-                disabled={
-                  !aliasDraft.trim() || aliases.length >= MAX_ALIASES_COUNT
-                }
+                disabled={!aliasDraft.trim() || aliases.length >= MAX_ALIASES_COUNT}
                 aria-label={t("dictionary.aliases_add", "Add")}
                 className="absolute right-1.5 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground/80 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -514,9 +708,7 @@ export function DictionaryEntryModal({
                     type="button"
                     key={alias}
                     onClick={() => {
-                      setAliases((prev) =>
-                        prev.filter((item) => item !== alias),
-                      );
+                      setAliases((prev) => prev.filter((item) => item !== alias));
                     }}
                     className="inline-flex items-center gap-1 rounded-full border border-border/70 bg-muted/50 px-2 py-1 text-xs text-foreground/90 hover:bg-muted"
                   >
@@ -526,19 +718,51 @@ export function DictionaryEntryModal({
                 ))}
               </div>
             )}
-            {aliases.length === 0 && (
-              <p className="text-xs text-muted-foreground/70">
-                {t(
-                  isReplacement
-                    ? "dictionary.aliases_empty_state_replacement"
-                    : "dictionary.aliases_empty_state",
-                  isReplacement
-                    ? "No alternate phrases yet."
-                    : "No aliases yet.",
-                )}
-              </p>
-            )}
           </div>
+
+          {shouldShowFuzzyToggle && (
+            <TooltipProvider delayDuration={500}>
+              <div className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Label
+                      htmlFor="fuzzy-enabled"
+                      className="text-sm font-medium cursor-pointer"
+                    >
+                      {t("dictionary.fuzzy_opt_in_label", "Enable fuzzy fallback")}
+                    </Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          tabIndex={-1}
+                          className="text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                        >
+                          <Info className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent
+                        side="top"
+                        className="max-w-[320px] bg-foreground text-background p-3"
+                      >
+                        <p className="text-sm leading-relaxed">
+                          {t(
+                            "dictionary.fuzzy_opt_in_tooltip",
+                            "Use fuzzy only after exact input and aliases fail for uncommon long terms.",
+                          )}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <Switch
+                    id="fuzzy-enabled"
+                    checked={fuzzyEnabled}
+                    onCheckedChange={setFuzzyEnabled}
+                  />
+                </div>
+              </div>
+            </TooltipProvider>
+          )}
         </div>
 
         <DialogFooter className="gap-3 sm:gap-2">

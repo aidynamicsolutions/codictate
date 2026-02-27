@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use tauri::AppHandle;
 use tauri_plugin_store::StoreExt;
 use tracing::{debug, info, warn};
+use crate::dictionary_normalization::normalized_dictionary_len;
 
 pub const APPLE_INTELLIGENCE_PROVIDER_ID: &str = "apple_intelligence";
 pub const APPLE_INTELLIGENCE_DEFAULT_MODEL_ID: &str = "Apple Intelligence";
@@ -256,6 +257,8 @@ pub struct CustomWordEntry {
     pub aliases: Vec<String>,
     pub replacement: String,
     pub is_replacement: bool,
+    #[serde(default)]
+    pub fuzzy_enabled: Option<bool>,
 }
 
 /* still useful for composing the initial JSON in the store ------------ */
@@ -672,6 +675,47 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     changed
 }
 
+const SINGLE_WORD_FUZZY_BLOCK_MAX_NORMALIZED_LEN: usize = 4;
+
+fn migrate_dictionary_entry(entry: &mut CustomWordEntry) -> bool {
+    let mut changed = false;
+    let normalized_len = normalized_dictionary_len(&entry.input);
+    let canonical_word_count = entry.input.split_whitespace().count();
+    let is_short_single_word_target = canonical_word_count == 1
+        && normalized_len <= SINGLE_WORD_FUZZY_BLOCK_MAX_NORMALIZED_LEN;
+
+    if entry.is_replacement {
+        if entry.fuzzy_enabled != Some(false) {
+            entry.fuzzy_enabled = Some(false);
+            changed = true;
+        }
+        return changed;
+    }
+
+    if is_short_single_word_target {
+        if entry.fuzzy_enabled != Some(false) {
+            entry.fuzzy_enabled = Some(false);
+            changed = true;
+        }
+        return changed;
+    }
+
+    if entry.fuzzy_enabled.is_none() {
+        entry.fuzzy_enabled = Some(true);
+        changed = true;
+    }
+
+    changed
+}
+
+fn migrate_dictionary_entries(settings: &mut AppSettings) -> bool {
+    let mut changed = false;
+    for entry in &mut settings.dictionary {
+        changed |= migrate_dictionary_entry(entry);
+    }
+    changed
+}
+
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
@@ -983,8 +1027,18 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
+    let mut should_persist = false;
     if ensure_post_process_defaults(&mut settings) {
+        should_persist = true;
+    }
+    if migrate_dictionary_entries(&mut settings) {
+        should_persist = true;
+    }
+    if should_persist {
         store.set("settings", serde_json::to_value(&settings).unwrap());
+        if let Err(e) = store.save() {
+            warn!("Failed to persist migrated settings: {}", e);
+        }
     }
 
     settings
@@ -1007,8 +1061,18 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
+    let mut should_persist = false;
     if ensure_post_process_defaults(&mut settings) {
+        should_persist = true;
+    }
+    if migrate_dictionary_entries(&mut settings) {
+        should_persist = true;
+    }
+    if should_persist {
         store.set("settings", serde_json::to_value(&settings).unwrap());
+        if let Err(e) = store.save() {
+            warn!("Failed to persist migrated settings: {}", e);
+        }
     }
 
     settings
@@ -1046,6 +1110,20 @@ pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeri
 mod tests {
     use super::*;
 
+    fn dictionary_entry(
+        input: &str,
+        is_replacement: bool,
+        fuzzy_enabled: Option<bool>,
+    ) -> CustomWordEntry {
+        CustomWordEntry {
+            input: input.to_string(),
+            aliases: Vec::new(),
+            replacement: input.to_string(),
+            is_replacement,
+            fuzzy_enabled,
+        }
+    }
+
     #[test]
     fn default_settings_disable_auto_submit() {
         let settings = get_default_settings();
@@ -1079,5 +1157,78 @@ mod tests {
         let parsed: AppSettings =
             serde_json::from_value(serialized).expect("deserialize settings without new field");
         assert!(parsed.share_usage_analytics);
+    }
+
+    #[test]
+    fn migrate_dictionary_entry_short_legacy_becomes_exact() {
+        let mut entry = dictionary_entry("qwen", false, None);
+        let changed = migrate_dictionary_entry(&mut entry);
+
+        assert!(changed);
+        assert_eq!(entry.fuzzy_enabled, Some(false));
+    }
+
+    #[test]
+    fn migrate_dictionary_entry_non_ascii_short_legacy_becomes_exact() {
+        let mut entry = dictionary_entry("猫咪", false, None);
+        let changed = migrate_dictionary_entry(&mut entry);
+
+        assert!(changed);
+        assert_eq!(entry.fuzzy_enabled, Some(false));
+    }
+
+    #[test]
+    fn migrate_dictionary_entry_multiword_short_legacy_keeps_fuzzy() {
+        let mut entry = dictionary_entry("c l i", false, None);
+        let changed = migrate_dictionary_entry(&mut entry);
+
+        assert!(changed);
+        assert_eq!(entry.fuzzy_enabled, Some(true));
+    }
+
+    #[test]
+    fn migrate_dictionary_entry_long_legacy_keeps_fuzzy() {
+        let mut entry = dictionary_entry("anthropic", false, None);
+        let changed = migrate_dictionary_entry(&mut entry);
+
+        assert!(changed);
+        assert_eq!(entry.fuzzy_enabled, Some(true));
+    }
+
+    #[test]
+    fn migrate_dictionary_entry_replacement_always_exact() {
+        let mut entry = dictionary_entry("chat gpt", true, Some(true));
+        let changed = migrate_dictionary_entry(&mut entry);
+
+        assert!(changed);
+        assert_eq!(entry.fuzzy_enabled, Some(false));
+    }
+
+    #[test]
+    fn migrate_dictionary_entry_short_true_is_coerced_false() {
+        let mut entry = dictionary_entry("went", false, Some(true));
+        let changed = migrate_dictionary_entry(&mut entry);
+
+        assert!(changed);
+        assert_eq!(entry.fuzzy_enabled, Some(false));
+    }
+
+    #[test]
+    fn migrate_dictionary_entry_multiword_short_true_is_not_coerced() {
+        let mut entry = dictionary_entry("c l i", false, Some(true));
+        let changed = migrate_dictionary_entry(&mut entry);
+
+        assert!(!changed);
+        assert_eq!(entry.fuzzy_enabled, Some(true));
+    }
+
+    #[test]
+    fn migrate_dictionary_entry_uses_normalized_length_for_cutoff() {
+        // "C++" normalizes to "cplusplus" (len 9), so it remains fuzzy-eligible.
+        let mut entry = dictionary_entry("C++", false, None);
+        let changed = migrate_dictionary_entry(&mut entry);
+
+        assert!(changed);
+        assert_eq!(entry.fuzzy_enabled, Some(true));
     }
 }
