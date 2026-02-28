@@ -2,6 +2,62 @@
 
 This document is a maintainer-facing reference for smart insertion behavior changes and validation status.
 
+## Session Update (2026-02-28) - Selection Replacement Trailing Punctuation Regression Fix
+
+### Scope Completed
+
+1. Selection replacements now strip a single trailing sentence punctuation mark (`.`, `?`, `!`) when right-side continuation is word-like (alphabetic or numeric).
+2. Selection strip behavior now ignores continuation case checks for mid-sentence replacements (for example, uppercase right continuation no longer blocks stripping in mid-sentence contexts).
+3. Added sentence-boundary guard for uppercase right continuation:
+   - when selection starts at a sentence boundary (start-of-text or after terminal punctuation), terminal punctuation is preserved before uppercase continuation.
+4. Added selection boundary guards to reduce over-stripping:
+   - immediate line-break boundaries (`\n`, `\r`, Unicode line separators) preserve terminal punctuation,
+   - non-word-like continuation boundaries preserve terminal punctuation by default.
+5. Added delimiter-aware refinement for selection replacements:
+   - trailing period-like punctuation may strip before closing delimiters (for example `)`) when a word-like continuation exists after the delimiter,
+   - trailing question/exclamation marks remain preserved in that delimiter case.
+6. Existing safety guards remain unchanged:
+   - abbreviation-like terminal periods remain preserved (`e.g.`),
+   - no-right-continuation paths still preserve terminal punctuation.
+7. Non-selection punctuation-strip behavior remains unchanged (still uses continuation heuristics by language profile), but sentence-start detection now uses delimiter-skipping left-boundary context for both selection and non-selection paths (which can change casing after opening delimiters/quotes).
+8. Added regression coverage for uppercase-continuation selection replacements, including sentence-boundary preserve and `Point.` mid-sentence strip behavior.
+9. Added regression coverage for newline boundaries, closing-delimiter boundaries, and delimiter-followed-by-word continuation behavior.
+10. Refined delimiter-aware strip safety:
+   - closing quotes are no longer treated as delimiter-strip candidates, preventing `."` quote-boundary punctuation loss.
+11. Strengthened selection sentence-boundary detection:
+   - when the immediate left non-whitespace is an opening delimiter/quote, boundary detection now skips delimiter/quote runs and uses the first effective boundary character to the left,
+   - implemented by capturing `left_sentence_boundary_char` in insertion context (while retaining neighbor characters for other heuristics).
+12. Fixed delimiter + uppercase continuation preserve gap for selection replacements:
+   - when right continuation is an uppercase letter behind a closing delimiter (for example `) Next`) and the replacement starts at a sentence boundary, trailing terminal punctuation is preserved.
+13. Fixed selection newline-boundary detection when right-side whitespace contains a delayed hard line break:
+   - insertion context now tracks whether `\n`, `\r`, or Unicode line separators appear before the next non-whitespace continuation character,
+   - selection punctuation-strip logic now preserves terminal punctuation in `"...   \nNext"` style boundaries instead of stripping as if continuation were same-line.
+14. Fixed delimiter-aware strip behavior across hard line breaks:
+   - insertion context now tracks whether a hard line break appears between the first and second right-side non-whitespace characters (for example `")\nNext"`),
+   - period stripping before a closing delimiter now requires no hard line break between delimiter and continued word.
+
+### Verification Completed
+
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_strips_trailing_punctuation_on_uppercase_continuation`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_before_uppercase_sentence_continuation`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_mid_sentence_point_period_before_uppercase_word_strips_period`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_strips_trailing_period_before_closing_parenthesis_when_word_continues`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_before_closing_parenthesis_boundary`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_question_before_closing_parenthesis_when_word_continues`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_when_boundary_is_newline`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_without_right_continuation`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_before_closing_quote_when_word_continues`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_before_uppercase_sentence_continuation_after_opening_quote`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_before_uppercase_continuation_after_nested_prefixes`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_before_closing_parenthesis_and_uppercase_sentence_continuation`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_mid_sentence_strips_trailing_period_before_closing_parenthesis_and_uppercase_word`
+- `cargo test --manifest-path src-tauri/Cargo.toml accessibility::macos::tests::test_build_insertion_context_tracks_sentence_boundary_char_across_nested_prefixes`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_when_spaces_precede_newline_boundary`
+- `cargo test --manifest-path src-tauri/Cargo.toml accessibility::macos::tests::test_build_insertion_context_marks_right_line_break_before_non_whitespace`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests::selection_preserves_trailing_period_before_closing_parenthesis_when_line_break_precedes_continuation`
+- `cargo test --manifest-path src-tauri/Cargo.toml accessibility::macos::tests::test_build_insertion_context_marks_right_line_break_before_second_non_whitespace`
+- `cargo test --manifest-path src-tauri/Cargo.toml smart_insertion::tests`
+
 ## Session Update (2026-02-20) - Refine Replace Fallback + UTF-16 Selection Safety
 
 ### Scope Completed

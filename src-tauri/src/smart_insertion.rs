@@ -1,4 +1,6 @@
-use crate::accessibility::TextInsertionContext;
+use crate::accessibility::{
+    is_hard_line_break, is_sentence_boundary_prefix_delimiter, TextInsertionContext,
+};
 use regex::Regex;
 use std::sync::LazyLock;
 use tracing::debug;
@@ -210,6 +212,91 @@ fn continuation_allows_punctuation_strip(
     }
 }
 
+fn is_closing_delimiter(c: char) -> bool {
+    matches!(
+        c,
+        ')' | ']' | '}' | '>' | '）' | '］' | '｝' | '」' | '』' | '】' | '〉' | '》' | '〙'
+            | '〗' | '〛'
+    )
+}
+
+fn selection_continuation_punctuation_strip_decision(
+    right_char: Option<char>,
+    right_has_line_break_before_non_whitespace: bool,
+    right_has_line_break_before_second_non_whitespace: bool,
+    right_non_whitespace_char: char,
+    right_second_non_whitespace_char: Option<char>,
+    candidate: char,
+    profile: SmartInsertionProfile,
+) -> (bool, &'static str) {
+    if right_has_line_break_before_non_whitespace
+        || right_char.map(is_hard_line_break).unwrap_or(false)
+    {
+        return (false, "selection_line_break_boundary_preserve");
+    }
+
+    if right_non_whitespace_char.is_alphabetic() || right_non_whitespace_char.is_numeric() {
+        return (true, "selection_word_like_continuation_strip");
+    }
+
+    let candidate_is_period_like = matches!(
+        sentence_mark_kind(candidate, profile),
+        Some(SentenceMarkKind::PeriodLike)
+    );
+    if candidate_is_period_like
+        && is_closing_delimiter(right_non_whitespace_char)
+        && !right_has_line_break_before_second_non_whitespace
+        && right_second_non_whitespace_char.map(is_word_like).unwrap_or(false)
+    {
+        return (true, "selection_delimiter_word_like_continuation_strip");
+    }
+
+    (false, "selection_non_word_continuation_preserve")
+}
+
+fn should_preserve_selection_punctuation_for_uppercase_sentence_boundary(
+    context: &TextInsertionContext,
+    right_non_whitespace_char: char,
+    right_second_non_whitespace_char: Option<char>,
+    profile: SmartInsertionProfile,
+) -> bool {
+    let has_uppercase_continuation = right_non_whitespace_char.is_uppercase()
+        || (is_closing_delimiter(right_non_whitespace_char)
+            && right_second_non_whitespace_char
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false));
+
+    if !has_uppercase_continuation {
+        return false;
+    }
+
+    let effective_left_non_whitespace_char = sentence_boundary_left_context_char(context);
+
+    match effective_left_non_whitespace_char {
+        None => true,
+        Some(left) => is_sentence_terminator(left, profile),
+    }
+}
+
+fn sentence_boundary_left_context_char(context: &TextInsertionContext) -> Option<char> {
+    if context.left_sentence_boundary_char.is_some() {
+        return context.left_sentence_boundary_char;
+    }
+
+    for candidate in [
+        context.left_non_whitespace_char,
+        context.left_second_non_whitespace_char,
+    ] {
+        if let Some(c) = candidate {
+            if !is_sentence_boundary_prefix_delimiter(c) {
+                return Some(c);
+            }
+        }
+    }
+
+    None
+}
+
 fn is_word_like(c: char) -> bool {
     c.is_alphanumeric()
 }
@@ -281,7 +368,7 @@ fn is_title_like_start(text: &str) -> bool {
 }
 
 fn is_sentence_start(context: &TextInsertionContext, profile: SmartInsertionProfile) -> bool {
-    match context.left_non_whitespace_char {
+    match sentence_boundary_left_context_char(context) {
         None => true,
         Some(c) => is_sentence_terminator(c, profile),
     }
@@ -327,7 +414,7 @@ fn sanitize_trailing_sentence_punctuation(
     context: &TextInsertionContext,
     profile: SmartInsertionProfile,
 ) -> (String, bool, &'static str) {
-    let Some(_candidate) = trailing_sentence_punctuation_char(text, profile) else {
+    let Some(candidate) = trailing_sentence_punctuation_char(text, profile) else {
         return (text.to_string(), false, "no_candidate_punctuation");
     };
 
@@ -339,16 +426,47 @@ fn sanitize_trailing_sentence_punctuation(
         return (text.to_string(), false, "abbreviation_guard");
     }
 
-    if continuation_allows_punctuation_strip(right_non_whitespace_char, profile) {
-        let reason = if context.has_selection {
-            "selection_continuation_allows_strip"
-        } else {
-            "non_selection_continuation_allows_strip"
-        };
+    if context.has_selection {
+        if should_preserve_selection_punctuation_for_uppercase_sentence_boundary(
+            context,
+            right_non_whitespace_char,
+            context.right_second_non_whitespace_char,
+            profile,
+        ) {
+            return (
+                text.to_string(),
+                false,
+                "selection_sentence_boundary_uppercase_preserve",
+            );
+        }
+
+        let (selection_should_strip, selection_reason) =
+            selection_continuation_punctuation_strip_decision(
+                context.right_char,
+                context.right_has_line_break_before_non_whitespace,
+                context.right_has_line_break_before_second_non_whitespace,
+                right_non_whitespace_char,
+                context.right_second_non_whitespace_char,
+                candidate,
+                profile,
+            );
+
+        if !selection_should_strip {
+            return (text.to_string(), false, selection_reason);
+        }
+
         return (
             strip_single_trailing_sentence_punctuation(text),
             true,
-            reason,
+            selection_reason,
+        );
+    }
+
+    if continuation_allows_punctuation_strip(right_non_whitespace_char, profile) {
+        return (
+            strip_single_trailing_sentence_punctuation(text),
+            true,
+            "non_selection_continuation_allows_strip",
         );
     }
 
@@ -870,11 +988,141 @@ mod tests {
         right_non_whitespace_char: Option<char>,
         has_selection: bool,
     ) -> TextInsertionContext {
+        context_with_second_neighbors(
+            left_char,
+            left_non_whitespace_char,
+            None,
+            right_char,
+            right_non_whitespace_char,
+            None,
+            has_selection,
+        )
+    }
+
+    fn context_with_left_second(
+        left_char: Option<char>,
+        left_non_whitespace_char: Option<char>,
+        left_second_non_whitespace_char: Option<char>,
+        right_char: Option<char>,
+        right_non_whitespace_char: Option<char>,
+        has_selection: bool,
+    ) -> TextInsertionContext {
+        context_with_second_neighbors(
+            left_char,
+            left_non_whitespace_char,
+            left_second_non_whitespace_char,
+            right_char,
+            right_non_whitespace_char,
+            None,
+            has_selection,
+        )
+    }
+
+    fn context_with_right_second(
+        left_char: Option<char>,
+        left_non_whitespace_char: Option<char>,
+        right_char: Option<char>,
+        right_non_whitespace_char: Option<char>,
+        right_second_non_whitespace_char: Option<char>,
+        has_selection: bool,
+    ) -> TextInsertionContext {
+        context_with_second_neighbors(
+            left_char,
+            left_non_whitespace_char,
+            None,
+            right_char,
+            right_non_whitespace_char,
+            right_second_non_whitespace_char,
+            has_selection,
+        )
+    }
+
+    fn context_with_second_neighbors(
+        left_char: Option<char>,
+        left_non_whitespace_char: Option<char>,
+        left_second_non_whitespace_char: Option<char>,
+        right_char: Option<char>,
+        right_non_whitespace_char: Option<char>,
+        right_second_non_whitespace_char: Option<char>,
+        has_selection: bool,
+    ) -> TextInsertionContext {
+        let left_sentence_boundary_char = [left_non_whitespace_char, left_second_non_whitespace_char]
+            .into_iter()
+            .flatten()
+            .find(|c| !is_sentence_boundary_prefix_delimiter(*c));
+
         TextInsertionContext {
+            left_char,
+            left_non_whitespace_char,
+            left_second_non_whitespace_char,
+            left_sentence_boundary_char,
+            right_char,
+            right_non_whitespace_char,
+            right_second_non_whitespace_char,
+            right_has_line_break_before_non_whitespace: false,
+            right_has_line_break_before_second_non_whitespace: false,
+            has_selection,
+        }
+    }
+
+    fn context_with_line_break_before_right_non_whitespace(
+        left_char: Option<char>,
+        left_non_whitespace_char: Option<char>,
+        right_char: Option<char>,
+        right_non_whitespace_char: Option<char>,
+        has_selection: bool,
+    ) -> TextInsertionContext {
+        let mut context = context(
             left_char,
             left_non_whitespace_char,
             right_char,
             right_non_whitespace_char,
+            has_selection,
+        );
+        context.right_has_line_break_before_non_whitespace = true;
+        context
+    }
+
+    fn context_with_line_break_before_right_second_non_whitespace(
+        left_char: Option<char>,
+        left_non_whitespace_char: Option<char>,
+        right_char: Option<char>,
+        right_non_whitespace_char: Option<char>,
+        right_second_non_whitespace_char: Option<char>,
+        has_selection: bool,
+    ) -> TextInsertionContext {
+        let mut context = context_with_right_second(
+            left_char,
+            left_non_whitespace_char,
+            right_char,
+            right_non_whitespace_char,
+            right_second_non_whitespace_char,
+            has_selection,
+        );
+        context.right_has_line_break_before_second_non_whitespace = true;
+        context
+    }
+
+    fn context_with_explicit_left_sentence_boundary(
+        left_char: Option<char>,
+        left_non_whitespace_char: Option<char>,
+        left_second_non_whitespace_char: Option<char>,
+        left_sentence_boundary_char: Option<char>,
+        right_char: Option<char>,
+        right_non_whitespace_char: Option<char>,
+        right_second_non_whitespace_char: Option<char>,
+        has_selection: bool,
+    ) -> TextInsertionContext {
+        TextInsertionContext {
+            left_char,
+            left_non_whitespace_char,
+            left_second_non_whitespace_char,
+            left_sentence_boundary_char,
+            right_char,
+            right_non_whitespace_char,
+            right_second_non_whitespace_char,
+            right_has_line_break_before_non_whitespace: false,
+            right_has_line_break_before_second_non_whitespace: false,
             has_selection,
         }
     }
@@ -1168,13 +1416,211 @@ mod tests {
     }
 
     #[test]
-    fn selection_preserves_trailing_punctuation_on_uppercase_continuation() {
+    fn selection_strips_trailing_punctuation_on_uppercase_continuation() {
         let output = prepare_text_for_paste(
             "hello?",
             true,
             Some(context(Some(' '), Some('e'), Some('S'), Some('S'), true)),
         );
-        assert_eq!(output, "hello? ");
+        assert_eq!(output, "hello ");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_before_uppercase_sentence_continuation() {
+        let output = prepare_text_for_paste(
+            "Hello.",
+            true,
+            Some(context(None, None, Some(' '), Some('N'), true)),
+        );
+        assert_eq!(output, "Hello.");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_before_closing_parenthesis_and_uppercase_sentence_continuation()
+    {
+        let output = prepare_text_for_paste(
+            "Hello.",
+            true,
+            Some(context_with_right_second(
+                None,
+                None,
+                Some(')'),
+                Some(')'),
+                Some('N'),
+                true,
+            )),
+        );
+        assert_eq!(output, "Hello.");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_before_uppercase_sentence_continuation_after_opening_quote()
+    {
+        let output = prepare_text_for_paste(
+            "Hello.",
+            true,
+            Some(context_with_left_second(
+                Some('"'),
+                Some('"'),
+                Some('.'),
+                Some(' '),
+                Some('N'),
+                true,
+            )),
+        );
+        assert_eq!(output, "Hello.");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_before_uppercase_continuation_after_nested_prefixes() {
+        let output = prepare_text_for_paste(
+            "Hello.",
+            true,
+            Some(context_with_explicit_left_sentence_boundary(
+                Some('"'),
+                Some('"'),
+                Some('('),
+                Some('.'),
+                Some(' '),
+                Some('N'),
+                None,
+                true,
+            )),
+        );
+        assert_eq!(output, "Hello.");
+    }
+
+    #[test]
+    fn selection_mid_sentence_point_period_before_uppercase_word_strips_period() {
+        let output = prepare_text_for_paste(
+            "Point.",
+            true,
+            Some(context(Some(' '), Some('e'), Some(' '), Some('O'), true)),
+        );
+        assert_eq!(output, "point");
+    }
+
+    #[test]
+    fn selection_strips_trailing_period_before_closing_parenthesis_when_word_continues() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context_with_right_second(
+                Some(' '),
+                Some('e'),
+                Some(')'),
+                Some(')'),
+                Some('w'),
+                true,
+            )),
+        );
+        assert_eq!(output, "hello");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_before_closing_parenthesis_when_line_break_precedes_continuation(
+    ) {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context_with_line_break_before_right_second_non_whitespace(
+                Some(' '),
+                Some('e'),
+                Some(')'),
+                Some(')'),
+                Some('N'),
+                true,
+            )),
+        );
+        assert_eq!(output, "hello.");
+    }
+
+    #[test]
+    fn selection_mid_sentence_strips_trailing_period_before_closing_parenthesis_and_uppercase_word()
+    {
+        let output = prepare_text_for_paste(
+            "Point.",
+            true,
+            Some(context_with_right_second(
+                Some(' '),
+                Some('e'),
+                Some(')'),
+                Some(')'),
+                Some('O'),
+                true,
+            )),
+        );
+        assert_eq!(output, "point");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_before_closing_parenthesis_boundary() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context(Some(' '), Some('e'), Some(')'), Some(')'), true)),
+        );
+        assert_eq!(output, "hello.");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_before_closing_quote_when_word_continues() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context_with_right_second(
+                Some(' '),
+                Some('e'),
+                Some('"'),
+                Some('"'),
+                Some('s'),
+                true,
+            )),
+        );
+        assert_eq!(output, "hello.");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_question_before_closing_parenthesis_when_word_continues() {
+        let output = prepare_text_for_paste(
+            "hello?",
+            true,
+            Some(context_with_right_second(
+                Some(' '),
+                Some('e'),
+                Some(')'),
+                Some(')'),
+                Some('w'),
+                true,
+            )),
+        );
+        assert_eq!(output, "hello?");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_when_boundary_is_newline() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context(Some(' '), Some('e'), Some('\n'), Some('N'), true)),
+        );
+        assert_eq!(output, "hello.");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_when_spaces_precede_newline_boundary() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context_with_line_break_before_right_non_whitespace(
+                Some(' '),
+                Some('e'),
+                Some(' '),
+                Some('N'),
+                true,
+            )),
+        );
+        assert_eq!(output, "hello.");
     }
 
     #[test]
@@ -1185,6 +1631,16 @@ mod tests {
             Some(context(Some(' '), Some('e'), Some('s'), Some('s'), true)),
         );
         assert_eq!(output, "e.g. ");
+    }
+
+    #[test]
+    fn selection_preserves_trailing_period_without_right_continuation() {
+        let output = prepare_text_for_paste(
+            "hello.",
+            true,
+            Some(context(Some(' '), Some('e'), None, None, true)),
+        );
+        assert_eq!(output, "hello.");
     }
 
     #[test]

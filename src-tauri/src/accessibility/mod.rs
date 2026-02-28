@@ -30,12 +30,59 @@ pub struct TextInsertionContext {
     pub left_char: Option<char>,
     /// Nearest non-whitespace character to the left of insertion/selection start.
     pub left_non_whitespace_char: Option<char>,
+    /// Second non-whitespace character to the left of insertion/selection start.
+    /// Used for sentence-boundary checks across opening delimiters/quotes.
+    pub left_second_non_whitespace_char: Option<char>,
+    /// Effective non-whitespace sentence-boundary character to the left.
+    /// This skips any run of opening delimiters/quotes to better match
+    /// Unicode sentence-boundary behavior around punctuation clusters.
+    pub left_sentence_boundary_char: Option<char>,
     /// Character immediately right of insertion/selection end.
     pub right_char: Option<char>,
     /// Nearest non-whitespace character to the right of insertion/selection end.
     pub right_non_whitespace_char: Option<char>,
+    /// Second non-whitespace character to the right of insertion/selection end.
+    /// Used for delimiter-aware smart insertion decisions (for example `.) word`).
+    pub right_second_non_whitespace_char: Option<char>,
+    /// True when a hard line-break appears before the next non-whitespace char
+    /// on the right side of the insertion/selection end.
+    pub right_has_line_break_before_non_whitespace: bool,
+    /// True when a hard line-break appears between the first and second
+    /// right-side non-whitespace characters.
+    /// Used to prevent delimiter-aware sentence punctuation stripping across
+    /// paragraph boundaries (for example `)...\nWord`).
+    pub right_has_line_break_before_second_non_whitespace: bool,
     /// True if insertion target currently has a non-empty selection.
     pub has_selection: bool,
+}
+
+pub(crate) fn is_sentence_boundary_prefix_delimiter(c: char) -> bool {
+    matches!(
+        c,
+        '('
+            | '['
+            | '{'
+            | '<'
+            | '（'
+            | '［'
+            | '｛'
+            | '「'
+            | '『'
+            | '【'
+            | '〈'
+            | '《'
+            | '〘'
+            | '〖'
+            | '〚'
+            | '“'
+            | '‘'
+            | '"'
+            | '\''
+    )
+}
+
+pub(crate) fn is_hard_line_break(c: char) -> bool {
+    matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
 }
 
 /// Result of an AI correction.

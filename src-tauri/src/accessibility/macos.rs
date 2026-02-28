@@ -497,12 +497,42 @@ fn build_insertion_context(full_text: &str, range: CFRange) -> Option<TextInsert
 
     let left_slice = &full_text[..start];
     let right_slice = &full_text[end..];
+    let mut left_non_whitespace_chars = left_slice.chars().rev().filter(|c| !c.is_whitespace());
+    let left_non_whitespace_char = left_non_whitespace_chars.next();
+    let left_second_non_whitespace_char = left_non_whitespace_chars.next();
+    let left_sentence_boundary_char = left_slice
+        .chars()
+        .rev()
+        .filter(|c| !c.is_whitespace())
+        .find(|c| !super::is_sentence_boundary_prefix_delimiter(*c));
+    let right_has_line_break_before_non_whitespace = right_slice
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .any(super::is_hard_line_break);
+    let mut right_non_whitespace_chars = right_slice.char_indices().filter(|(_, c)| !c.is_whitespace());
+    let first_right_non_whitespace = right_non_whitespace_chars.next();
+    let second_right_non_whitespace = right_non_whitespace_chars.next();
+    let right_non_whitespace_char = first_right_non_whitespace.map(|(_, c)| c);
+    let right_second_non_whitespace_char = second_right_non_whitespace.map(|(_, c)| c);
+    let right_has_line_break_before_second_non_whitespace = first_right_non_whitespace
+        .zip(second_right_non_whitespace)
+        .map(|((first_idx, first_char), (second_idx, _))| {
+            right_slice[first_idx + first_char.len_utf8()..second_idx]
+                .chars()
+                .any(super::is_hard_line_break)
+        })
+        .unwrap_or(false);
 
     Some(TextInsertionContext {
         left_char: left_slice.chars().next_back(),
-        left_non_whitespace_char: left_slice.chars().rev().find(|c| !c.is_whitespace()),
+        left_non_whitespace_char,
+        left_second_non_whitespace_char,
+        left_sentence_boundary_char,
         right_char: right_slice.chars().next(),
-        right_non_whitespace_char: right_slice.chars().find(|c| !c.is_whitespace()),
+        right_non_whitespace_char,
+        right_second_non_whitespace_char,
+        right_has_line_break_before_non_whitespace,
+        right_has_line_break_before_second_non_whitespace,
         has_selection: end > start,
     })
 }
@@ -985,6 +1015,8 @@ mod tests {
         assert_eq!(context.left_non_whitespace_char, None);
         assert_eq!(context.right_char, Some('w'));
         assert_eq!(context.right_non_whitespace_char, Some('w'));
+        assert!(!context.right_has_line_break_before_non_whitespace);
+        assert!(!context.right_has_line_break_before_second_non_whitespace);
         assert!(!context.has_selection);
     }
 
@@ -1002,8 +1034,12 @@ mod tests {
 
         assert_eq!(context.left_char, Some('o'));
         assert_eq!(context.left_non_whitespace_char, Some('o'));
+        assert_eq!(context.left_second_non_whitespace_char, Some('l'));
+        assert_eq!(context.left_sentence_boundary_char, Some('o'));
         assert_eq!(context.right_char, Some(' '));
         assert_eq!(context.right_non_whitespace_char, Some('w'));
+        assert!(!context.right_has_line_break_before_non_whitespace);
+        assert!(!context.right_has_line_break_before_second_non_whitespace);
         assert!(!context.has_selection);
     }
 
@@ -1021,9 +1057,106 @@ mod tests {
 
         assert_eq!(context.left_char, Some('o'));
         assert_eq!(context.left_non_whitespace_char, Some('o'));
+        assert_eq!(context.left_second_non_whitespace_char, Some('l'));
+        assert_eq!(context.left_sentence_boundary_char, Some('o'));
         assert_eq!(context.right_char, Some('.'));
         assert_eq!(context.right_non_whitespace_char, Some('.'));
+        assert_eq!(context.right_second_non_whitespace_char, Some('w'));
+        assert!(!context.right_has_line_break_before_non_whitespace);
+        assert!(!context.right_has_line_break_before_second_non_whitespace);
         assert!(!context.has_selection);
+    }
+
+    #[test]
+    fn test_build_insertion_context_tracks_second_right_non_whitespace_char() {
+        let text = "hello )world";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 5,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.right_char, Some(' '));
+        assert_eq!(context.right_non_whitespace_char, Some(')'));
+        assert_eq!(context.right_second_non_whitespace_char, Some('w'));
+        assert!(!context.right_has_line_break_before_non_whitespace);
+        assert!(!context.right_has_line_break_before_second_non_whitespace);
+    }
+
+    #[test]
+    fn test_build_insertion_context_marks_right_line_break_before_non_whitespace() {
+        let text = "hello   \nNext";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 5,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.right_char, Some(' '));
+        assert_eq!(context.right_non_whitespace_char, Some('N'));
+        assert!(context.right_has_line_break_before_non_whitespace);
+        assert!(!context.right_has_line_break_before_second_non_whitespace);
+    }
+
+    #[test]
+    fn test_build_insertion_context_marks_right_line_break_before_second_non_whitespace() {
+        let text = "hello)\nNext";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 5,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.right_char, Some(')'));
+        assert_eq!(context.right_non_whitespace_char, Some(')'));
+        assert_eq!(context.right_second_non_whitespace_char, Some('N'));
+        assert!(!context.right_has_line_break_before_non_whitespace);
+        assert!(context.right_has_line_break_before_second_non_whitespace);
+    }
+
+    #[test]
+    fn test_build_insertion_context_tracks_second_left_non_whitespace_char() {
+        let text = ". \"world";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 3,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, Some('"'));
+        assert_eq!(context.left_non_whitespace_char, Some('"'));
+        assert_eq!(context.left_second_non_whitespace_char, Some('.'));
+        assert_eq!(context.left_sentence_boundary_char, Some('.'));
+    }
+
+    #[test]
+    fn test_build_insertion_context_tracks_sentence_boundary_char_across_nested_prefixes() {
+        let text = ". (\"world";
+        let context = build_insertion_context(
+            text,
+            CFRange {
+                location: 4,
+                length: 0,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(context.left_char, Some('"'));
+        assert_eq!(context.left_non_whitespace_char, Some('"'));
+        assert_eq!(context.left_second_non_whitespace_char, Some('('));
+        assert_eq!(context.left_sentence_boundary_char, Some('.'));
     }
 
     #[test]
@@ -1040,8 +1173,12 @@ mod tests {
 
         assert_eq!(context.left_char, Some('o'));
         assert_eq!(context.left_non_whitespace_char, Some('o'));
+        assert_eq!(context.left_second_non_whitespace_char, Some('l'));
+        assert_eq!(context.left_sentence_boundary_char, Some('o'));
         assert_eq!(context.right_char, None);
         assert_eq!(context.right_non_whitespace_char, None);
+        assert!(!context.right_has_line_break_before_non_whitespace);
+        assert!(!context.right_has_line_break_before_second_non_whitespace);
         assert!(!context.has_selection);
     }
 
@@ -1059,6 +1196,8 @@ mod tests {
 
         assert_eq!(context.left_char, Some(' '));
         assert_eq!(context.left_non_whitespace_char, Some('o'));
+        assert_eq!(context.left_second_non_whitespace_char, Some('l'));
+        assert_eq!(context.left_sentence_boundary_char, Some('o'));
         assert_eq!(context.right_char, None);
         assert_eq!(context.right_non_whitespace_char, None);
         assert!(context.has_selection);
@@ -1079,6 +1218,8 @@ mod tests {
 
         assert_eq!(context.left_char, Some('🙂'));
         assert_eq!(context.left_non_whitespace_char, Some('🙂'));
+        assert_eq!(context.left_second_non_whitespace_char, Some('a'));
+        assert_eq!(context.left_sentence_boundary_char, Some('🙂'));
         assert_eq!(context.right_char, Some('b'));
         assert_eq!(context.right_non_whitespace_char, Some('b'));
         assert!(!context.has_selection);
@@ -1099,6 +1240,8 @@ mod tests {
 
         assert_eq!(context.left_char, Some('a'));
         assert_eq!(context.left_non_whitespace_char, Some('a'));
+        assert_eq!(context.left_second_non_whitespace_char, None);
+        assert_eq!(context.left_sentence_boundary_char, Some('a'));
         assert_eq!(context.right_char, Some('b'));
         assert_eq!(context.right_non_whitespace_char, Some('b'));
         assert!(context.has_selection);

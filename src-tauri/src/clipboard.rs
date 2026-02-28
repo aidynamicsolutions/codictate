@@ -814,8 +814,13 @@ mod tests {
         crate::accessibility::TextInsertionContext {
             left_char: None,
             left_non_whitespace_char: None,
+            left_second_non_whitespace_char: None,
+            left_sentence_boundary_char: None,
             right_char: None,
             right_non_whitespace_char: None,
+            right_second_non_whitespace_char: None,
+            right_has_line_break_before_non_whitespace: false,
+            right_has_line_break_before_second_non_whitespace: false,
             has_selection: false,
         }
     }
