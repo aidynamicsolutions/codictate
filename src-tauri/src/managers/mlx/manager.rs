@@ -8,13 +8,13 @@ use anyhow::{anyhow, Result};
 use hf_hub::api::tokio::{Api, Progress};
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
@@ -24,6 +24,7 @@ use super::catalog::{MlxCatalog, MlxCatalogModel};
 use super::downloader::{DownloadSourceTarget, ModelDownloader, SourceDispatchErrorKind};
 use super::provider::{CatalogProvider, EmbeddedCatalogProvider};
 use crate::settings::{get_settings, write_settings};
+use crate::sentry_observability::{capture_handled_message, HandledErrorMeta};
 
 /// Port range to search for available port
 /// Using higher registered ports (1024-49151 range) to minimize conflicts with system services.
@@ -36,6 +37,37 @@ const DISK_SPACE_BUFFER_BYTES: u64 = 100 * 1024 * 1024;
 
 /// Unique identifier for the MLX local provider
 pub const LOCAL_MLX_PROVIDER_ID: &str = "local_mlx";
+
+const META_MLX_TEMPLATE_EMBEDDED_INJECTED: HandledErrorMeta = HandledErrorMeta {
+    component: "mlx_sidecar",
+    operation: "prompt_template_embedded_injected",
+    level: sentry::Level::Warning,
+};
+
+const META_MLX_TEMPLATE_MANUAL_FALLBACK: HandledErrorMeta = HandledErrorMeta {
+    component: "mlx_sidecar",
+    operation: "prompt_template_manual_fallback",
+    level: sentry::Level::Warning,
+};
+
+const META_MLX_TEMPLATE_OTHER_FALLBACK: HandledErrorMeta = HandledErrorMeta {
+    component: "mlx_sidecar",
+    operation: "prompt_template_other_fallback",
+    level: sentry::Level::Warning,
+};
+
+static REPORTED_PROMPT_TEMPLATE_FALLBACKS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+fn should_report_prompt_template_fallback_once(key: &str) -> bool {
+    let reported = REPORTED_PROMPT_TEMPLATE_FALLBACKS.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut reported = reported.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    if reported.contains(key) {
+        false
+    } else {
+        reported.insert(key.to_string());
+        true
+    }
+}
 
 /// Model status enum representing the lifecycle of a model
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
@@ -1269,6 +1301,10 @@ impl MlxModelManager {
         #[derive(Deserialize)]
         struct GenerateResponse {
             response: String,
+            #[serde(default)]
+            prompt_format_mode: Option<String>,
+            #[serde(default)]
+            prompt_format_fallback: Option<bool>,
         }
 
         let temp = temperature.unwrap_or(0.5);
@@ -1308,6 +1344,57 @@ impl MlxModelManager {
             .json()
             .await
             .map_err(|e| anyhow!("Failed to parse sidecar response: {}", e))?;
+
+        if result.prompt_format_fallback.unwrap_or(false) {
+            let format_mode = result
+                .prompt_format_mode
+                .as_deref()
+                .unwrap_or("unknown");
+            let model_label = model_id.as_deref().unwrap_or("unknown");
+            let fingerprint = format!("{model_label}::{format_mode}");
+
+            if format_mode.contains("embedded_qwen_minimal")
+                && should_report_prompt_template_fallback_once(&fingerprint)
+            {
+                warn!(
+                    model_id = model_label,
+                    prompt_format_mode = format_mode,
+                    "MLX sidecar used embedded Qwen chat template injection fallback"
+                );
+                capture_handled_message(
+                    &META_MLX_TEMPLATE_EMBEDDED_INJECTED,
+                    &format!(
+                        "MLX sidecar injected embedded Qwen chat template (model_id={model_label}, mode={format_mode})"
+                    ),
+                );
+            } else if format_mode == "manual_qwen_chat_fallback"
+                && should_report_prompt_template_fallback_once(&fingerprint)
+            {
+                warn!(
+                    model_id = model_label,
+                    prompt_format_mode = format_mode,
+                    "MLX sidecar used manual Qwen chat prompt fallback"
+                );
+                capture_handled_message(
+                    &META_MLX_TEMPLATE_MANUAL_FALLBACK,
+                    &format!(
+                        "MLX sidecar used manual Qwen chat prompt fallback (model_id={model_label}, mode={format_mode})"
+                    ),
+                );
+            } else if should_report_prompt_template_fallback_once(&fingerprint) {
+                warn!(
+                    model_id = model_label,
+                    prompt_format_mode = format_mode,
+                    "MLX sidecar used non-Qwen or unexpected prompt template fallback"
+                );
+                capture_handled_message(
+                    &META_MLX_TEMPLATE_OTHER_FALLBACK,
+                    &format!(
+                        "MLX sidecar used unexpected prompt template fallback (model_id={model_label}, mode={format_mode})"
+                    ),
+                );
+            }
+        }
 
         debug!(
             raw_response = %result.response,

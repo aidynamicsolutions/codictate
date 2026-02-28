@@ -3,9 +3,14 @@ Pragmatic tests for MLX sidecar - focus on critical paths.
 
 Run with: cd python-backend && uv run pytest tests/ -v
 """
+import sys
+import types
+
 import pytest
 from fastapi.testclient import TestClient
-from server import app
+import server
+
+app = server.app
 
 client = TestClient(app)
 
@@ -118,3 +123,69 @@ class TestCleanModelResponse:
         
         raw = "This is a clean translation."
         assert clean_model_response(raw) == "This is a clean translation."
+
+
+class TestChatTemplateFallback:
+    """Regression: models without tokenizer.chat_template must still generate."""
+
+    def test_generate_injects_qwen_template_when_chat_template_missing(self, monkeypatch):
+        """Qwen3-4B-2507 tokenizer can omit chat_template metadata."""
+
+        captured = {}
+
+        class FakeTokenizer:
+            eos_token = "<|im_end|>"
+            additional_special_tokens = ["<|im_start|>", "<|im_end|>"]
+            chat_template = None
+
+            def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True, **kwargs):
+                if not self.chat_template:
+                    raise ValueError(
+                        "Cannot use chat template functions because tokenizer.chat_template is not set and no template argument was passed!"
+                    )
+                prompt = f"<|im_start|>{messages[0]['role']}\n{messages[0]['content']}<|im_end|>\n"
+                if add_generation_prompt:
+                    prompt += "<|im_start|>assistant\n"
+                return prompt
+
+            def get_vocab(self):
+                return {"<|im_start|>": 151644, "<|im_end|>": 151645}
+
+            def encode(self, text):
+                return [1, 2, 3]
+
+        def fake_generate(_model, _tokenizer, prompt, **_kwargs):
+            captured["prompt"] = prompt
+            return "ok"
+
+        sample_utils_mod = types.ModuleType("mlx_lm.sample_utils")
+        sample_utils_mod.make_sampler = lambda **_kwargs: object()
+        sample_utils_mod.make_logits_processors = lambda **_kwargs: object()
+
+        mlx_lm_mod = types.ModuleType("mlx_lm")
+        mlx_lm_mod.generate = fake_generate
+
+        monkeypatch.setitem(sys.modules, "mlx_lm", mlx_lm_mod)
+        monkeypatch.setitem(sys.modules, "mlx_lm.sample_utils", sample_utils_mod)
+        monkeypatch.setattr(server, "model", object())
+        monkeypatch.setattr(server, "tokenizer", FakeTokenizer())
+
+        response = client.post(
+            "/generate",
+            json={
+                "prompt": "Return JSON only",
+                "max_tokens": 32,
+                "temperature": 0.0,
+                "top_p": 1.0,
+                "min_p": 0.0,
+                "system_ram_gb": 16,
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["response"] == "ok"
+        assert body["prompt_format_fallback"] is True
+        assert "embedded_qwen_minimal" in body["prompt_format_mode"]
+        assert captured["prompt"].startswith("<|im_start|>user\nReturn JSON only<|im_end|>\n")
+        assert "<|im_start|>assistant\n" in captured["prompt"]

@@ -114,6 +114,55 @@ fn escape_string(s: &str) -> String {
         .replace('\t', "\\t")
 }
 
+#[cfg(target_os = "macos")]
+fn command_stdout_or_panic(cmd: &str, args: &[&str], context: &str) -> String {
+    use std::process::Command;
+
+    let output = Command::new(cmd)
+        .args(args)
+        .output()
+        .unwrap_or_else(|error| {
+            panic!(
+                "Failed while {} ({} {}): {}",
+                context,
+                cmd,
+                args.join(" "),
+                error
+            )
+        });
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let status = output
+            .status
+            .code()
+            .map(|code| code.to_string())
+            .unwrap_or_else(|| "signal".to_string());
+
+        if stderr.contains("You have not agreed to the Xcode license agreements") {
+            panic!(
+                "{} failed (exit {}).\n{}\nAction required: run `sudo xcodebuild -license` and accept the license, then retry.",
+                context,
+                status,
+                stderr
+            );
+        }
+
+        panic!(
+            "{} failed (exit {}) while running `{}`.\nstderr: {}",
+            context,
+            status,
+            format!("{} {}", cmd, args.join(" ")),
+            stderr
+        );
+    }
+
+    String::from_utf8(output.stdout)
+        .unwrap_or_else(|error| panic!("{} returned invalid UTF-8: {}", context, error))
+        .trim()
+        .to_string()
+}
+
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 fn build_apple_intelligence_bridge() {
     use std::env;
@@ -132,16 +181,11 @@ fn build_apple_intelligence_bridge() {
     let object_path = out_dir.join("apple_intelligence.o");
     let static_lib_path = out_dir.join("libapple_intelligence.a");
 
-    let sdk_path = String::from_utf8(
-        Command::new("xcrun")
-            .args(["--sdk", "macosx", "--show-sdk-path"])
-            .output()
-            .expect("Failed to locate macOS SDK")
-            .stdout,
-    )
-    .expect("SDK path is not valid UTF-8")
-    .trim()
-    .to_string();
+    let sdk_path = command_stdout_or_panic(
+        "xcrun",
+        &["--sdk", "macosx", "--show-sdk-path"],
+        "Locating macOS SDK for Apple Intelligence bridge",
+    );
 
     // Check if the SDK supports FoundationModels (required for Apple Intelligence)
     let framework_path =
@@ -160,16 +204,11 @@ fn build_apple_intelligence_bridge() {
         panic!("Source file {} is missing!", source_file);
     }
 
-    let swiftc_path = String::from_utf8(
-        Command::new("xcrun")
-            .args(["--find", "swiftc"])
-            .output()
-            .expect("Failed to locate swiftc")
-            .stdout,
-    )
-    .expect("swiftc path is not valid UTF-8")
-    .trim()
-    .to_string();
+    let swiftc_path = command_stdout_or_panic(
+        "xcrun",
+        &["--find", "swiftc"],
+        "Locating swiftc for Apple Intelligence bridge",
+    );
 
     let toolchain_swift_lib = Path::new(&swiftc_path)
         .parent()
@@ -257,16 +296,11 @@ fn build_audio_device_info_bridge() {
     let object_path = out_dir.join("audio_device_info.o");
     let static_lib_path = out_dir.join("libaudio_device_info.a");
 
-    let sdk_path = String::from_utf8(
-        Command::new("xcrun")
-            .args(["--sdk", "macosx", "--show-sdk-path"])
-            .output()
-            .expect("Failed to locate macOS SDK")
-            .stdout,
-    )
-    .expect("SDK path is not valid UTF-8")
-    .trim()
-    .to_string();
+    let sdk_path = command_stdout_or_panic(
+        "xcrun",
+        &["--sdk", "macosx", "--show-sdk-path"],
+        "Locating macOS SDK for audio_device_info bridge",
+    );
 
     // Detect target architecture from Cargo environment
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "aarch64".to_string());

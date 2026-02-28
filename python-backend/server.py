@@ -19,9 +19,11 @@ Usage:
 """
 
 import gc
+import json
 import logging
 import re
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Header
@@ -95,6 +97,160 @@ def clean_model_response(response: str) -> str:
     
     # Strip leading/trailing whitespace and newlines
     return response.strip()
+
+
+def has_qwen_chat_tokens(tokenizer_instance) -> bool:
+    """
+    Detect whether tokenizer exposes Qwen-style chat tokens.
+
+    Some converted repos (for example Qwen3 4B Instruct 2507 MLX) can miss
+    tokenizer.chat_template while still exposing <|im_start|>/<|im_end|>.
+    """
+    try:
+        vocab = tokenizer_instance.get_vocab()
+        if isinstance(vocab, dict):
+            return "<|im_start|>" in vocab and "<|im_end|>" in vocab
+    except Exception:
+        pass
+
+    try:
+        additional = set(getattr(tokenizer_instance, "additional_special_tokens", []) or [])
+        eos = getattr(tokenizer_instance, "eos_token", None)
+        if eos:
+            additional.add(eos)
+        return "<|im_start|>" in additional and "<|im_end|>" in additional
+    except Exception:
+        return False
+
+
+QWEN_MINIMAL_CHAT_TEMPLATE = (
+    "{%- for message in messages %}"
+    "{{- '<|im_start|>' + message['role'] + '\\n' + message['content'] + '<|im_end|>\\n' }}"
+    "{%- endfor %}"
+    "{%- if add_generation_prompt %}{{- '<|im_start|>assistant\\n' }}{%- endif %}"
+)
+
+
+def read_model_chat_template() -> Optional[str]:
+    """
+    Read a model-provided chat template from local files, if available.
+
+    Priority:
+    1) chat_template.jinja
+    2) tokenizer_config.json.chat_template
+    """
+    if not current_model_path:
+        return None
+
+    model_dir = Path(current_model_path)
+    jinja_path = model_dir / "chat_template.jinja"
+    if jinja_path.exists():
+        try:
+            content = jinja_path.read_text(encoding="utf-8").strip()
+            if content:
+                return content
+        except Exception as exc:
+            logger.debug(f"Failed to read {jinja_path}: {exc}")
+
+    config_path = model_dir / "tokenizer_config.json"
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            template = data.get("chat_template")
+            if isinstance(template, str) and template.strip():
+                return template
+            if isinstance(template, list):
+                # Some Hugging Face tokenizers use [{"name": "...", "template": "..."}].
+                default_template = None
+                first_template = None
+                for item in template:
+                    if not isinstance(item, dict):
+                        continue
+                    candidate = item.get("template")
+                    if not isinstance(candidate, str) or not candidate.strip():
+                        continue
+                    if first_template is None:
+                        first_template = candidate
+                    if item.get("name") == "default":
+                        default_template = candidate
+                        break
+                if default_template:
+                    return default_template
+                if first_template:
+                    return first_template
+        except Exception as exc:
+            logger.debug(f"Failed to read {config_path}: {exc}")
+
+    return None
+
+
+def build_qwen_manual_prompt(prompt: str) -> str:
+    """Last-resort formatting for Qwen-style chat tokens."""
+    return f"<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+
+
+def format_prompt_for_generation(tokenizer_instance, prompt: str) -> tuple[str, str, Optional[str]]:
+    """
+    Build model input prompt with robust fallbacks.
+
+    Returns:
+        (formatted_prompt, mode, fallback_reason)
+    """
+    messages = [{"role": "user", "content": prompt}]
+
+    def apply_with_template(mode_prefix: str) -> tuple[Optional[str], Optional[str]]:
+        try:
+            formatted_prompt = tokenizer_instance.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,  # Disable thinking when supported
+            )
+            return formatted_prompt, f"{mode_prefix}_enable_thinking_false"
+        except TypeError:
+            formatted_prompt = tokenizer_instance.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+            return formatted_prompt, f"{mode_prefix}_no_enable_thinking"
+
+    try:
+        formatted_prompt, mode = apply_with_template("chat_template")
+        return formatted_prompt, mode, None
+    except Exception as exc:
+        error_text = str(exc)
+        if "tokenizer.chat_template is not set" not in error_text:
+            return prompt, "raw_prompt_fallback_chat_template_error", error_text
+
+        template_source = None
+        model_template = read_model_chat_template()
+        if model_template:
+            template_source = "model_files"
+            # Intentionally patch tokenizer.chat_template for subsequent calls in this
+            # sidecar process. The sidecar serves one loaded tokenizer at a time.
+            setattr(tokenizer_instance, "chat_template", model_template)
+        elif has_qwen_chat_tokens(tokenizer_instance):
+            template_source = "embedded_qwen_minimal"
+            # Intentionally patch tokenizer.chat_template for subsequent calls in this
+            # sidecar process. The sidecar serves one loaded tokenizer at a time.
+            setattr(tokenizer_instance, "chat_template", QWEN_MINIMAL_CHAT_TEMPLATE)
+
+        if template_source:
+            try:
+                formatted_prompt, mode = apply_with_template("chat_template_injected")
+                return formatted_prompt, f"{mode}_{template_source}", error_text
+            except Exception:
+                if template_source == "embedded_qwen_minimal":
+                    return (
+                        build_qwen_manual_prompt(prompt),
+                        "manual_qwen_chat_fallback",
+                        error_text,
+                    )
+
+        if has_qwen_chat_tokens(tokenizer_instance):
+            return build_qwen_manual_prompt(prompt), "manual_qwen_chat_fallback", error_text
+        return prompt, "raw_prompt_fallback_missing_chat_template", error_text
 
 
 # =============================================================================
@@ -183,6 +339,8 @@ class GenerateResponse(BaseModel):
     """Response containing generated text."""
     response: str
     tokens_generated: int
+    prompt_format_mode: str = "unknown"
+    prompt_format_fallback: bool = False
 
 
 class StatusResponse(BaseModel):
@@ -300,26 +458,21 @@ async def generate_text(
         logger.info(f"Generating text (max_tokens={effective_max_tokens}, temp={request.temperature})", extra=extra)
         logger.info(f"=== INPUT PROMPT ===\n{request.prompt}\n=== END INPUT ===", extra=extra)
         
-        # Apply Qwen3 chat template with thinking disabled for translation tasks
-        # This formats the prompt properly with <|im_start|> and <|im_end|> tokens
-        messages = [{"role": "user", "content": request.prompt}]
-        try:
-            formatted_prompt = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,  # Disable thinking for efficient translation
+        formatted_prompt, format_mode, fallback_reason = format_prompt_for_generation(
+            tokenizer,
+            request.prompt,
+        )
+        if fallback_reason:
+            logger.warning(
+                f"Prompt formatting fallback mode={format_mode}: {fallback_reason}",
+                extra=extra,
             )
-            logger.debug(f"Applied chat template, formatted length: {len(formatted_prompt)}")
-        except TypeError:
-            # Fallback for tokenizers that don't support enable_thinking
-            formatted_prompt = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
+        else:
+            logger.info(
+                f"Prompt formatting mode={format_mode}",
+                extra=extra,
             )
-            logger.debug("Using chat template without enable_thinking parameter")
-        
+
         logger.info(f"=== FORMATTED PROMPT ===\n{formatted_prompt}\n=== END FORMATTED ===", extra=extra)
         
         # Create sampler with recommended settings for Qwen3 non-thinking mode
@@ -359,7 +512,12 @@ async def generate_text(
         tokens_generated = len(tokenizer.encode(response)) if response else 0
         
         logger.info(f"Generated {tokens_generated} tokens", extra=extra)
-        return GenerateResponse(response=response, tokens_generated=tokens_generated)
+        return GenerateResponse(
+            response=response,
+            tokens_generated=tokens_generated,
+            prompt_format_mode=format_mode,
+            prompt_format_fallback=fallback_reason is not None,
+        )
         
     except Exception as e:
         logger.error(f"Generation failed: {e}")
