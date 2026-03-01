@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const mode = process.argv[2] ?? "info";
 
@@ -17,6 +17,7 @@ if (!rustLog) {
 }
 
 loadDotEnv(".env");
+warnAndOptionallyPruneTargetDir();
 
 const command = process.platform === "win32" ? "tauri.cmd" : "tauri";
 const child = spawn(command, ["dev"], {
@@ -69,4 +70,91 @@ function loadDotEnv(filename) {
 
     process.env[key] = value;
   }
+}
+
+function warnAndOptionallyPruneTargetDir() {
+  const targetDir = resolve(process.cwd(), "src-tauri", "target");
+  if (!existsSync(targetDir)) {
+    return;
+  }
+
+  const autoPruneEnabled = process.env.HANDY_AUTO_PRUNE_TARGET === "1";
+  if (autoPruneEnabled) {
+    runStalePrune();
+  }
+
+  const thresholdGiB = parseFloatOrDefault(
+    process.env.HANDY_TARGET_WARN_GIB,
+    20,
+  );
+  const bytes = tryReadDirectorySizeBytes(targetDir);
+  if (bytes === null) {
+    return;
+  }
+
+  const gib = bytes / (1024 * 1024 * 1024);
+  if (gib < thresholdGiB) {
+    return;
+  }
+
+  console.warn(
+    `[tauri:dev] src-tauri/target is ${gib.toFixed(1)} GiB (threshold ${thresholdGiB.toFixed(1)} GiB).`,
+  );
+  if (autoPruneEnabled) {
+    console.warn(
+      "[tauri:dev] src-tauri/target is still large after auto-prune; run `bun run rust:clean` for full cleanup.",
+    );
+    return;
+  }
+
+  console.warn(
+    "[tauri:dev] Run `bun run rust:prune` for stale artifact cleanup or `bun run rust:clean` for full cleanup.",
+  );
+}
+
+function runStalePrune() {
+  const pruneScript = resolve(process.cwd(), "scripts", "rust-prune.mjs");
+  console.warn(
+    "[tauri:dev] HANDY_AUTO_PRUNE_TARGET=1 detected; pruning stale Rust artifacts before launch.",
+  );
+  const result = spawnSync(process.execPath, [pruneScript, "--quiet"], {
+    stdio: "inherit",
+  });
+  if (result.status !== 0 || result.error) {
+    console.warn(
+      `[tauri:dev] stale artifact prune exited with status ${result.status ?? "unknown"}${result.error ? ` (${result.error.message})` : ""}.`,
+    );
+  }
+}
+
+function tryReadDirectorySizeBytes(targetDir) {
+  const result = spawnSync("du", ["-sk", targetDir], {
+    encoding: "utf8",
+  });
+  if (result.error) {
+    if (result.error.code === "ENOENT") {
+      console.warn(
+        "[tauri:dev] Skipping target size check: `du` is unavailable on this platform.",
+      );
+    }
+    return null;
+  }
+  if (result.status !== 0 || !result.stdout) {
+    return null;
+  }
+
+  const kibibytes = Number.parseInt(result.stdout.trim().split(/\s+/)[0], 10);
+  if (!Number.isFinite(kibibytes) || kibibytes < 0) {
+    return null;
+  }
+
+  return kibibytes * 1024;
+}
+
+function parseFloatOrDefault(rawValue, fallback) {
+  const parsed = Number.parseFloat(rawValue ?? "");
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return fallback;
 }

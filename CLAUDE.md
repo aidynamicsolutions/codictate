@@ -40,6 +40,10 @@ bun run tauri dev
 # If cmake error on macOS:
 CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri:dev
 
+# Rust artifact cleanup
+bun run rust:prune        # Remove stale Rust incremental/temp artifacts (keeps recent cache)
+bun run rust:clean        # Full cleanup of src-tauri/target (largest reclaim, slowest next build)
+
 # Build for production
 bun run tauri build
 
@@ -53,6 +57,17 @@ bun run format:check      # Check formatting without changes
 bun run test              # Run tests once
 bun run test:watch        # Watch mode for development
 ```
+
+### Development Disk Usage
+
+- `src-tauri/target` is a build cache and is safe to prune/clean.
+- On macOS, runtime user data lives under `~/Library/Application Support/com.pais.codictate/`:
+  - `models/`, `mlx-models/` are downloaded models.
+  - `recordings/` are user audio files.
+- Dev launcher warning:
+  - `scripts/tauri-dev.mjs` warns when `src-tauri/target` is over `HANDY_TARGET_WARN_GIB` (default `20`).
+  - Set `HANDY_AUTO_PRUNE_TARGET=1` to always run stale prune before `tauri:dev`.
+  - Set `HANDY_PRUNE_DAYS` (default `3`) to control stale cutoff for `rust:prune`.
 
 ## Frontend Testing
 

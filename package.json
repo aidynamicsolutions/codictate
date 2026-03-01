@@ -11,6 +11,8 @@
     "tauri:dev": "bun ./scripts/tauri-dev.mjs info",
     "tauri:dev:debug": "bun ./scripts/tauri-dev.mjs debug",
     "tauri:dev:verbose": "bun ./scripts/tauri-dev.mjs verbose",
+    "rust:clean": "cargo clean --manifest-path src-tauri/Cargo.toml",
+    "rust:prune": "bun ./scripts/rust-prune.mjs",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix",
     "format": "prettier --write . && cd src-tauri && cargo fmt",

@@ -47,6 +47,17 @@ The process is entirely local:
 
 For detailed build instructions including platform-specific requirements, see [BUILD.md](BUILD.md).
 
+#### Development Disk Usage
+
+- Rust build artifacts in `src-tauri/target` are safe to clean.
+  - `bun run rust:prune` removes stale Rust incremental directories and `.temp-archive` artifacts.
+  - `bun run rust:clean` runs a full Cargo clean for `src-tauri`.
+- `bun run tauri:dev` warns when `src-tauri/target` exceeds `HANDY_TARGET_WARN_GIB` (default `20`).
+  - Set `HANDY_AUTO_PRUNE_TARGET=1` to always run stale prune before launch.
+- On macOS, runtime data is separate under `~/Library/Application Support/com.pais.codictate/`:
+  - `models/` and `mlx-models/` are downloaded model assets.
+  - `recordings/` contains user audio history.
+
 ## Architecture
 
 Codictate is built as a Tauri application combining:
