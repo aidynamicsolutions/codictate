@@ -9,7 +9,7 @@ pub const USER_STORE_PATH: &str = "user_store.json";
 
 /// User profile data - separate from app settings.
 /// This stores onboarding and user identity information.
-#[derive(Serialize, Deserialize, Debug, Clone, Type, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Type, Default, PartialEq, Eq)]
 pub struct UserProfile {
     /// User's display name (collected during onboarding)
     #[serde(default)]
@@ -55,72 +55,35 @@ pub struct UserProfile {
 
 
 /// Get the user profile from the store, or create a default one if it doesn't exist.
-pub fn get_user_profile(app: &AppHandle) -> UserProfile {
+pub fn get_user_profile<R: tauri::Runtime>(app: &AppHandle<R>) -> UserProfile {
     let store = app
         .store(USER_STORE_PATH)
         .expect("Failed to initialize user store");
+    parse_profile_value(store.get("profile"))
+}
 
-    if let Some(profile_value) = store.get("profile") {
-        match serde_json::from_value::<UserProfile>(profile_value) {
+fn parse_profile_value(profile_value: Option<serde_json::Value>) -> UserProfile {
+    if let Some(profile_value) = profile_value {
+        return match serde_json::from_value::<UserProfile>(profile_value) {
             Ok(profile) => {
                 debug!("Loaded user profile: {:?}", profile);
                 profile
             }
             Err(e) => {
                 tracing::warn!("Failed to parse user profile: {}", e);
-                let default_profile = UserProfile::default();
-                store.set(
-                    "profile",
-                    serde_json::to_value(&default_profile).unwrap(),
-                );
-                default_profile
+                UserProfile::default()
             }
-        }
-    } else {
-        let default_profile = UserProfile::default();
-        store.set(
-            "profile",
-            serde_json::to_value(&default_profile).unwrap(),
-        );
-        default_profile
+        };
     }
+    UserProfile::default()
 }
 
-/// Write the user profile to the store.
-pub fn write_user_profile(app: &AppHandle, profile: UserProfile) {
-    let store = app
-        .store(USER_STORE_PATH)
-        .expect("Failed to initialize user store");
-
-    store.set("profile", serde_json::to_value(&profile).unwrap());
-}
-
-// ============================================================================
-// Tauri Commands
-// ============================================================================
-
-#[tauri::command]
-#[specta::specta]
-pub fn get_user_profile_command(app: AppHandle) -> Result<UserProfile, String> {
-    Ok(get_user_profile(&app))
-}
-
-/// Update a specific field in the user profile.
-/// The value is a JSON-encoded string.
-#[tauri::command]
-#[specta::specta]
-pub fn update_user_profile_setting(
-    app: AppHandle,
-    key: String,
-    value: String,
+fn apply_profile_update(
+    profile: &mut UserProfile,
+    key: &str,
+    parsed: serde_json::Value,
 ) -> Result<(), String> {
-    let mut profile = get_user_profile(&app);
-
-    // Parse the JSON value
-    let parsed: serde_json::Value =
-        serde_json::from_str(&value).map_err(|e| format!("Invalid JSON value: {}", e))?;
-
-    match key.as_str() {
+    match key {
         "user_name" => {
             profile.user_name = if parsed.is_null() {
                 None
@@ -176,7 +139,92 @@ pub fn update_user_profile_setting(
         }
     }
 
-    write_user_profile(&app, profile);
-    debug!("Updated user profile field '{}' to: {}", key, value);
     Ok(())
+}
+
+/// Write the user profile to the store.
+pub fn write_user_profile<R: tauri::Runtime>(app: &AppHandle<R>, profile: UserProfile) {
+    let store = app
+        .store(USER_STORE_PATH)
+        .expect("Failed to initialize user store");
+
+    store.set("profile", serde_json::to_value(&profile).unwrap());
+}
+
+// ============================================================================
+// Tauri Commands
+// ============================================================================
+
+#[tauri::command]
+#[specta::specta]
+pub fn get_user_profile_command(app: AppHandle) -> Result<UserProfile, String> {
+    Ok(get_user_profile(&app))
+}
+
+/// Update a specific field in the user profile.
+/// The value is a JSON-encoded string.
+#[tauri::command]
+#[specta::specta]
+pub fn update_user_profile_setting(
+    app: AppHandle,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    update_user_profile_setting_inner(&app, key, value)
+}
+
+pub(crate) fn update_user_profile_setting_inner<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    key: String,
+    value: String,
+) -> Result<(), String> {
+    crate::backup_restore::with_write_permit(app, || {
+        let mut profile = get_user_profile(app);
+
+        // Parse the JSON value
+        let parsed: serde_json::Value =
+            serde_json::from_str(&value).map_err(|e| format!("Invalid JSON value: {}", e))?;
+
+        apply_profile_update(&mut profile, key.as_str(), parsed)?;
+
+        write_user_profile(app, profile);
+        debug!("Updated user profile field '{}' to: {}", key, value);
+        Ok(())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_profile_value_returns_default_for_missing_payload() {
+        let profile = parse_profile_value(None);
+        assert_eq!(profile, UserProfile::default());
+    }
+
+    #[test]
+    fn parse_profile_value_returns_default_for_malformed_payload() {
+        let malformed = Some(json!("malformed"));
+        let profile = parse_profile_value(malformed);
+        assert_eq!(profile, UserProfile::default());
+    }
+
+    #[test]
+    fn apply_profile_update_repairs_default_profile() {
+        let mut profile = parse_profile_value(Some(json!("malformed")));
+        let parsed = serde_json::from_str::<serde_json::Value>("\"Ari\"")
+            .expect("parse profile value");
+        apply_profile_update(&mut profile, "user_name", parsed).expect("apply profile update");
+        assert_eq!(profile.user_name.as_deref(), Some("Ari"));
+    }
+
+    #[test]
+    fn apply_profile_update_rejects_unknown_keys() {
+        let mut profile = UserProfile::default();
+        let error = apply_profile_update(&mut profile, "unknown_key", json!(true))
+            .expect_err("unknown profile key should be rejected");
+        assert!(error.contains("Unknown user profile key"));
+    }
 }

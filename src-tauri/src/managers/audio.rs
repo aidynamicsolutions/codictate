@@ -1094,6 +1094,15 @@ impl AudioRecordingManager {
             }
         }
 
+        if !crate::backup_restore::ensure_transcription_start_allowed(&self.app_handle) {
+            warn!(
+                "Blocking recording start for '{}' because backup/restore maintenance mode is active",
+                binding_id
+            );
+            *state = RecordingState::Idle;
+            return false;
+        }
+
         // Ensure microphone is open in on-demand mode
         if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
             if let Err(e) = self.start_microphone_stream() {

@@ -155,6 +155,14 @@ impl TranscriptionCoordinator {
 }
 
 fn start(app: &AppHandle, stage: &mut Stage, binding_id: &str, hotkey_string: &str) {
+    if !crate::backup_restore::ensure_transcription_start_allowed(app) {
+        warn!(
+            "Ignored action '{}' because backup/restore maintenance mode is active",
+            binding_id
+        );
+        return;
+    }
+
     let Some(action) = ACTION_MAP.get(binding_id) else {
         warn!("No action in ACTION_MAP for '{binding_id}'");
         return;

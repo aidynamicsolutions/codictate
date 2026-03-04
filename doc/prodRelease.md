@@ -203,13 +203,24 @@ Before each release, verify that changes do not break existing user backups:
 
 - [ ] Backup format version has been bumped if archive structure changed
 - [ ] Migration pipeline handles previous backup format versions correctly
-- [ ] Settings backup inclusion/exclusion lists updated for any new/removed `AppSettings` fields
+- [ ] If backup scope changed (for example, adding settings in a future version), update docs and compatibility tests accordingly
 - [ ] History payload schema changes have corresponding migration in the restore pipeline
 - [ ] Dictionary payload schema changes have corresponding migration in the restore pipeline
 - [ ] Test: restore a backup created with the previous release on the new build
 - [ ] Test: round-trip backup (export + restore) produces identical data
+- [ ] Test: exporter and restore preflight enforce symmetric payload-size bounds (no self-incompatible backups)
+- [ ] Test: exporter and restore parsing enforce the same history JSONL per-line bound (8 MiB) to prevent self-incompatible backups
+- [ ] Test: restore extraction enforces stream-time per-entry and total uncompressed byte ceilings (not metadata-only)
+- [ ] Test: cancellation responsiveness during long-running loops (mid-export recordings, mid-package archive write, mid-restore extraction, and mid-restore recordings import) stops safely without requiring full phase completion
+- [ ] Test: restore preflight summary displays expected metadata and compatibility note
+- [ ] Test: `Undo Last Restore` checkpoint is created, expires after retention, and is single-slot
+- [ ] Test: startup reconciliation fails closed when `in_progress` marker snapshot layout is missing or invalid (active data unchanged, marker retained)
+- [ ] Test: restore/undo snapshot staging fails closed when local `recordings/` source root is a symlink (no data swap, no out-of-bound copy)
+- [ ] Test: write-gate transition race regression (queued writer from pre-operation window is rejected with maintenance/write-blocked error after operation start)
+- [ ] Test: control-character archive/checksum paths are rejected deterministically, and export rejects control-character history/recording filenames to avoid checksum manifest ambiguity
+- [ ] Confirm macOS-only rollout guard remains enforced (UI hidden and commands reject on non-macOS)
 
-See [backup-restore.md](backup-restore.md) for full feature documentation, ADR, and error catalog.
+See [backup-restore.md](backup-restore.md) for the current backup feature documentation and compatibility contract.
 
 ---
 

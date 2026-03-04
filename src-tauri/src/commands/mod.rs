@@ -1,4 +1,5 @@
 pub mod audio;
+pub mod backup;
 pub mod correction;
 pub mod dictionary;
 pub mod history;
@@ -20,6 +21,7 @@ use tauri_plugin_opener::OpenerExt;
 #[specta::specta]
 pub fn cancel_operation(app: AppHandle) {
     cancel_current_operation(&app);
+    crate::backup_restore::request_cancel(&app);
 }
 
 #[tauri::command]

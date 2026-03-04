@@ -97,6 +97,50 @@ fn is_fn_managed_shortcut(binding: &str) -> bool {
         || binding_lower.contains("+fn")
 }
 
+pub(crate) fn resolve_handsfree_toggle_next_state(
+    currently_active: bool,
+    can_start_new_transcription: bool,
+) -> Option<bool> {
+    let should_start = !currently_active;
+    if should_start && !can_start_new_transcription {
+        return None;
+    }
+    Some(should_start)
+}
+
+fn transition_handsfree_toggle_state(
+    is_currently_active: &mut bool,
+    can_start_new_transcription: bool,
+) -> Option<bool> {
+    let next = resolve_handsfree_toggle_next_state(*is_currently_active, can_start_new_transcription)?;
+    *is_currently_active = next;
+    Some(next)
+}
+
+pub(crate) fn transition_handsfree_toggle<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    binding_id: &str,
+) -> Option<bool> {
+    let toggle_state_manager = app.state::<ManagedToggleState>();
+    let mut states = match toggle_state_manager.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            error!(
+                "Toggle state mutex poisoned for '{}', recovering",
+                binding_id
+            );
+            poisoned.into_inner()
+        }
+    };
+
+    let is_currently_active = states
+        .active_toggles
+        .entry(binding_id.to_string())
+        .or_insert(false);
+    let can_start_new_transcription = crate::backup_restore::can_start_transcription(app);
+    transition_handsfree_toggle_state(is_currently_active, can_start_new_transcription)
+}
+
 fn init_shortcuts_with<Bindings, IsRegistered, Register>(
     bindings: Bindings,
     mut is_registered: IsRegistered,
@@ -1326,26 +1370,17 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                         // Hands-free shortcut is ALWAYS Toggle (Press to start/stop)
                         // Ignore Release events
                         if event.state == ShortcutState::Pressed {
-                            // Determine action and update state while holding the lock
-                            let should_start: bool;
-                            {
-                                let toggle_state_manager = ah.state::<ManagedToggleState>();
-                                let mut states = match toggle_state_manager.lock() {
-                                    Ok(guard) => guard,
-                                    Err(poisoned) => {
-                                        error!("Toggle state mutex poisoned for '{}', recovering", binding_id_for_closure);
-                                        poisoned.into_inner()
-                                    }
-                                };
-
-                                let is_currently_active = states
-                                    .active_toggles
-                                    .entry(binding_id_for_closure.clone())
-                                    .or_insert(false);
-
-                                should_start = !*is_currently_active;
-                                *is_currently_active = should_start;
-                            } // Lock released here
+                            let Some(should_start) =
+                                transition_handsfree_toggle(ah, &binding_id_for_closure)
+                            else {
+                                let _ =
+                                    crate::backup_restore::ensure_transcription_start_allowed(ah);
+                                debug!(
+                                    "Skipped hands-free toggle on '{}' because backup/restore maintenance mode is active",
+                                    binding_id_for_closure
+                                );
+                                return;
+                            };
 
                             if should_start {
                                 action.start(ah, &binding_id_for_closure, &shortcut_string);
@@ -1522,5 +1557,38 @@ mod tests {
         assert_eq!(report.success_count(), 1);
         assert_eq!(report.failed_count(), 0);
         assert!(report.is_successful());
+    }
+
+    #[test]
+    fn transition_handsfree_toggle_state_blocks_activation_when_start_not_allowed() {
+        let mut currently_active = false;
+        let next = transition_handsfree_toggle_state(&mut currently_active, false);
+        assert_eq!(next, None);
+        assert!(
+            !currently_active,
+            "blocked activation must keep state unchanged"
+        );
+    }
+
+    #[test]
+    fn transition_handsfree_toggle_state_allows_deactivation_even_when_start_not_allowed() {
+        let mut currently_active = true;
+        let next = transition_handsfree_toggle_state(&mut currently_active, false);
+        assert_eq!(next, Some(false));
+        assert!(
+            !currently_active,
+            "deactivation should commit false state even when starts are blocked"
+        );
+    }
+
+    #[test]
+    fn transition_handsfree_toggle_state_allows_activation_when_start_allowed() {
+        let mut currently_active = false;
+        let next = transition_handsfree_toggle_state(&mut currently_active, true);
+        assert_eq!(next, Some(true));
+        assert!(
+            currently_active,
+            "activation should commit true state when starts are allowed"
+        );
     }
 }

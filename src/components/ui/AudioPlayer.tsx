@@ -9,6 +9,20 @@ interface AudioPlayerProps {
   onLoadRequest?: () => Promise<string | null>;
   className?: string;
   autoPlay?: boolean;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
+export function shouldBlockPlaybackToggle(
+  disabled: boolean,
+  isLoading: boolean,
+  audio: HTMLAudioElement | null,
+): boolean {
+  return disabled || isLoading || !audio;
+}
+
+export function shouldBlockAudioSeek(disabled: boolean): boolean {
+  return disabled;
 }
 
 export const AudioPlayer: React.FC<AudioPlayerProps> = ({
@@ -16,6 +30,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   onLoadRequest,
   className = "",
   autoPlay = false,
+  disabled = false,
+  disabledReason,
 }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -131,6 +147,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    if (disabled) return;
 
     // Play when lazySrc changes from null to a value (lazy load case)
     if (lazySrc && !prevLazySrc.current && onLoadRequest) {
@@ -146,7 +163,17 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
     }
 
     prevLazySrc.current = lazySrc;
-  }, [lazySrc, autoPlay, initialSrc, onLoadRequest]);
+  }, [lazySrc, autoPlay, initialSrc, onLoadRequest, disabled]);
+
+  useEffect(() => {
+    if (!disabled) return;
+    const audio = audioRef.current;
+    if (audio && !audio.paused) {
+      audio.pause();
+    }
+    setIsPlaying(false);
+    setIsDragging(false);
+  }, [disabled]);
 
   // Global drag handlers
   const handleMouseUp = useCallback(() => {
@@ -182,8 +209,8 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
 
   const togglePlay = async () => {
     const audio = audioRef.current;
+    if (shouldBlockPlaybackToggle(disabled, isLoading, audio)) return;
     if (!audio) return;
-    if (isLoading) return;
 
     try {
       if (isPlaying) {
@@ -208,6 +235,7 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (shouldBlockAudioSeek(disabled)) return;
     const newTime = parseFloat(e.target.value);
     dragTimeRef.current = newTime;
     setCurrentTime(newTime);
@@ -218,10 +246,12 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   };
 
   const handleSliderMouseDown = () => {
+    if (disabled) return;
     setIsDragging(true);
   };
 
   const handleSliderTouchStart = () => {
+    if (disabled) return;
     setIsDragging(true);
   };
 
@@ -247,14 +277,18 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
   const progressPercent = getProgressPercent();
 
   return (
-    <div className={`flex items-center gap-3 ${className}`}>
+    <div
+      className={`flex items-center gap-3 ${disabled ? "opacity-60" : ""} ${className}`}
+      title={disabled ? disabledReason : undefined}
+    >
       <audio ref={audioRef} src={src ?? undefined} preload="metadata" />
 
       <button
         onClick={togglePlay}
-        disabled={isLoading}
-        className="transition-colors cursor-pointer text-text hover:text-logo-primary disabled:opacity-50"
-        aria-label={isPlaying ? "Pause" : "Play"}
+        disabled={isLoading || disabled}
+        className="transition-colors cursor-pointer text-text hover:text-logo-primary disabled:opacity-50 disabled:cursor-not-allowed"
+        aria-label={disabled ? disabledReason : isPlaying ? "Pause" : "Play"}
+        title={disabled ? disabledReason : undefined}
       >
         {isPlaying ? (
           <Pause width={20} height={20} fill="currentColor" />
@@ -277,7 +311,9 @@ export const AudioPlayer: React.FC<AudioPlayerProps> = ({
           onChange={handleSeek}
           onMouseDown={handleSliderMouseDown}
           onTouchStart={handleSliderTouchStart}
-          className={`flex-1 h-1 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-logo-primary ${progressPercent >= 99.5 ? "[&::-webkit-slider-thumb]:translate-x-0.5 [&::-moz-range-thumb]:translate-x-0.5" : ""}`}
+          disabled={disabled}
+          title={disabled ? disabledReason : undefined}
+          className={`flex-1 h-1 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-logo-primary disabled:cursor-not-allowed ${progressPercent >= 99.5 ? "[&::-webkit-slider-thumb]:translate-x-0.5 [&::-moz-range-thumb]:translate-x-0.5" : ""}`}
           style={{
             background: `linear-gradient(to right, ${colors.primary} 0%, ${colors.primary} ${progressPercent}%, rgba(128, 128, 128, 0.2) ${progressPercent}%, rgba(128, 128, 128, 0.2) 100%)`,
           }}

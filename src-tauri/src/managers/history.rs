@@ -78,6 +78,7 @@ pub struct HistoryEntry {
     pub post_process_prompt: Option<String>,
     pub duration_ms: i64,
     pub file_path: String,
+    pub audio_file_exists: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -216,6 +217,8 @@ fn map_history_entry(
     row: &rusqlite::Row<'_>,
     recordings_dir: &PathBuf,
 ) -> rusqlite::Result<HistoryEntry> {
+    let file_name: String = row.get("file_name")?;
+    let file_path = recordings_dir.join(&file_name);
     let transcription_text: String = row.get("transcription_text")?;
     let post_processed_text: Option<String> = row.get("post_processed_text")?;
     let inserted_text: Option<String> = row.get("inserted_text")?;
@@ -227,7 +230,7 @@ fn map_history_entry(
 
     Ok(HistoryEntry {
         id: row.get("id")?,
-        file_name: row.get("file_name")?,
+        file_name,
         timestamp: row.get("timestamp")?,
         saved: row.get("saved")?,
         title: row.get("title")?,
@@ -238,10 +241,8 @@ fn map_history_entry(
         effective_text,
         post_process_prompt: row.get("post_process_prompt")?,
         duration_ms: row.get("duration_ms")?,
-        file_path: recordings_dir
-            .join(row.get::<_, String>("file_name")?)
-            .to_string_lossy()
-            .to_string(),
+        file_path: file_path.to_string_lossy().to_string(),
+        audio_file_exists: file_path.exists(),
     })
 }
 
@@ -809,6 +810,13 @@ impl HistoryManager {
         Ok(Connection::open(&self.db_path)?)
     }
 
+    fn with_write_permit<T>(&self, operation: impl FnOnce() -> Result<T>) -> Result<T> {
+        crate::backup_restore::with_write_permit(&self.app_handle, || {
+            operation().map_err(|error| error.to_string())
+        })
+        .map_err(anyhow::Error::msg)
+    }
+
     fn update_inserted_text_by_id_with_conn(
         conn: &Connection,
         id: i64,
@@ -842,17 +850,19 @@ impl HistoryManager {
     }
 
     pub fn update_inserted_text_by_id(&self, id: i64, inserted_text: String) -> Result<()> {
-        let conn = self.get_connection()?;
-        Self::update_inserted_text_by_id_with_conn(&conn, id, inserted_text)?;
+        self.with_write_permit(|| {
+            let conn = self.get_connection()?;
+            Self::update_inserted_text_by_id_with_conn(&conn, id, inserted_text)?;
 
-        if let Err(e) = self.app_handle.emit("history-updated", ()) {
-            error!(
-                "Failed to emit history-updated event after inserted_text update: {}",
-                e
-            );
-        }
+            if let Err(e) = self.app_handle.emit("history-updated", ()) {
+                error!(
+                    "Failed to emit history-updated event after inserted_text update: {}",
+                    e
+                );
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     pub fn update_refine_output_by_id(
@@ -861,26 +871,28 @@ impl HistoryManager {
         post_processed_text: String,
         post_process_prompt: Option<String>,
     ) -> Result<()> {
-        let conn = self.get_connection()?;
-        Self::update_refine_output_by_id_with_conn(
-            &conn,
-            id,
-            post_processed_text,
-            post_process_prompt,
-        )?;
+        self.with_write_permit(|| {
+            let conn = self.get_connection()?;
+            Self::update_refine_output_by_id_with_conn(
+                &conn,
+                id,
+                post_processed_text,
+                post_process_prompt,
+            )?;
 
-        if let Err(e) = self.app_handle.emit("history-updated", ()) {
-            error!(
-                "Failed to emit history-updated event after refine output update: {}",
-                e
-            );
-        }
+            if let Err(e) = self.app_handle.emit("history-updated", ()) {
+                error!(
+                    "Failed to emit history-updated event after refine output update: {}",
+                    e
+                );
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     /// Save a transcription to history (both database and WAV file)
-    pub async fn save_transcription(
+    pub fn save_transcription(
         &self,
         audio_samples: Vec<f32>,
         transcription_text: String,
@@ -890,39 +902,41 @@ impl HistoryManager {
         speech_duration_ms: i64,
         filler_words_removed: i64,
     ) -> Result<SavedTranscription> {
-        let timestamp = Utc::now().timestamp();
-        let file_name = format!("codictate-{}.wav", timestamp);
-        let title = self.format_timestamp_title(timestamp);
+        self.with_write_permit(|| {
+            let timestamp = Utc::now().timestamp();
+            let file_name = format!("codictate-{}.wav", timestamp);
+            let title = self.format_timestamp_title(timestamp);
 
-        // Save WAV file
-        let file_path = self.recordings_dir.join(&file_name);
-        save_wav_file(file_path, &audio_samples).await?;
+            // Save WAV file
+            let file_path = self.recordings_dir.join(&file_name);
+            save_wav_file(file_path, &audio_samples)?;
 
-        // Save to database
-        let contribution = self.save_to_database(
-            file_name,
-            timestamp,
-            title,
-            transcription_text,
-            post_processed_text,
-            post_process_prompt,
-            recording_duration_ms,
-            speech_duration_ms,
-            filler_words_removed,
-        )?;
+            // Save to database
+            let contribution = self.save_to_database(
+                file_name,
+                timestamp,
+                title,
+                transcription_text,
+                post_processed_text,
+                post_process_prompt,
+                recording_duration_ms,
+                speech_duration_ms,
+                filler_words_removed,
+            )?;
 
-        // Clean up old entries
-        self.cleanup_old_entries()?;
+            // Clean up old entries
+            self.cleanup_old_entries_impl()?;
 
-        // Emit history updated event
-        info!("Emitting history-updated event");
-        if let Err(e) = self.app_handle.emit("history-updated", ()) {
-            error!("Failed to emit history-updated event: {}", e);
-        } else {
-            debug!("Successfully emitted history-updated event");
-        }
+            // Emit history updated event
+            info!("Emitting history-updated event");
+            if let Err(e) = self.app_handle.emit("history-updated", ()) {
+                error!("Failed to emit history-updated event: {}", e);
+            } else {
+                debug!("Successfully emitted history-updated event");
+            }
 
-        Ok(contribution)
+            Ok(contribution)
+        })
     }
 
     fn save_to_database(
@@ -1046,14 +1060,16 @@ impl HistoryManager {
     }
 
     pub fn rollback_stats_contribution(&self, contribution: &StatsContribution) -> Result<()> {
-        let mut conn = self.get_connection()?;
-        Self::rollback_stats_contribution_with_conn(&mut conn, contribution)?;
+        self.with_write_permit(|| {
+            let mut conn = self.get_connection()?;
+            Self::rollback_stats_contribution_with_conn(&mut conn, contribution)?;
 
-        if let Err(e) = self.app_handle.emit("history-updated", ()) {
-            error!("Failed to emit history-updated event after rollback: {}", e);
-        }
+            if let Err(e) = self.app_handle.emit("history-updated", ()) {
+                error!("Failed to emit history-updated event after rollback: {}", e);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn rollback_stats_contribution_with_conn(
@@ -1126,6 +1142,10 @@ impl HistoryManager {
     }
 
     pub fn cleanup_old_entries(&self) -> Result<()> {
+        self.with_write_permit(|| self.cleanup_old_entries_impl())
+    }
+
+    fn cleanup_old_entries_impl(&self) -> Result<()> {
         let retention_period = crate::settings::get_recording_retention_period(&self.app_handle);
 
         match retention_period {
@@ -1278,6 +1298,10 @@ impl HistoryManager {
     }
 
     pub fn prune_older_than(&self, days: u64) -> Result<usize> {
+        self.with_write_permit(|| self.prune_older_than_impl(days))
+    }
+
+    fn prune_older_than_impl(&self, days: u64) -> Result<usize> {
         let now = Utc::now().timestamp();
         let cutoff_timestamp = now - (days as i64 * 24 * 60 * 60);
 
@@ -1327,6 +1351,26 @@ impl HistoryManager {
         time_period_start: Option<i64>,
     ) -> Result<Vec<HistoryEntry>> {
         let conn = self.get_connection()?;
+        Self::get_history_entries_with_conn(
+            &conn,
+            &self.recordings_dir,
+            limit,
+            offset,
+            search_query,
+            starred_only,
+            time_period_start,
+        )
+    }
+
+    fn get_history_entries_with_conn(
+        conn: &Connection,
+        recordings_dir: &PathBuf,
+        limit: usize,
+        offset: usize,
+        search_query: Option<String>,
+        starred_only: bool,
+        time_period_start: Option<i64>,
+    ) -> Result<Vec<HistoryEntry>> {
         let mut query = String::from(
             "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, inserted_text, post_process_prompt, duration_ms 
              FROM transcription_history"
@@ -1397,7 +1441,7 @@ impl HistoryManager {
         let params_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
 
         let rows = stmt.query_map(rusqlite::params_from_iter(params_refs), |row| {
-            map_history_entry(row, &self.recordings_dir)
+            map_history_entry(row, recordings_dir)
         })?;
 
         let mut entries = Vec::new();
@@ -1431,117 +1475,117 @@ impl HistoryManager {
     }
 
     pub async fn toggle_saved_status(&self, id: i64) -> Result<()> {
-        let conn = self.get_connection()?;
+        self.with_write_permit(|| {
+            let conn = self.get_connection()?;
 
-        // Get current saved status
-        let current_saved: bool = conn.query_row(
-            "SELECT saved FROM transcription_history WHERE id = ?1",
-            params![id],
-            |row| row.get("saved"),
-        )?;
+            let current_saved: bool = conn.query_row(
+                "SELECT saved FROM transcription_history WHERE id = ?1",
+                params![id],
+                |row| row.get("saved"),
+            )?;
 
-        let new_saved = !current_saved;
+            let new_saved = !current_saved;
 
-        conn.execute(
-            "UPDATE transcription_history SET saved = ?1 WHERE id = ?2",
-            params![new_saved, id],
-        )?;
+            conn.execute(
+                "UPDATE transcription_history SET saved = ?1 WHERE id = ?2",
+                params![new_saved, id],
+            )?;
 
-        debug!("Toggled saved status for entry {}: {}", id, new_saved);
+            debug!("Toggled saved status for entry {}: {}", id, new_saved);
 
-        // Emit history updated event
-        if let Err(e) = self.app_handle.emit("history-updated", ()) {
-            error!("Failed to emit history-updated event: {}", e);
-        }
+            if let Err(e) = self.app_handle.emit("history-updated", ()) {
+                error!("Failed to emit history-updated event: {}", e);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     pub fn get_audio_file_path(&self, file_name: &str) -> PathBuf {
         self.recordings_dir.join(file_name)
     }
 
-    pub async fn get_entry_by_id(&self, id: i64) -> Result<Option<HistoryEntry>> {
-        let conn = self.get_connection()?;
+    pub async fn delete_entry(&self, id: i64) -> Result<()> {
+        self.with_write_permit(|| {
+            let conn = self.get_connection()?;
+
+            if let Some(entry) = Self::get_entry_by_id_with_conn(&conn, &self.recordings_dir, id)? {
+                let file_path = self.get_audio_file_path(&entry.file_name);
+                if file_path.exists() {
+                    if let Err(e) = fs::remove_file(&file_path) {
+                        error!("Failed to delete audio file {}: {}", entry.file_name, e);
+                    }
+                }
+            }
+
+            conn.execute(
+                "DELETE FROM transcription_history WHERE id = ?1",
+                params![id],
+            )?;
+
+            debug!("Deleted history entry with id: {}", id);
+
+            if let Err(e) = self.app_handle.emit("history-updated", ()) {
+                error!("Failed to emit history-updated event: {}", e);
+            }
+
+            Ok(())
+        })
+    }
+
+    /// Clear all history entries, deleting all audio files and database records
+    pub async fn clear_all_entries(&self) -> Result<()> {
+        self.with_write_permit(|| {
+            let conn = self.get_connection()?;
+            let entries = Self::get_history_entries_with_conn(
+                &conn,
+                &self.recordings_dir,
+                usize::MAX,
+                0,
+                None,
+                false,
+                None,
+            )?;
+            let total = entries.len();
+
+            info!("Clearing all {} history entries", total);
+
+            for entry in entries {
+                let file_path = self.get_audio_file_path(&entry.file_name);
+                if file_path.exists() {
+                    if let Err(e) = fs::remove_file(&file_path) {
+                        error!("Failed to delete audio file {}: {}", entry.file_name, e);
+                    }
+                }
+            }
+
+            conn.execute("DELETE FROM transcription_history", [])?;
+
+            info!("Cleared all {} history entries", total);
+
+            if let Err(e) = self.app_handle.emit("history-updated", ()) {
+                error!("Failed to emit history-updated event: {}", e);
+            }
+
+            Ok(())
+        })
+    }
+
+    fn get_entry_by_id_with_conn(
+        conn: &Connection,
+        recordings_dir: &PathBuf,
+        id: i64,
+    ) -> Result<Option<HistoryEntry>> {
         let mut stmt = conn.prepare(
             "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, inserted_text, post_process_prompt, duration_ms
              FROM transcription_history WHERE id = ?1",
         )?;
 
         let entry = stmt
-            .query_row([id], |row| {
-                map_history_entry(row, &self.recordings_dir)
-            })
+            .query_row([id], |row| map_history_entry(row, recordings_dir))
             .optional()?;
 
         Ok(entry)
-    }
-
-    pub async fn delete_entry(&self, id: i64) -> Result<()> {
-        let conn = self.get_connection()?;
-
-        // Get the entry to find the file name
-        if let Some(entry) = self.get_entry_by_id(id).await? {
-            // Delete the audio file first
-            let file_path = self.get_audio_file_path(&entry.file_name);
-            if file_path.exists() {
-                if let Err(e) = fs::remove_file(&file_path) {
-                    error!("Failed to delete audio file {}: {}", entry.file_name, e);
-                    // Continue with database deletion even if file deletion fails
-                }
-            }
-        }
-
-        // Delete from database
-        conn.execute(
-            "DELETE FROM transcription_history WHERE id = ?1",
-            params![id],
-        )?;
-
-        debug!("Deleted history entry with id: {}", id);
-
-        // Emit history updated event
-        if let Err(e) = self.app_handle.emit("history-updated", ()) {
-            error!("Failed to emit history-updated event: {}", e);
-        }
-
-        Ok(())
-    }
-
-    /// Clear all history entries, deleting all audio files and database records
-    pub async fn clear_all_entries(&self) -> Result<()> {
-        let conn = self.get_connection()?;
-
-        // Get all entries to delete their audio files
-        // Use a large limit to get all entries. Since we are clearing everything, pagination isn't strictly needed here 
-        // but the method signature changed.
-        let entries = self.get_history_entries(usize::MAX, 0, None, false, None).await?;
-        let total = entries.len();
-        
-        info!("Clearing all {} history entries", total);
-
-        // Delete all audio files
-        for entry in entries {
-            let file_path = self.get_audio_file_path(&entry.file_name);
-            if file_path.exists() {
-                if let Err(e) = fs::remove_file(&file_path) {
-                    error!("Failed to delete audio file {}: {}", entry.file_name, e);
-                    // Continue with other deletions
-                }
-            }
-        }
-
-        // Delete all records from database
-        conn.execute("DELETE FROM transcription_history", [])?;
-
-        info!("Cleared all {} history entries", total);
-
-        // Emit history updated event
-        if let Err(e) = self.app_handle.emit("history-updated", ()) {
-            error!("Failed to emit history-updated event: {}", e);
-        }
-
-        Ok(())
     }
 
     fn format_timestamp_title(&self, timestamp: i64) -> String {
@@ -1829,6 +1873,35 @@ mod tests {
         assert_eq!(entry.inserted_text.as_deref(), Some("inserted"));
         assert_eq!(entry.effective_text, "inserted");
         assert_eq!(entry.raw_text, "second");
+    }
+
+    #[test]
+    fn get_history_entries_marks_audio_file_existence() {
+        let conn = setup_conn();
+        insert_entry(&conn, 100, "missing", None, None);
+        insert_entry(&conn, 200, "present", None, None);
+
+        let recordings_dir = make_temp_backup_dir("history-audio-existence");
+        fs::write(recordings_dir.join("codictate-200.wav"), b"RIFF").expect("seed audio file");
+
+        let entries = HistoryManager::get_history_entries_with_conn(
+            &conn,
+            &recordings_dir,
+            10,
+            0,
+            None,
+            false,
+            None,
+        )
+        .expect("fetch history entries");
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].file_name, "codictate-200.wav");
+        assert!(entries[0].audio_file_exists);
+        assert_eq!(entries[1].file_name, "codictate-100.wav");
+        assert!(!entries[1].audio_file_exists);
+
+        fs::remove_dir_all(recordings_dir).expect("cleanup recordings dir");
     }
 
     #[test]

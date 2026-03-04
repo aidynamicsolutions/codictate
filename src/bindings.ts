@@ -380,6 +380,54 @@ async triggerUpdateCheck() : Promise<Result<null, string>> {
 async cancelOperation() : Promise<void> {
     await TAURI_INVOKE("cancel_operation");
 },
+async createBackup(request: CreateBackupRequest) : Promise<Result<CreateBackupReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("create_backup", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getBackupEstimate() : Promise<Result<BackupEstimateReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_backup_estimate") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async preflightRestore(request: PreflightRestoreRequest) : Promise<Result<PreflightRestoreReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("preflight_restore", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async applyRestore(request: ApplyRestoreRequest) : Promise<Result<ApplyRestoreReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("apply_restore", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async undoLastRestore(request: UndoLastRestoreRequest) : Promise<Result<UndoLastRestoreReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("undo_last_restore", { request }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getUndoLastRestoreAvailability() : Promise<Result<UndoLastRestoreAvailabilityReport, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_undo_last_restore_availability") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAppDirPath() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_app_dir_path") };
@@ -1110,14 +1158,21 @@ enable_filler_word_filter?: boolean;
  * When true, collapses repeated/stuttered words caused by ASR hallucinations.
  */
 enable_hallucination_filter?: boolean; show_tray_icon?: boolean; show_unload_model_in_tray?: boolean; paste_delay_ms?: number; paste_restore_delay_ms?: number; typing_tool?: TypingTool; external_script_path: string | null }
+export type ApplyRestoreReport = { warnings: string[]; counts: BackupCounts }
+export type ApplyRestoreRequest = { archive_path: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean; is_bluetooth: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
+export type BackupCounts = { history_entries: number; recording_files: number; dictionary_entries: number }
+export type BackupEstimateReport = { complete_estimated_size_bytes: number; smaller_estimated_size_bytes: number; difference_bytes: number; recording_files: number; history_entries: number; dictionary_entries: number }
+export type BackupScope = "complete" | "smaller"
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
+export type CreateBackupReport = { output_path: string; counts: BackupCounts; warnings: string[] }
+export type CreateBackupRequest = { scope: BackupScope; output_path: string }
 export type CustomSounds = { start: boolean; stop: boolean }
 export type CustomWordEntry = { input: string; aliases?: string[]; replacement: string; is_replacement: boolean; fuzzy_enabled?: boolean | null }
 export type EngineType = "Whisper" | "Parakeet" | "Moonshine" | "MoonshineStreaming" | "SenseVoice"
-export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; inserted_text: string | null; effective_text: string; raw_text: string; post_process_prompt: string | null; duration_ms: number; file_path: string }
+export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; inserted_text: string | null; effective_text: string; raw_text: string; post_process_prompt: string | null; duration_ms: number; file_path: string; audio_file_exists: boolean }
 export type HistoryStats = { total_size_bytes: number; total_entries: number }
 export type HomeStats = { total_words: number; total_duration_minutes: number; wpm: number; time_saved_minutes: number; streak_days: number; faster_than_typing_percentage: number; total_filler_words_removed: number; filler_filter_active: boolean }
 export type LLMPrompt = { id: string; name: string; prompt: string }
@@ -1202,10 +1257,18 @@ export type OverlayInteractionRegionsPayload = { overlayVisible: boolean; messag
 export type OverlayPosition = "none" | "top" | "bottom"
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean }
+export type PreflightCompatibilityNoteCode = "v1_macos_guaranteed_cross_platform_best_effort"
+export type PreflightRestoreReport = { can_apply: boolean; blocking_findings: RestoreFinding[]; recoverable_findings: RestoreFinding[]; summary: PreflightSummary | null; compatibility_note_code: PreflightCompatibilityNoteCode; compatibility_note: string }
+export type PreflightRestoreRequest = { archive_path: string }
+export type PreflightSummary = { backup_format_version: string; created_at: string; created_with_app_version: string; platform: string; includes_recordings: boolean; counts: BackupCounts; estimated_size_bytes: number }
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+export type RestoreFinding = { code: string; message: string }
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
+export type UndoLastRestoreAvailabilityReport = { available: boolean; expires_at: string | null; message: string }
+export type UndoLastRestoreReport = { restored: boolean; message: string }
+export type UndoLastRestoreRequest = Record<string, never>
 export type UpgradePromptEligibility = { eligible: boolean; reason: string }
 /**
  * User profile data - separate from app settings.

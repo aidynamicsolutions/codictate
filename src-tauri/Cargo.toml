@@ -97,6 +97,9 @@ tracing-appender = "0.2"
 uuid = { version = "1.0", features = ["v4"] }
 tauri-plugin-dialog = "2.6.0"
 log = "0.4.29"
+sha2 = "0.10"
+zip = { version = "2.2.1", default-features = false, features = ["deflate"] }
+fs2 = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
@@ -145,6 +148,7 @@ tauri-plugin-aptabase = { path = "vendor/tauri-plugin-aptabase" }
 
 [dev-dependencies]
 tempfile = "3"
+tauri = { version = "2.10.1", features = ["test"] }
 
 [profile.release]
 lto = true

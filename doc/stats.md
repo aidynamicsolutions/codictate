@@ -142,10 +142,26 @@ This dynamic tile alternates between **Daily Streak** and **Filler Words Removed
 
 ## Stats Backup and Recovery
 
+- Current backups export canonical aggregate stats in `history/user_stats.json`.
+- Restore applies canonical stats when that payload is present and valid.
+- Legacy backups (or malformed optional stats payloads) fall back to recomputing stats from history rows and emit recoverable warnings.
+- Fallback recompute semantics:
+  - word totals follow runtime save semantics (`post_processed_text` fallback to `transcription_text`, Unicode-aware word count)
+  - speech duration falls back to recording duration when historical rows are missing speech values (`speech_duration_ms = 0`)
+
 - Before duration backfill mutates stats, the app writes:
   - Filesystem snapshot: `app_data/stats-backups/user_stats-pre-duration-v1-<timestamp>.json`
   - Database snapshot row: `user_stats_migration_backup`
 - If migration fails, transaction rollback preserves pre-mutation DB state and both backups remain available for recovery.
+
+### One-Time Known Repair Signature (March 3, 2026)
+
+For the known restore-regression signature:
+
+- bad: `words=46208`, `duration=22697871`, `speech=3202691`, `semantics=1`
+- target: `words=43604`, `duration=22720677`, `speech=22618064`, `semantics=1`
+
+apply the guarded SQL runbook documented in [backup-restore.md](backup-restore.md).
 
 ## History Management
 

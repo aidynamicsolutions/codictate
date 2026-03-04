@@ -88,9 +88,9 @@ Bluetooth mics (e.g., AirPods) require special handling due to the A2DP→HFP pr
 - Subsequent triggers: 750ms (buffer stabilization)
 
 **Key Files**:
-- [audio.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/managers/audio.rs): `prewarm_bluetooth_mic()`, `is_current_device_bluetooth()`
-- [lib.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/lib.rs): Calls prewarm on app startup
-- [actions.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/actions.rs): Warmup delay logic
+- [audio.rs](../src-tauri/src/managers/audio.rs): `prewarm_bluetooth_mic()`, `is_current_device_bluetooth()`
+- [lib.rs](../src-tauri/src/lib.rs): Calls prewarm on app startup
+- [actions.rs](../src-tauri/src/actions.rs): Warmup delay logic
 
 ### Seamless Mode Switching
 
@@ -254,9 +254,9 @@ Startup model preload is now boot-once. `overlay-ready` and the delayed fallback
 ```
 
 **Key Files**:
-- [overlay.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/overlay.rs): `OVERLAY_READY` + `OVERLAY_REPLAY_READY` atomics, `mark_overlay_listener_ready()`, `mark_overlay_ready()`, show/replay delivery gating
-- [lib.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/lib.rs): Listens for `overlay-ready` (visibility-ready) and `overlay-fully-ready` (state replay-ready), then starts model preload via a one-shot startup gate
-- [RecordingOverlay.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/overlay/RecordingOverlay.tsx): Emits early `overlay-ready`, then `overlay-fully-ready` after replay-sensitive listeners are attached
+- [overlay.rs](../src-tauri/src/overlay.rs): `OVERLAY_READY` + `OVERLAY_REPLAY_READY` atomics, `mark_overlay_listener_ready()`, `mark_overlay_ready()`, show/replay delivery gating
+- [lib.rs](../src-tauri/src/lib.rs): Listens for `overlay-ready` (visibility-ready) and `overlay-fully-ready` (state replay-ready), then starts model preload via a one-shot startup gate
+- [RecordingOverlay.tsx](../src/overlay/RecordingOverlay.tsx): Emits early `overlay-ready`, then `overlay-fully-ready` after replay-sensitive listeners are attached
 
 ## Implementation
 
@@ -264,10 +264,10 @@ Startup model preload is now boot-once. `overlay-ready` and the delayed fallback
 
 | File | Purpose |
 |------|---------|
-| [fn_key_monitor.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/fn_key_monitor.rs) | CGEventTap-based Fn key detection |
-| [shortcut.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/shortcut.rs) | Global shortcut registration (Action-based logic enforcement) |
-| [actions.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/actions.rs) | `TranscribeAction` start/stop logic |
-| [overlay.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/overlay.rs) | Overlay show/hide, readiness tracking |
+| [fn_key_monitor.rs](../src-tauri/src/fn_key_monitor.rs) | CGEventTap-based Fn key detection |
+| [shortcut.rs](../src-tauri/src/shortcut.rs) | Global shortcut registration (Action-based logic enforcement) |
+| [actions.rs](../src-tauri/src/actions.rs) | `TranscribeAction` start/stop logic |
+| [overlay.rs](../src-tauri/src/overlay.rs) | Overlay show/hide, readiness tracking |
 
 ### Shortcut Initialization at Startup
 
@@ -293,10 +293,10 @@ App Start → backend shortcut bootstrap → load_or_create_app_settings()
 ```
 
 **Key Files**:
-- [settings.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/settings.rs): Migration logic in `load_or_create_app_settings()` (lines 754-790)
-- [lib.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/lib.rs): Startup bootstrap via `initialize_shortcuts_with_source(..., "backend_startup")`
-- [App.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/App.tsx): Fallback initialization for onboarding-complete sessions
-- [AccessibilityPermissions.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/AccessibilityPermissions.tsx): Permission-grant recovery retry path
+- [settings.rs](../src-tauri/src/settings.rs): Migration logic in `load_or_create_app_settings()` (lines 754-790)
+- [lib.rs](../src-tauri/src/lib.rs): Startup bootstrap via `initialize_shortcuts_with_source(..., "backend_startup")`
+- [App.tsx](../src/App.tsx): Fallback initialization for onboarding-complete sessions
+- [AccessibilityPermissions.tsx](../src/components/AccessibilityPermissions.tsx): Permission-grant recovery retry path
 
 **Debugging Migration Issues**:
 1. Check logs for `shortcut_init_attempt` / `shortcut_init_success` / `shortcut_init_deferred` / `shortcut_init_failure`
@@ -328,7 +328,7 @@ OVERLAY_REPLAY_READY  // True only after replay-sensitive listeners are attached
 
 ## Reserved Shortcuts (Blocked)
 
-The app blocks system-critical shortcuts to prevent conflicts. Validation is handled by [reserved.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/shortcut/reserved.rs).
+The app blocks system-critical shortcuts to prevent conflicts. Validation is handled by [reserved.rs](../src-tauri/src/shortcut/reserved.rs).
 
 ### macOS
 

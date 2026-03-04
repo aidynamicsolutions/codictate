@@ -547,6 +547,14 @@ fn transcription_delivery_succeeded(
 
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        if !crate::backup_restore::ensure_transcription_start_allowed(app) {
+            debug!(
+                "Skipped transcription start for '{}' because backup/restore maintenance mode is active",
+                binding_id
+            );
+            return;
+        }
+
         // Generate session ID for log correlation
         let session_id = uuid::Uuid::new_v4().to_string()[..8].to_string();
         let _session_span = info_span!("session", session = %session_id).entered();
@@ -725,6 +733,22 @@ impl ShortcutAction for TranscribeAction {
             if recording_started {
                 // Dynamically register the cancel shortcut in a separate task to avoid deadlock
                 shortcut::register_cancel_shortcut(app);
+            } else if binding_id == "transcribe_handsfree" {
+                // Keep hands-free toggle state consistent when start is rejected
+                // (e.g. maintenance mode flipped on between prepare and stream start).
+                let toggle_state_manager = app.state::<ManagedToggleState>();
+                let mut states = match toggle_state_manager.lock() {
+                    Ok(guard) => guard,
+                    Err(poisoned) => {
+                        error!(
+                            "Toggle state mutex poisoned while resetting hands-free state, recovering"
+                        );
+                        poisoned.into_inner()
+                    }
+                };
+                states
+                    .active_toggles
+                    .insert(binding_id.to_string(), false);
             }
 
             debug!(
@@ -899,15 +923,16 @@ impl ShortcutAction for TranscribeAction {
                                 let suggestion_text = transcription.clone();
                                 let clipboard_handling = settings.clipboard_handling;
 
-                                let hm_clone = Arc::clone(&hm);
                                 let transcription_for_history = transcription.clone();
                                 let filler_count = filler_words_removed as i64;
-                                let app_for_stats = ah.clone();
-                                let app_for_paste_task = ah.clone();
                                 let final_text_for_paste = final_text;
-                                tauri::async_runtime::spawn(async move {
-                                    let saved_transcription = match hm_clone
-                                        .save_transcription(
+                                // Keep persistence + paste in this stop task so session-active
+                                // state covers the full write lifecycle. Use the blocking pool
+                                // because save_transcription performs filesystem/SQLite I/O.
+                                let hm_for_save = Arc::clone(&hm);
+                                let saved_transcription = match tauri::async_runtime::spawn_blocking(
+                                    move || {
+                                        hm_for_save.save_transcription(
                                             samples_for_history,
                                             transcription_for_history,
                                             post_processed_text,
@@ -916,33 +941,50 @@ impl ShortcutAction for TranscribeAction {
                                             speech_duration_ms,
                                             filler_count,
                                         )
-                                        .await
-                                    {
-                                        Ok(saved) => {
-                                            crate::undo::register_stats_contribution(
-                                                &app_for_stats,
-                                                stats_token,
-                                                source_action,
-                                                saved.contribution.clone(),
-                                            );
-                                            Some(saved)
-                                        }
-                                        Err(e) => {
-                                            error!("Failed to save transcription to history: {}", e);
-                                            capture_handled_error(
-                                                &META_SAVE_HISTORY_FAILURE,
-                                                e.as_ref() as &(dyn std::error::Error + 'static),
-                                            );
-                                            None
-                                        }
-                                    };
+                                    },
+                                )
+                                .await
+                                {
+                                    Ok(Ok(saved)) => {
+                                        crate::undo::register_stats_contribution(
+                                            &ah,
+                                            stats_token,
+                                            source_action,
+                                            saved.contribution.clone(),
+                                        );
+                                        Some(saved)
+                                    }
+                                    Ok(Err(e)) => {
+                                        error!("Failed to save transcription to history: {}", e);
+                                        capture_handled_message(
+                                            &META_SAVE_HISTORY_FAILURE,
+                                            &format!("Failed to save transcription to history: {e}"),
+                                        );
+                                        None
+                                    }
+                                    Err(e) => {
+                                        error!(
+                                            "Failed to save transcription to history: blocking task join failure: {}",
+                                            e
+                                        );
+                                        capture_handled_message(
+                                            &META_SAVE_HISTORY_FAILURE,
+                                            &format!(
+                                                "Failed to save transcription to history: blocking task join failure: {e}"
+                                            ),
+                                        );
+                                        None
+                                    }
+                                };
 
-                                    let paste_time = Instant::now();
-                                    let (paste_tx, paste_rx) = tokio::sync::oneshot::channel();
-                                    let app_for_main_thread = app_for_paste_task.clone();
-                                    let app_for_undo_slot = app_for_paste_task.clone();
-                                    let suggestion_for_undo = suggestion_text.clone();
-                                    let run_main_thread_result = app_for_paste_task.run_on_main_thread(move || {
+                                let paste_time = Instant::now();
+                                let (paste_tx, paste_rx) = tokio::sync::oneshot::channel();
+                                let app_for_paste_task = ah.clone();
+                                let app_for_main_thread = app_for_paste_task.clone();
+                                let app_for_undo_slot = app_for_paste_task.clone();
+                                let suggestion_for_undo = suggestion_text.clone();
+                                let run_main_thread_result =
+                                    app_for_paste_task.run_on_main_thread(move || {
                                         let paste_result = match utils::paste(
                                             final_text_for_paste,
                                             app_for_main_thread.clone(),
@@ -983,66 +1025,79 @@ impl ShortcutAction for TranscribeAction {
                                         change_tray_icon(&app_for_main_thread, TrayIconState::Idle);
                                     });
 
-                                    let paste_result = if let Err(e) = run_main_thread_result {
-                                        error!("Failed to run paste on main thread: {:?}", e);
-                                        capture_handled_message(
-                                            &META_PASTE_FAILURE,
-                                            &format!("Failed to run paste on main thread: {e:?}"),
-                                        );
-                                        utils::hide_overlay_after_transcription(&app_for_paste_task);
-                                        change_tray_icon(&app_for_paste_task, TrayIconState::Idle);
-                                        None
-                                    } else {
-                                        match paste_rx.await {
-                                            Ok(result) => result,
-                                            Err(e) => {
-                                                error!(
-                                                    "Failed to receive paste result from main thread: {}",
-                                                    e
-                                                );
-                                                capture_handled_message(
-                                                    &META_PASTE_FAILURE,
-                                                    &format!(
-                                                        "Failed to receive paste result from main thread: {e}"
-                                                    ),
-                                                );
-                                                None
-                                            }
+                                let paste_result = if let Err(e) = run_main_thread_result {
+                                    error!("Failed to run paste on main thread: {:?}", e);
+                                    capture_handled_message(
+                                        &META_PASTE_FAILURE,
+                                        &format!("Failed to run paste on main thread: {e:?}"),
+                                    );
+                                    utils::hide_overlay_after_transcription(&app_for_paste_task);
+                                    change_tray_icon(&app_for_paste_task, TrayIconState::Idle);
+                                    None
+                                } else {
+                                    match paste_rx.await {
+                                        Ok(result) => result,
+                                        Err(e) => {
+                                            error!(
+                                                "Failed to receive paste result from main thread: {}",
+                                                e
+                                            );
+                                            capture_handled_message(
+                                                &META_PASTE_FAILURE,
+                                                &format!(
+                                                    "Failed to receive paste result from main thread: {e}"
+                                                ),
+                                            );
+                                            None
                                         }
-                                    };
+                                    }
+                                };
 
-                                    if let (Some(saved), Some(paste_result)) =
-                                        (saved_transcription, paste_result.as_ref())
+                                if let (Some(saved), Some(paste_result)) =
+                                    (saved_transcription, paste_result.as_ref())
+                                {
+                                    if let Some(inserted_text) =
+                                        maybe_inserted_text_from_paste_result(&paste_result)
                                     {
-                                        if let Some(inserted_text) =
-                                            maybe_inserted_text_from_paste_result(&paste_result)
+                                        let entry_id = saved.entry_id;
+                                        let hm_for_update = Arc::clone(&hm);
+                                        match tauri::async_runtime::spawn_blocking(move || {
+                                            hm_for_update
+                                                .update_inserted_text_by_id(entry_id, inserted_text)
+                                        })
+                                        .await
                                         {
-                                            if let Err(e) = hm_clone.update_inserted_text_by_id(
-                                                saved.entry_id,
-                                                inserted_text,
-                                            ) {
+                                            Ok(Ok(())) => {}
+                                            Ok(Err(e)) => {
                                                 error!(
                                                     "Failed to update inserted text for history entry {}: {}",
-                                                    saved.entry_id,
+                                                    entry_id,
+                                                    e
+                                                );
+                                            }
+                                            Err(e) => {
+                                                error!(
+                                                    "Failed to update inserted text for history entry {}: blocking task join failure: {}",
+                                                    entry_id,
                                                     e
                                                 );
                                             }
                                         }
                                     }
+                                }
 
-                                    if let Some(paste_result) = paste_result {
-                                        if transcription_delivery_succeeded(
-                                            &paste_result,
-                                            clipboard_handling,
-                                        ) {
-                                            growth::record_feature_success(
-                                                &app_for_paste_task,
-                                                feature,
-                                                entrypoint,
-                                            );
-                                        }
+                                if let Some(paste_result) = paste_result {
+                                    if transcription_delivery_succeeded(
+                                        &paste_result,
+                                        clipboard_handling,
+                                    ) {
+                                        growth::record_feature_success(
+                                            &app_for_paste_task,
+                                            feature,
+                                            entrypoint,
+                                        );
                                     }
-                                });
+                                }
                             } else {
                                 utils::hide_overlay_after_transcription(&ah);
                                 change_tray_icon(&ah, TrayIconState::Idle);
@@ -1632,6 +1687,7 @@ mod tests {
             post_process_prompt: None,
             duration_ms: 0,
             file_path: "/tmp/codictate-1.wav".to_string(),
+            audio_file_exists: true,
         }
     }
 

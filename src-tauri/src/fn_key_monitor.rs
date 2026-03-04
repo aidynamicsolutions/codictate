@@ -678,22 +678,14 @@ fn handle_handsfree_toggle(app: &AppHandle) {
     }
     
     if let Some(action) = ACTION_MAP.get(BINDING_ID) {
-        // Use toggle state to determine whether to start or stop
-        let toggle_state_manager = app.state::<ManagedToggleState>();
-        let should_start: bool;
-        {
-            let mut states = toggle_state_manager
-                .lock()
-                .expect("Failed to lock toggle state manager");
-
-            let is_currently_active = states
-                .active_toggles
-                .entry(BINDING_ID.to_string())
-                .or_insert(false);
-
-            should_start = !*is_currently_active;
-            *is_currently_active = should_start;
-        } // Lock released here
+        let Some(should_start) = crate::shortcut::transition_handsfree_toggle(app, BINDING_ID)
+        else {
+            let _ = crate::backup_restore::ensure_transcription_start_allowed(app);
+            debug!(
+                "Skipping hands-free Fn toggle because backup/restore maintenance mode is active"
+            );
+            return;
+        };
 
         // Now call the action without holding the lock
         if should_start {

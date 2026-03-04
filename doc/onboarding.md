@@ -17,7 +17,7 @@ Steps 1-4 collect user profile data. Steps 5-10 configure the app. Steps 11-12 i
 
 ### 1. Welcome Step
 
-**Component**: [WelcomeStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/WelcomeStep.tsx)
+**Component**: [WelcomeStep.tsx](../src/components/onboarding/WelcomeStep.tsx)
 
 - **Input**: User's name (optional, 100 char limit)
 - **Illustration**: `undraw_hey-by-basecamp_61xm.svg`
@@ -25,7 +25,7 @@ Steps 1-4 collect user profile data. Steps 5-10 configure the app. Steps 11-12 i
 
 ### 2. Attribution Step
 
-**Component**: [AttributionStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/AttributionStep.tsx)
+**Component**: [AttributionStep.tsx](../src/components/onboarding/AttributionStep.tsx)
 
 - **Question**: "Where did you hear about us?"
 - **Selection type**: Single-choice
@@ -36,7 +36,7 @@ Steps 1-4 collect user profile data. Steps 5-10 configure the app. Steps 11-12 i
 
 ### 3. Tell Us About You Step
 
-**Component**: [TellUsAboutYouStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/TellUsAboutYouStep.tsx)
+**Component**: [TellUsAboutYouStep.tsx](../src/components/onboarding/TellUsAboutYouStep.tsx)
 
 - **Question 1**: "What do you do for work?"
 - **Options**: 17 work roles including developer, designer, manager, student, etc.
@@ -49,7 +49,7 @@ Steps 1-4 collect user profile data. Steps 5-10 configure the app. Steps 11-12 i
 
 ### 4. Typing Use Cases Step
 
-**Component**: [TypingUseCasesStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/TypingUseCasesStep.tsx)
+**Component**: [TypingUseCasesStep.tsx](../src/components/onboarding/TypingUseCasesStep.tsx)
 
 - **Question**: "Where do you spend your time typing?"
 - **Selection type**: Multi-select
@@ -60,7 +60,7 @@ Steps 1-4 collect user profile data. Steps 5-10 configure the app. Steps 11-12 i
 
 ### 5. Permissions Step
 
-**Component**: [PermissionsStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/PermissionsStep.tsx)
+**Component**: [PermissionsStep.tsx](../src/components/onboarding/PermissionsStep.tsx)
 
 Requests macOS accessibility and microphone permissions.
 
@@ -90,7 +90,7 @@ Requests macOS accessibility and microphone permissions.
 - Accessibility: `x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility`
 - Microphone: `x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone`
 
-**Capabilities configuration** ([default.json](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/capabilities/default.json)):
+**Capabilities configuration** ([default.json](../src-tauri/capabilities/default.json)):
 ```json
 {
   "identifier": "opener:allow-open-url",
@@ -105,7 +105,7 @@ Requests macOS accessibility and microphone permissions.
 
 ### 6. Download Model Step
 
-**Component**: [ModelDownloadStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/ModelDownloadStep.tsx)
+**Component**: [ModelDownloadStep.tsx](../src/components/onboarding/ModelDownloadStep.tsx)
 
 Downloads the recommended ASR model while allowing users to continue setup.
 
@@ -118,7 +118,7 @@ Downloads the recommended ASR model while allowing users to continue setup.
 - "Extracting..." state after download completes
 - Note explaining model will be set as default (changeable in settings)
 
-**Persistent Progress Indicator**: [ModelDownloadProgress.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/ModelDownloadProgress.tsx)
+**Persistent Progress Indicator**: [ModelDownloadProgress.tsx](../src/components/onboarding/ModelDownloadProgress.tsx)
 - Floating toast at bottom-right when user navigates away
 - Collapsible with progress bar and speed display
 - Shows "Ready to use!" with green checkmark for 5s after extraction completes
@@ -134,7 +134,7 @@ Downloads the recommended ASR model while allowing users to continue setup.
 
 ### 7. Microphone Check Step
 
-**Component**: [MicrophoneCheckStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/MicrophoneCheckStep.tsx)
+**Component**: [MicrophoneCheckStep.tsx](../src/components/onboarding/MicrophoneCheckStep.tsx)
 
 **Features**:
 - Back button to return to Permissions step (fire-and-forget navigation)
@@ -167,14 +167,14 @@ Downloads the recommended ASR model while allowing users to continue setup.
 
 ### 8. Hotkey Setup Step
 
-**Component**: [HotkeySetupStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/HotkeySetupStep.tsx)
+**Component**: [HotkeySetupStep.tsx](../src/components/onboarding/HotkeySetupStep.tsx)
 
-> **See also**: [Hotkey Shortcut Documentation](file:///Users/tiger/Dev/opensource/speechGen/Handy/doc/hotkeyshortcut.md) for detailed technical documentation with ASCII diagrams.
+> **See also**: [Hotkey Shortcut Documentation](../doc/hotkeyshortcut.md) for detailed technical documentation with ASCII diagrams.
 
 **Features**:
 - Displays Push to Talk (`fn`) and Hands-free mode (`fn+space`) shortcuts
 - Each shortcut has inline recording via `ShortcutCard` component
-- Uses shared hook: [useShortcutRecorder.ts](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/hooks/useShortcutRecorder.ts)
+- Uses shared hook: [useShortcutRecorder.ts](../src/hooks/useShortcutRecorder.ts)
 - Native macOS Fn key detection via Tauri events (`fn-key-down`, `fn-key-up`)
 - ESC cancels recording
 - Modifier key sorting for consistent display
@@ -193,16 +193,16 @@ Downloads the recommended ASR model while allowing users to continue setup.
 - Uses `isRecordingRef` and `recordedKeysRef` for synchronous access in async callbacks
 - `saveInProgress` ref prevents duplicate concurrent saves
 
-**Reset to Default**: Uses `resetBindings` (plural) backend command to atomically reset multiple shortcuts. See [hotkeyshortcut.md](file:///Users/tiger/Dev/opensource/speechGen/Handy/doc/hotkeyshortcut.md#reset-to-default).
+**Reset to Default**: Uses `resetBindings` (plural) backend command to atomically reset multiple shortcuts. See [hotkeyshortcut.md](../doc/hotkeyshortcut.md#reset-to-default).
 
-**Reserved Shortcut Blocking** (backend, [shortcut.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/shortcut.rs)):
+**Reserved Shortcut Blocking** (backend, [shortcut.rs](../src-tauri/src/shortcut.rs)):
 - macOS: `fn+a/c/d/e/f/h/m/n/q`, `cmd+c/v/x/z/a/s/n/o/p/w/q/h/m/tab/space`
 - Windows: `super+l/d/e/r/tab`, `alt+tab/f4`, `ctrl+c/v/x/z/y/a/s/n/o/p/w`
 - Linux: `alt+tab/f4`, `super+l/d`, `ctrl+c/v/x/z/y/a/s/n/o/p/w`
 
 ### 9. Language Select Step
 
-**Component**: [LanguageSelectStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/LanguageSelectStep.tsx)
+**Component**: [LanguageSelectStep.tsx](../src/components/onboarding/LanguageSelectStep.tsx)
 
 **Features**:
 - Multi-language selection with one active language
@@ -217,14 +217,14 @@ Downloads the recommended ASR model while allowing users to continue setup.
 - `selected_language: String` - Active language code or "auto"
 - `saved_languages: Vec<String>` - User's preferred language list
 
-**Language Data**: [languageData.ts](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/lib/constants/languageData.ts)
+**Language Data**: [languageData.ts](../src/lib/constants/languageData.ts)
 - `WhisperLanguageCode` union type for compile-time safety
 - All 100 Whisper languages with ISO 639-1 codes and emoji flags
 - Helper functions: `getLanguageByCode`, `getLanguageFlag`, `getLanguageLabel` (returns `undefined` for "auto" to use i18n)
 
 ### 10. Learn Step
 
-**Component**: [LearnStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/LearnStep.tsx)
+**Component**: [LearnStep.tsx](../src/components/onboarding/LearnStep.tsx)
 
 Interactive Slack-style chat UI where users practice transcription hotkeys.
 
@@ -248,7 +248,7 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 
 ### 11. Success Step
 
-**Component**: [SuccessStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/SuccessStep.tsx)
+**Component**: [SuccessStep.tsx](../src/components/onboarding/SuccessStep.tsx)
 
 **Features**:
 - Displays Pro trial unlocked message with 2-week free trial badge
@@ -260,7 +260,7 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 
 ### 12. Referral Step
 
-**Component**: [ReferralStep.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/ReferralStep.tsx)
+**Component**: [ReferralStep.tsx](../src/components/onboarding/ReferralStep.tsx)
 
 **Features**:
 - Left panel: Title, "How it works?" with 3 steps, referral link input with Copy button
@@ -282,7 +282,7 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 
 ## Layout & Design
 
-**Component**: [OnboardingLayout.tsx](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/components/onboarding/OnboardingLayout.tsx)
+**Component**: [OnboardingLayout.tsx](../src/components/onboarding/OnboardingLayout.tsx)
 
 **Structure**:
 - Left panel (45%): Content, questions, inputs
@@ -299,9 +299,9 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 
 ## State Management
 
-**User Profile Hook**: [useUserProfile.ts](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/hooks/useUserProfile.ts)
+**User Profile Hook**: [useUserProfile.ts](../src/hooks/useUserProfile.ts)
 
-**User Profile Store**: [userProfileStore.ts](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/stores/userProfileStore.ts)
+**User Profile Store**: [userProfileStore.ts](../src/stores/userProfileStore.ts)
 
 **Persistence**: `~/Library/Application Support/com.pais.codictate/user_store.json`
 
@@ -314,9 +314,9 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 **Solution**: Lazy Enigo initialization.
 
 **Files modified**:
-- [input.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/input.rs) - `EnigoState` now wraps `Option<Enigo>`
-- [lib.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/lib.rs) - Removed `.expect()` panic
-- [clipboard.rs](file:///Users/tiger/Dev/opensource/speechGen/Handy/src-tauri/src/clipboard.rs) - Calls `try_init()` before paste
+- [input.rs](../src-tauri/src/input.rs) - `EnigoState` now wraps `Option<Enigo>`
+- [lib.rs](../src-tauri/src/lib.rs) - Removed `.expect()` panic
+- [clipboard.rs](../src-tauri/src/clipboard.rs) - Calls `try_init()` before paste
 
 **Behavior**:
 - App starts without crashing even without permissions
@@ -327,7 +327,7 @@ WebView doesn't receive CGEvent-simulated Cmd+V from the same process. Solution:
 
 ## Translations
 
-All strings in [translation.json](file:///Users/tiger/Dev/opensource/speechGen/Handy/src/i18n/locales/en/translation.json):
+All strings in [translation.json](../src/i18n/locales/en/translation.json):
 
 - `onboarding.welcome.*`
 - `onboarding.attribution.*`

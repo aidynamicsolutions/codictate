@@ -433,8 +433,10 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
     }, [entry.id]);
 
     // Platform-specific audio loading strategy
+    const audioIsAvailable = entry.audio_file_exists;
+    const missingAudioReason = t("settings.history.audioFileMissing");
     const audioProps = useMemo(() => {
-      if (!entry.file_path) return {};
+      if (!entry.file_path || !audioIsAvailable) return {};
 
       // Simple heuristic for Linux - reliable enough for browser environment
       const isLinux = navigator.userAgent.includes("Linux");
@@ -460,7 +462,7 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
       return {
         src: convertFileSrc(entry.file_path),
       };
-    }, [entry.file_path]);
+    }, [audioIsAvailable, entry.file_path]);
 
     const handleCopyText = () => {
       onCopyText();
@@ -548,8 +550,13 @@ const TimelineItem: React.FC<TimelineItemProps> = React.memo(
               </p>
             </div>
           )}
-          {(audioProps.src || audioProps.onLoadRequest) && (
-            <AudioPlayer {...audioProps} className="w-full" />
+          {entry.file_path && (
+            <AudioPlayer
+              {...audioProps}
+              className="w-full"
+              disabled={!audioIsAvailable}
+              disabledReason={!audioIsAvailable ? missingAudioReason : undefined}
+            />
           )}
         </div>
 

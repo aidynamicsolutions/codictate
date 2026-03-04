@@ -317,6 +317,7 @@ mod tests {
             post_process_prompt: None,
             duration_ms: 0,
             file_path: String::new(),
+            audio_file_exists: false,
         }
     }
 

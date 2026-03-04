@@ -298,14 +298,33 @@ fn load_growth_state(app: &AppHandle) -> GrowthState {
     }
 }
 
-fn persist_growth_state(app: &AppHandle, state: &GrowthState) {
-    let Ok(store) = app.store(USER_STORE_PATH) else {
-        return;
-    };
-
-    if let Ok(value) = serde_json::to_value(state) {
-        store.set(GROWTH_STATE_STORE_KEY, value);
+fn persist_growth_state_with_gate(
+    gate: impl FnOnce(&mut dyn FnMut()) -> Result<(), String>,
+    mut writer: impl FnMut(),
+) {
+    if let Err(reason) = gate(&mut writer) {
+        warn!("Skipped growth state write during backup/restore gating: {reason}");
     }
+}
+
+fn persist_growth_state(app: &AppHandle, state: &GrowthState) {
+    persist_growth_state_with_gate(
+        |writer| {
+            crate::backup_restore::with_write_permit(app, || {
+                writer();
+                Ok(())
+            })
+        },
+        || {
+            let Ok(store) = app.store(USER_STORE_PATH) else {
+                return;
+            };
+
+            if let Ok(value) = serde_json::to_value(state) {
+                store.set(GROWTH_STATE_STORE_KEY, value);
+            }
+        },
+    );
 }
 
 fn now_ms() -> u64 {
@@ -431,8 +450,9 @@ fn main_window_visibility_and_focus(app: &AppHandle) -> (bool, bool) {
 mod tests {
     use super::{
         apply_feature_success, classify_entrypoint, evaluate_upgrade_prompt_eligibility_at,
-        FeatureEntrypoint, GrowthState,
+        persist_growth_state_with_gate, FeatureEntrypoint, GrowthState,
     };
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]
     fn aha_reaches_once_at_threshold() {
@@ -512,5 +532,42 @@ mod tests {
             classify_entrypoint("ctrl+space"),
             FeatureEntrypoint::Shortcut
         ));
+    }
+
+    #[test]
+    fn persist_growth_state_with_gate_skips_writer_when_gate_is_denied() {
+        let writer_called = AtomicBool::new(false);
+
+        persist_growth_state_with_gate(
+            |_| Err("maintenance mode".to_string()),
+            || {
+                writer_called.store(true, Ordering::SeqCst);
+            },
+        );
+
+        assert!(
+            !writer_called.load(Ordering::SeqCst),
+            "writer should not run when gate denies writes"
+        );
+    }
+
+    #[test]
+    fn persist_growth_state_with_gate_runs_writer_when_gate_allows() {
+        let writer_called = AtomicBool::new(false);
+
+        persist_growth_state_with_gate(
+            |writer| {
+                writer();
+                Ok(())
+            },
+            || {
+                writer_called.store(true, Ordering::SeqCst);
+            },
+        );
+
+        assert!(
+            writer_called.load(Ordering::SeqCst),
+            "writer should run when gate allows writes"
+        );
     }
 }

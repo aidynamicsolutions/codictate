@@ -8,6 +8,7 @@ mod apple_intelligence;
 mod audio_device_info;
 mod audio_feedback;
 pub mod audio_toolkit;
+mod backup_restore;
 pub mod cli;
 mod clipboard;
 mod commands;
@@ -936,6 +937,12 @@ pub fn run(cli_args: CliArgs) {
         user_profile::update_user_profile_setting,
         trigger_update_check,
         commands::cancel_operation,
+        commands::backup::create_backup,
+        commands::backup::get_backup_estimate,
+        commands::backup::preflight_restore,
+        commands::backup::apply_restore,
+        commands::backup::undo_last_restore,
+        commands::backup::get_undo_last_restore_availability,
         commands::get_app_dir_path,
         commands::get_app_settings,
         commands::dictionary::get_user_dictionary,
@@ -1073,6 +1080,12 @@ pub fn run(cli_args: CliArgs) {
         user_profile::update_user_profile_setting,
         trigger_update_check,
         commands::cancel_operation,
+        commands::backup::create_backup,
+        commands::backup::get_backup_estimate,
+        commands::backup::preflight_restore,
+        commands::backup::apply_restore,
+        commands::backup::undo_last_restore,
+        commands::backup::get_undo_last_restore_availability,
         commands::get_app_dir_path,
         commands::get_app_settings,
         commands::dictionary::get_user_dictionary,
@@ -1209,6 +1222,7 @@ pub fn run(cli_args: CliArgs) {
         .manage(Mutex::new(ShortcutToggleStates::default()))
         .manage(Mutex::new(false) as OnboardingPasteOverride)
         .manage(undo::UndoManager::default())
+        .manage(backup_restore::BackupRestoreRuntime::default())
         .manage(cli_args.clone())
         .setup(move |app| {
             // Correlation metadata is attached during setup, so any events emitted
@@ -1235,7 +1249,10 @@ pub fn run(cli_args: CliArgs) {
                 None,
             );
 
-            let dictionary_state = user_dictionary::initialize_dictionary_state(app.handle());
+            let app_handle = app.handle().clone();
+            backup_restore::reconcile_startup(&app_handle);
+
+            let dictionary_state = user_dictionary::initialize_dictionary_state(&app_handle);
             app.manage(dictionary_state);
 
             let mut settings = get_settings(app.handle());
@@ -1266,7 +1283,6 @@ pub fn run(cli_args: CliArgs) {
             // Store the file log level in the atomic for the filter to use
             FILE_LOG_LEVEL.store(file_log_level_log as u8, Ordering::Relaxed);
 
-            let app_handle = app.handle().clone();
             app.manage(TranscriptionCoordinator::new(app_handle.clone()));
 
             initialize_core_logic(&app_handle);

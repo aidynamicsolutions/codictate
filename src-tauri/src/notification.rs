@@ -27,6 +27,33 @@ const MIC_PERMISSION_NOTIFICATION_ID: &str = "microphone-permission-denied";
 const ACCESSIBILITY_PERMISSION_NOTIFICATION_ID: &str = "accessibility-permission-lost";
 
 static NOTIFICATION_COOLDOWN_STATE: OnceLock<Mutex<HashMap<&'static str, Instant>>> = OnceLock::new();
+const APP_NAME_FALLBACK: &str = "Codictate";
+
+fn resolve_app_name_for_notification(translated_app_name: &str, package_name: &str) -> String {
+    let trimmed = translated_app_name.trim();
+    if trimmed.is_empty() || trimmed == "appName" || trimmed == "{{appName}}" {
+        let package_name_trimmed = package_name.trim();
+        if package_name_trimmed.is_empty() {
+            APP_NAME_FALLBACK.to_string()
+        } else {
+            package_name_trimmed.to_string()
+        }
+    } else {
+        translated_app_name.to_string()
+    }
+}
+
+fn interpolate_app_name_tokens(text: &str, app_name: &str) -> String {
+    text.replace("{{appName}}", app_name)
+}
+
+fn resolve_notification_text(app: &AppHandle, text: &str) -> String {
+    let app_name = resolve_app_name_for_notification(
+        &i18n::t(app, "appName"),
+        app.package_info().name.as_ref(),
+    );
+    interpolate_app_name_tokens(text, &app_name)
+}
 
 fn should_emit_with_cooldown(
     tracker: &mut HashMap<&'static str, Instant>,
@@ -79,8 +106,8 @@ pub fn show_notification(
     title_key: &str,
     body_key: &str,
 ) {
-    let title = i18n::t(app, title_key);
-    let body = i18n::t(app, body_key);
+    let title = resolve_notification_text(app, &i18n::t(app, title_key));
+    let body = resolve_notification_text(app, &i18n::t(app, body_key));
     show_notification_with_text(app, notification_type, &title, &body);
 }
 
@@ -99,15 +126,21 @@ pub fn show_notification_with_text(
     title: &str,
     body: &str,
 ) {
+    let resolved_title = resolve_notification_text(app, title);
+    let resolved_body = resolve_notification_text(app, body);
+
     // Format title with type prefix for visual differentiation
     let formatted_title = match notification_type {
-        NotificationType::Info => title.to_string(),
+        NotificationType::Info => resolved_title.clone(),
         NotificationType::Error => {
             // Add error indicator if not already present
-            if title.starts_with("⚠") || title.starts_with("❌") || title.starts_with("Error") {
-                title.to_string()
+            if resolved_title.starts_with("⚠")
+                || resolved_title.starts_with("❌")
+                || resolved_title.starts_with("Error")
+            {
+                resolved_title.clone()
             } else {
-                format!("⚠ {}", title)
+                format!("⚠ {}", resolved_title)
             }
         }
     };
@@ -121,7 +154,7 @@ pub fn show_notification_with_text(
                 .notification()
                 .builder()
                 .title(&formatted_title)
-                .body(body)
+                .body(&resolved_body)
                 .show()
             {
                 error!("Failed to show notification: {}", e);
@@ -137,7 +170,7 @@ pub fn show_notification_with_text(
                 .notification()
                 .builder()
                 .title(&formatted_title)
-                .body(body)
+                .body(&resolved_body)
                 .show();
         }
         Err(e) => {
@@ -318,5 +351,38 @@ mod tests {
             now + Duration::from_secs(1),
             Duration::from_secs(10),
         ));
+    }
+
+    #[test]
+    fn interpolation_replaces_app_name_tokens() {
+        let interpolated = interpolate_app_name_tokens(
+            "Welcome to {{appName}}. {{appName}} is ready.",
+            "Codictate",
+        );
+        assert_eq!(interpolated, "Welcome to Codictate. Codictate is ready.");
+    }
+
+    #[test]
+    fn app_name_resolution_falls_back_when_translation_is_missing() {
+        assert_eq!(
+            resolve_app_name_for_notification("appName", "Codictate Desktop"),
+            "Codictate Desktop"
+        );
+        assert_eq!(
+            resolve_app_name_for_notification("{{appName}}", "Codictate Desktop"),
+            "Codictate Desktop"
+        );
+        assert_eq!(
+            resolve_app_name_for_notification("", "Codictate Desktop"),
+            "Codictate Desktop"
+        );
+    }
+
+    #[test]
+    fn app_name_resolution_uses_default_when_all_sources_are_missing() {
+        assert_eq!(
+            resolve_app_name_for_notification("appName", ""),
+            APP_NAME_FALLBACK
+        );
     }
 }

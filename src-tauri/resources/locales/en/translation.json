@@ -534,6 +534,11 @@
       "delete": "Delete entry",
       "deleteError": "Failed to delete entry. Please try again."
     },
+    "backup": {
+      "operation": {
+        "transcriptionBlocked": "Transcription is temporarily unavailable while backup or restore is running."
+      }
+    },
     "debug": {
       "title": "Debug",
       "logDirectory": {

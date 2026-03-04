@@ -136,6 +136,19 @@ The system SHALL emit structured logs for rollback request/defer/apply/skip life
 - **WHEN** rollback cannot be applied
 - **THEN** log `undo_stats_rollback_skipped` is emitted with reason code
 
+### Requirement: Restore Stats Import Source Logs
+The system SHALL emit structured logs that identify whether restored home stats came from canonical payload or fallback recompute.
+
+#### Scenario: Restore stats import summary emitted
+- **WHEN** restore imports history data
+- **THEN** log `restore_stats_import_summary` is emitted
+- **AND** includes `stats_source`, `history_rows`, `zero_speech_duration_rows`, and final aggregate duration/word fields
+
+#### Scenario: One-time manual stats repair outcome emitted
+- **WHEN** one-time guarded manual stats repair is evaluated
+- **THEN** log `restore_stats_manual_repair` is emitted with `outcome=applied|skipped`
+- **AND** skipped logs include reason code (for example `guard_mismatch` or `history_db_missing`)
+
 ### Requirement: Centralized Error Monitoring
 The system SHALL capture and report errors from both the Backend (Rust) and Frontend (TypeScript) to a centralized error tracking service (Sentry).
 
@@ -333,4 +346,3 @@ The system SHALL capture a high-signal activation milestone and a low-noise upgr
 - **WHEN** the upgrade prompt is shown and the user interacts with it
 - **THEN** frontend records `upgrade_prompt_shown`, `upgrade_prompt_action`, and `upgrade_checkout_result` through backend commands
 - **AND** all prompt funnel properties remain low-cardinality and allowlisted
-

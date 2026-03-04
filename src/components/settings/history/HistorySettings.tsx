@@ -307,14 +307,6 @@ export const HistorySettings: React.FC<HistorySettingsProps> = ({
     setShowClearDialog(false);
   };
 
-  const openRecordingsFolder = async () => {
-    try {
-      await commands.openRecordingsFolder();
-    } catch (error) {
-      logError(`Failed to open recordings folder: ${error}`, "fe-history");
-    }
-  };
-
   return (
     <div className="max-w-3xl w-full mx-auto space-y-8 flex flex-col flex-1 min-h-0 pb-0 -mb-8 relative py-4">
       <HistoryStorage

@@ -105,3 +105,22 @@ The system SHALL reverse both recording and speech duration contributions when u
 - **AND** `user_stats.total_speech_duration_ms` is decremented by contribution speech duration
 - **AND** both values clamp at zero
 
+### Requirement: Restore Stats Fidelity
+Backup/restore SHALL preserve canonical home stats aggregates when canonical stats payload is available.
+
+#### Scenario: Canonical stats payload roundtrip
+- **WHEN** backup archive includes `history/user_stats.json`
+- **AND** restore applies that archive
+- **THEN** `user_stats` aggregate fields are restored from canonical payload
+- **AND** WPM / Total Words / Time Saved match source backup aggregates
+
+#### Scenario: Legacy archive fallback recompute
+- **WHEN** restore archive is missing `history/user_stats.json` (legacy format)
+- **THEN** restore remains non-blocking
+- **AND** `user_stats` are recomputed from history rows with runtime-consistent word counting semantics
+- **AND** speech-duration fallback treats missing row speech duration as recording duration
+
+#### Scenario: Legacy fallback warning surface
+- **WHEN** restore uses fallback recompute instead of canonical stats payload
+- **THEN** preflight reports a recoverable warning
+- **AND** apply-restore warning output includes the stats-recompute warning context

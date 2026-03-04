@@ -23,6 +23,7 @@ function buildEntry(overrides: Partial<HistoryEntry> = {}): HistoryEntry {
     post_process_prompt: null,
     duration_ms: 2000,
     file_path: "/tmp/codictate-1.wav",
+    audio_file_exists: true,
     ...overrides,
   };
 }

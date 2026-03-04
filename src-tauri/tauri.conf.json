@@ -33,6 +33,11 @@
     ],
     "security": {
       "csp": null,
+      "capabilities": [
+        "default",
+        "desktop-capability",
+        "backup-restore-main"
+      ],
       "assetProtocol": {
         "enable": true,
         "scope": {

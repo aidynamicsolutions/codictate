@@ -19,8 +19,10 @@ import { commands } from "@/bindings";
 import { initLogging, logError, logInfo } from "@/utils/logging";
 import { trackUiAnalyticsEvent } from "@/utils/analytics";
 import { useModelStore } from "./stores/modelStore";
+import { useDictionaryStore } from "./stores/dictionaryStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useUpdateStore } from "./stores/updateStore";
+import { useUserProfileStore } from "./stores/userProfileStore";
 import { AboutModal } from "./components/AboutModal";
 import { UpgradePromptBanner } from "./components/growth/UpgradePromptBanner";
 
@@ -186,6 +188,14 @@ function App() {
       return;
     }
     void consumePendingUpgradePromptOpenRequest("upgrade_prompt_open_requested_event");
+  });
+
+  useTauriEvent("dictionary-updated", () => {
+    void useDictionaryStore.getState().refreshDictionary();
+  });
+
+  useTauriEvent("user-profile-updated", () => {
+    void useUserProfileStore.getState().refreshProfile();
   });
 
   useTauriEvent<UndoMainToastPayload>("undo-main-toast", (event) => {

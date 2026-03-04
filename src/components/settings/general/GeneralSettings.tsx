@@ -36,6 +36,7 @@ import { UpdateChecksToggle } from "../UpdateChecksToggle";
 import { CheckForUpdates } from "../CheckForUpdates";
 import { AppLanguageSelector } from "../AppLanguageSelector";
 import { ShareUsageAnalytics } from "../ShareUsageAnalytics";
+import { BackupRestoreCard } from "../backup/BackupRestoreCard";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -61,6 +62,7 @@ export const GeneralSettings: React.FC = () => {
 
   // Get OS type for determining default shortcut display
   const osType = useMemo(() => type(), []);
+  const backupRestoreEnabled = useMemo(() => osType === "macos", [osType]);
 
   // Get current push-to-talk binding for display
   const bindings = getSetting("bindings") || {};
@@ -160,6 +162,8 @@ export const GeneralSettings: React.FC = () => {
 
         <ResetAllSettings />
       </SettingsGroup>
+
+      {backupRestoreEnabled ? <BackupRestoreCard /> : null}
 
       {/* Keyboard Shortcuts Modal */}
       <KeyboardShortcutsModal

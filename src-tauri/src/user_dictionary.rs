@@ -122,7 +122,7 @@ fn migrate_dictionary_entries(entries: &mut [CustomWordEntry]) {
     }
 }
 
-fn dictionary_path(app: &AppHandle) -> Result<PathBuf, String> {
+fn dictionary_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
@@ -256,7 +256,7 @@ fn load_entries_from_path(path: &Path) -> (Vec<CustomWordEntry>, DictionaryLoadS
     (entries, DictionaryLoadStatus::Loaded)
 }
 
-pub fn initialize_dictionary_state(app: &AppHandle) -> Arc<DictionaryState> {
+pub fn initialize_dictionary_state<R: tauri::Runtime>(app: &AppHandle<R>) -> Arc<DictionaryState> {
     let path = match dictionary_path(app) {
         Ok(path) => path,
         Err(err) => {
@@ -273,7 +273,7 @@ pub fn initialize_dictionary_state(app: &AppHandle) -> Arc<DictionaryState> {
     Arc::new(DictionaryState::new(entries, status))
 }
 
-pub fn get_dictionary_snapshot(app: &AppHandle) -> Arc<Vec<CustomWordEntry>> {
+pub fn get_dictionary_snapshot<R: tauri::Runtime>(app: &AppHandle<R>) -> Arc<Vec<CustomWordEntry>> {
     if let Some(state) = app.try_state::<Arc<DictionaryState>>() {
         return state.snapshot();
     }
@@ -285,18 +285,35 @@ pub fn get_dictionary_snapshot(app: &AppHandle) -> Arc<Vec<CustomWordEntry>> {
     Arc::new(Vec::new())
 }
 
-pub fn set_dictionary_entries(app: &AppHandle, entries: Vec<CustomWordEntry>) -> Result<(), String> {
+pub fn set_dictionary_entries<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    entries: Vec<CustomWordEntry>,
+) -> Result<(), String> {
+    crate::backup_restore::with_write_permit(app, || {
+        let Some(state) = app.try_state::<Arc<DictionaryState>>() else {
+            return Err("Dictionary state is not initialized".to_string());
+        };
+
+        let _write_guard = state
+            .write_gate
+            .lock()
+            .map_err(|_| "Failed to acquire dictionary write gate".to_string())?;
+
+        let path = dictionary_path(app)?;
+        persist_then_swap_entries(state.inner(), &path, entries, write_entries_to_path)
+    })
+}
+
+pub fn reload_dictionary_state<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let Some(state) = app.try_state::<Arc<DictionaryState>>() else {
         return Err("Dictionary state is not initialized".to_string());
     };
 
-    let _write_guard = state
-        .write_gate
-        .lock()
-        .map_err(|_| "Failed to acquire dictionary write gate".to_string())?;
-
     let path = dictionary_path(app)?;
-    persist_then_swap_entries(state.inner(), &path, entries, write_entries_to_path)
+    let (entries, status) = load_entries_from_path(&path);
+    state.replace_entries(entries)?;
+    state.set_last_load_status(status)?;
+    Ok(())
 }
 
 fn persist_then_swap_entries<W>(
