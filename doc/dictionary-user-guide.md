@@ -4,13 +4,25 @@ This guide shows how to use the Dictionary UI to improve dictation quality in ev
 
 ## What the Dictionary Does
 
-Use Dictionary entries to teach Codictate:
+Dictionary improves final transcript text after speech recognition.
 
-- how to spell names, brands, and jargon you say often
-- how to expand shortcuts like `btw` into full text
-- how to map alternate pronunciations to the same final word
+Use Dictionary entries to:
 
-Think of it as "teach once, reuse everywhere."
+- correct repeated transcript mistakes you see often
+- map spoken variants to the output you want
+- expand shortcuts like `btw` into full text
+
+Think of it as transcript correction and normalization, not guaranteed decoder control.
+
+## What Dictionary Does Not Guarantee
+
+Dictionary does not force the ASR model to hear a word a specific way.
+
+This means:
+
+- adding a word does not guarantee every pronunciation variant maps to that word
+- ambiguous single-word aliases can rewrite normal language if used globally
+- fuzzy matching is intentionally conservative to reduce false positives
 
 ## Where to Find It
 
@@ -67,6 +79,21 @@ Recommended best practice:
 1. Use exact canonical + aliases first.
 2. Only enable fuzzy for hard, uncommon proper nouns (usually longer terms).
 3. Do not rely on fuzzy for short/common words.
+
+## Ambiguous Word Safety
+
+For ambiguous common words (for example `state`, `mode`, `model`), avoid global single-word aliases unless you truly want global behavior.
+
+Prefer:
+
+1. phrase replacements for stable contexts
+2. aliases based on real transcript output in that context
+3. fuzzy only when exact paths fail for uncommon terms
+
+Example:
+
+- Better for git workflow: `state changes` -> `staged changes`
+- Risky as global alias: `state` -> `staged`
 
 ## Multi-Word Best Practice
 
@@ -138,7 +165,26 @@ Tips:
 
 - Add aliases based on what you actually see in your transcripts.
 - Keep aliases short and intentional.
-- Avoid adding very common words as aliases.
+- Avoid adding very common words as global aliases.
+
+## Fix Mispronunciations Effectively
+
+When a word is misheard, use transcript-first correction:
+
+1. Dictate normally and check the wrong output in Home or History.
+2. Add that observed output as an alias on the target term.
+3. Retest with a short phrase.
+4. If misses continue, add a phrase replacement for the full phrase.
+
+Example:
+
+- Target term: `staged`
+- Observed miss (in git context): `state`
+- Phrase replacement:
+  - What you say: `state changes`
+  - Output text: `staged changes`
+
+If the same spoken form appears in multiple meanings, prefer phrase replacement over global single-word aliasing.
 
 ## Practical Setup Recipes
 
@@ -178,10 +224,10 @@ When Codictate captures a near-miss spelling in **Home** or **History**, you may
 If an entry is not triggering reliably:
 
 1. Confirm the entry exists in Dictionary.
-2. Add 1-2 aliases that match what transcript output shows.
-3. Keep the canonical word exactly how you want it to appear.
-4. Enable fuzzy only for longer/harder proper nouns after exact+aliases are in place.
-5. For spoken shortcut expansion, choose **Replace spoken phrase** and set Output text.
+2. Check whether transcript output is exact, close, or very different.
+3. Add aliases from what transcript actually produced.
+4. For repeated phrase-level misses, add a phrase replacement entry.
+5. Enable fuzzy only for longer/harder proper nouns after exact+aliases are in place.
 6. Retest with a short phrase first (for example: "use shad cn").
 
 ## Best Results in Daily Use

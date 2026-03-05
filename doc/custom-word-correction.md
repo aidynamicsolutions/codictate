@@ -1,6 +1,10 @@
 # Custom Word Correction
 
-Custom word correction automatically corrects or replaces transcribed words with user-defined alternatives. It is designed for proper nouns, brand names, domain-specific terminology, abbreviations, and phrases that ASR frequently mishears.
+Custom word correction is a post-recognition text correction layer.
+
+It applies dictionary rules to transcript text after ASR inference. It is designed for proper nouns, brand names, domain-specific terminology, abbreviations, and repeated phrase mistakes.
+
+It is not a guaranteed decoder-time biasing system for all pronunciations.
 
 For a non-technical, UI-first walkthrough, see `doc/dictionary-user-guide.md`.
 
@@ -32,6 +36,22 @@ Each dictionary entry has five fields:
 > [!IMPORTANT]
 > Single-word targets (canonical input or active alias) with normalized character length `<= 4` are hard-blocked from fuzzy matching even if `fuzzy_enabled = true`.
 
+## Scope and Guarantees
+
+Guaranteed behavior:
+
+- Exact canonical and exact alias matching in vocabulary mode
+- Exact phrase mapping in replacement mode
+
+Not guaranteed:
+
+- Forcing ASR to output a target term from any pronunciation
+- Correcting every close-sounding single-word miss automatically
+
+Design principle:
+
+- Precision-first correction to avoid harmful false positives in common language
+
 ### Case Adaptation for Replacements
 
 Replacements adapt to input case pattern:
@@ -62,6 +82,22 @@ The matcher combines **N-gram analysis** with **phonetic and fuzzy matching** to
    - **Jaro-Winkler** for short words
    - **Damerau-Levenshtein** for longer words/transpositions
    - **Double Metaphone** for phonetic boost
+
+## Practical Policy for Mispronunciation Cases
+
+For user-reported misses:
+
+1. Capture the observed wrong transcript token/phrase.
+2. Add that exact observed form as alias first.
+3. If the miss is phrase-stable, add a phrase replacement rule.
+4. Use fuzzy as fallback only when exact rules are insufficient.
+
+For ambiguous words, avoid global single-word aliases unless global rewriting is desired.
+
+Example:
+
+- Prefer phrase mapping: `state changes` -> `staged changes`
+- Avoid global alias unless intended everywhere: `state` -> `staged`
 
 ### Multi-Word and Split-Token Support
 
