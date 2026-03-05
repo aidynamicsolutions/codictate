@@ -27,10 +27,10 @@ This document describes macOS permission handling in Codictate.
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│               audio.rs → try_start_recording()                  │
+│           actions.rs → TranscribeAction::start()                │
 │  • Calls check_microphone_permission() BEFORE recording         │
-│  • Denied → emit event + notification, return false             │
-│  • Authorized → proceed with recording                          │
+│  • Denied → emit event + notification, abort start              │
+│  • Authorized → calls audio.rs::try_start_recording()           │
 └─────────────────────────────────┬───────────────────────────────┘
                                   │
                                   ▼
@@ -49,7 +49,8 @@ This document describes macOS permission handling in Codictate.
 |------|----------------|
 | `permissions.rs` | Low-level permission check APIs + open settings commands |
 | `fn_key_monitor.rs` | Accessibility permission handling + TapDisabled recovery |
-| `audio.rs` | Microphone permission check before recording |
+| `actions.rs` | Microphone permission gate before recording starts |
+| `audio.rs` | Recording state machine, stream lifecycle, and capture-ready start coordination |
 | `tray.rs` | Tray icon state management (Idle, Recording, Transcribing) |
 | `input.rs` | Enigo initialization (lazy if no accessibility permission) |
 | `PermissionBanner.tsx` | Generic component: modal + banner + focus re-check + event listener |
@@ -95,9 +96,10 @@ App Launch
 
 ### Microphone (recording fails)
 
-1. Permission checked in `fn_key_monitor.rs` BEFORE overlay shows
-2. Uses `AVCaptureDevice.authorizationStatus(for: .audio)` via objc2
-3. Denied → emit permission event + show throttled native notification (no forced focus steal)
+1. Canonical start gate is in `actions.rs` (`TranscribeAction::start`) before recording/overlay transitions.
+2. Fn-specific fast path in `fn_key_monitor.rs` also checks before toggling PTT/hands-free state.
+3. Both paths use `AVCaptureDevice.authorizationStatus(for: .audio)` via objc2.
+4. Denied → emit permission event + show throttled native notification (no forced focus steal).
 
 ## Permission Revocation Flow
 

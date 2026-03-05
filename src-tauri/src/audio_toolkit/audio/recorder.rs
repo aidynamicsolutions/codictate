@@ -1,6 +1,10 @@
 use std::{
+    fmt,
     io::Error,
-    sync::{mpsc, Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc, Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -17,9 +21,152 @@ use crate::audio_toolkit::{
 };
 
 enum Cmd {
-    Start,
+    Start {
+        start_id: u64,
+        ready_tx: Option<mpsc::Sender<StartReadyAck>>,
+    },
     Stop(mpsc::Sender<Vec<f32>>),
     Shutdown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StartReadyStatus {
+    CaptureReady,
+    SupersededByNewStart,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct StartReadyAck {
+    start_id: u64,
+    status: StartReadyStatus,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecorderStartError {
+    CommandChannelUnavailable,
+    CommandSendFailed,
+    CaptureReadyTimeout(Duration),
+    SupersededByNewStart,
+    UnexpectedAcknowledgement {
+        expected_start_id: u64,
+        actual_start_id: u64,
+    },
+    WorkerDisconnected,
+}
+
+impl fmt::Display for RecorderStartError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RecorderStartError::CommandChannelUnavailable => {
+                write!(f, "Recorder command channel not initialized")
+            }
+            RecorderStartError::CommandSendFailed => {
+                write!(f, "Failed to send start command to recorder worker")
+            }
+            RecorderStartError::CaptureReadyTimeout(timeout) => write!(
+                f,
+                "Timed out waiting for capture-ready acknowledgement (timeout_ms={})",
+                timeout.as_millis()
+            ),
+            RecorderStartError::SupersededByNewStart => {
+                write!(f, "Start attempt superseded by a newer start request")
+            }
+            RecorderStartError::UnexpectedAcknowledgement {
+                expected_start_id,
+                actual_start_id,
+            } => write!(
+                f,
+                "Unexpected start acknowledgement id (expected={}, actual={})",
+                expected_start_id, actual_start_id
+            ),
+            RecorderStartError::WorkerDisconnected => {
+                write!(
+                    f,
+                    "Recorder worker disconnected before capture-ready acknowledgement"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for RecorderStartError {}
+
+pub struct RecorderStartWait {
+    start_id: u64,
+    ready_rx: mpsc::Receiver<StartReadyAck>,
+}
+
+impl RecorderStartWait {
+    pub fn wait(self, timeout: Duration) -> Result<(), RecorderStartError> {
+        let ack = self.ready_rx.recv_timeout(timeout).map_err(|err| match err {
+            mpsc::RecvTimeoutError::Timeout => RecorderStartError::CaptureReadyTimeout(timeout),
+            mpsc::RecvTimeoutError::Disconnected => RecorderStartError::WorkerDisconnected,
+        })?;
+
+        if ack.start_id != self.start_id {
+            return Err(RecorderStartError::UnexpectedAcknowledgement {
+                expected_start_id: self.start_id,
+                actual_start_id: ack.start_id,
+            });
+        }
+
+        match ack.status {
+            StartReadyStatus::CaptureReady => Ok(()),
+            StartReadyStatus::SupersededByNewStart => Err(RecorderStartError::SupersededByNewStart),
+        }
+    }
+}
+
+struct PreRollBuffer {
+    slots: Vec<Vec<f32>>,
+    head: usize,
+    len: usize,
+}
+
+impl PreRollBuffer {
+    fn new(capacity: usize) -> Self {
+        Self {
+            slots: (0..capacity).map(|_| Vec::new()).collect(),
+            head: 0,
+            len: 0,
+        }
+    }
+
+    fn push_frame(&mut self, frame: &[f32]) {
+        if self.slots.is_empty() {
+            return;
+        }
+
+        let slot_idx = if self.len < self.slots.len() {
+            let idx = (self.head + self.len) % self.slots.len();
+            self.len += 1;
+            idx
+        } else {
+            let idx = self.head;
+            self.head = (self.head + 1) % self.slots.len();
+            idx
+        };
+
+        let slot = &mut self.slots[slot_idx];
+        slot.clear();
+        slot.extend_from_slice(frame);
+    }
+
+    fn drain_into<F>(&mut self, mut sink: F)
+    where
+        F: FnMut(&[f32]),
+    {
+        if self.slots.is_empty() {
+            return;
+        }
+
+        for offset in 0..self.len {
+            let idx = (self.head + offset) % self.slots.len();
+            sink(&self.slots[idx]);
+        }
+        self.head = 0;
+        self.len = 0;
+    }
 }
 
 pub struct AudioRecorder {
@@ -29,6 +176,7 @@ pub struct AudioRecorder {
     vad: Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     cached_config: Option<cpal::SupportedStreamConfig>,
+    next_start_id: AtomicU64,
 }
 
 impl AudioRecorder {
@@ -40,6 +188,7 @@ impl AudioRecorder {
             vad: None,
             level_cb: None,
             cached_config: None,
+            next_start_id: AtomicU64::new(1),
         })
     }
 
@@ -171,16 +320,45 @@ impl AudioRecorder {
 
     pub fn start(&self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(tx) = &self.cmd_tx {
-            tx.send(Cmd::Start)?;
+            let start_id = self.next_start_id.fetch_add(1, Ordering::Relaxed);
+            tx.send(Cmd::Start {
+                start_id,
+                ready_tx: None,
+            })?;
         }
         Ok(())
     }
 
+    pub fn start_blocking(&self, timeout: Duration) -> Result<(), RecorderStartError> {
+        self.begin_start_blocking()?.wait(timeout)
+    }
+
+    pub fn begin_start_blocking(&self) -> Result<RecorderStartWait, RecorderStartError> {
+        let Some(tx) = &self.cmd_tx else {
+            return Err(RecorderStartError::CommandChannelUnavailable);
+        };
+
+        let start_id = self.next_start_id.fetch_add(1, Ordering::Relaxed);
+        let (ready_tx, ready_rx) = mpsc::channel();
+        tx.send(Cmd::Start {
+            start_id,
+            ready_tx: Some(ready_tx),
+        })
+        .map_err(|_| RecorderStartError::CommandSendFailed)?;
+
+        Ok(RecorderStartWait { start_id, ready_rx })
+    }
+
     pub fn stop(&self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        let tx = self.cmd_tx.as_ref().ok_or_else(|| {
+            Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Recorder command channel not initialized",
+            )
+        })?;
+
         let (resp_tx, resp_rx) = mpsc::channel();
-        if let Some(tx) = &self.cmd_tx {
-            tx.send(Cmd::Stop(resp_tx))?;
-        }
+        tx.send(Cmd::Stop(resp_tx))?;
         Ok(resp_rx.recv()?) // wait for the samples
     }
 
@@ -298,6 +476,7 @@ fn run_consumer(
 
     let mut processed_samples = Vec::<f32>::new();
     let mut recording = false;
+    let mut pending_start_ready: Option<PendingStartReady> = None;
     
     // Warmup counter: Previously discarded initial frames after recording starts.
     // REMOVED: This was causing issues with short recordings because the SmoothedVad
@@ -307,6 +486,11 @@ fn run_consumer(
     // to capture early speech, not to discard initial audio.
     const WARMUP_FRAMES: u32 = 0;
     let mut warmup_remaining: u32 = 0;
+    // Keep ~270ms of audio before Start so fast speech onset is not clipped.
+    // Assumes ~30ms resampler frames: 9 frames * 30ms = 270ms pre-roll.
+    // Recalibrate this constant if the frame duration changes.
+    const PREROLL_FRAMES: usize = 9;
+    let mut pre_roll_frames = PreRollBuffer::new(PREROLL_FRAMES);
 
     // ---------- spectrum visualisation setup ---------------------------- //
     const BUCKETS: usize = 16;
@@ -340,10 +524,104 @@ fn run_consumer(
         }
     }
 
+    struct PendingStartReady {
+        start_id: u64,
+        ready_tx: mpsc::Sender<StartReadyAck>,
+    }
+
+    fn apply_start_command(
+        start_id: u64,
+        ready_tx: Option<mpsc::Sender<StartReadyAck>>,
+        processed_samples: &mut Vec<f32>,
+        recording: &mut bool,
+        warmup_remaining: &mut u32,
+        visualizer: &mut AudioVisualiser,
+        vad: &Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
+        pending_start_ready: &mut Option<PendingStartReady>,
+        pre_roll_frames: &mut PreRollBuffer,
+    ) {
+        if let Some(previous_pending) = pending_start_ready.take() {
+            let _ = previous_pending.ready_tx.send(StartReadyAck {
+                start_id: previous_pending.start_id,
+                status: StartReadyStatus::SupersededByNewStart,
+            });
+        }
+
+        processed_samples.clear();
+        *recording = true;
+        *warmup_remaining = WARMUP_FRAMES;
+        visualizer.reset();
+        *pending_start_ready = ready_tx.map(|ready_tx| PendingStartReady { start_id, ready_tx });
+
+        if let Some(v) = vad {
+            v.lock().unwrap().reset();
+        }
+
+        pre_roll_frames.drain_into(|frame| handle_frame(frame, true, vad, processed_samples));
+    }
+
+    fn apply_stop_command(
+        reply_tx: mpsc::Sender<Vec<f32>>,
+        recording: &mut bool,
+        pending_start_ready: &mut Option<PendingStartReady>,
+        sample_rx: &mpsc::Receiver<Vec<f32>>,
+        frame_resampler: &mut FrameResampler,
+        vad: &Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
+        processed_samples: &mut Vec<f32>,
+    ) {
+        let was_recording = *recording;
+        *recording = false;
+        *pending_start_ready = None;
+
+        if was_recording {
+            // Drain any audio chunks that were captured but not yet consumed.
+            while let Ok(remaining) = sample_rx.try_recv() {
+                frame_resampler.push(&remaining, &mut |frame: &[f32]| {
+                    handle_frame(frame, true, vad, processed_samples)
+                });
+            }
+
+            frame_resampler.finish(&mut |frame: &[f32]| {
+                handle_frame(frame, true, vad, processed_samples)
+            });
+        }
+
+        let _ = reply_tx.send(std::mem::take(processed_samples));
+    }
+
     loop {
-        let raw = match sample_rx.recv() {
+        let raw = match sample_rx.recv_timeout(Duration::from_millis(20)) {
             Ok(s) => s,
-            Err(_) => break, // stream closed
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Keep command/control path responsive even when no audio packets arrive.
+                while let Ok(cmd) = cmd_rx.try_recv() {
+                    match cmd {
+                        Cmd::Start { start_id, ready_tx } => apply_start_command(
+                            start_id,
+                            ready_tx,
+                            &mut processed_samples,
+                            &mut recording,
+                            &mut warmup_remaining,
+                            &mut visualizer,
+                            &vad,
+                            &mut pending_start_ready,
+                            &mut pre_roll_frames,
+                        ),
+                        Cmd::Stop(reply_tx) => apply_stop_command(
+                            reply_tx,
+                            &mut recording,
+                            &mut pending_start_ready,
+                            &sample_rx,
+                            &mut frame_resampler,
+                            &vad,
+                            &mut processed_samples,
+                        ),
+                        Cmd::Shutdown => return,
+                    }
+                }
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break, // stream closed
         };
 
         // Signal that data has started flowing (one-shot)
@@ -358,8 +636,69 @@ fn run_consumer(
             }
         }
 
+        // Apply only the leading contiguous Start-prefix before processing this packet.
+        // Once a non-Start command appears, preserve FIFO order by deferring it and all
+        // subsequent commands to post-frame handling.
+        let mut pending_cmds = Vec::new();
+        while let Ok(cmd) = cmd_rx.try_recv() {
+            pending_cmds.push(cmd);
+        }
+
+        let mut deferred_cmds = Vec::new();
+        let mut defer_remaining_cmds = false;
+        for cmd in pending_cmds {
+            if defer_remaining_cmds {
+                deferred_cmds.push(cmd);
+                continue;
+            }
+
+            match cmd {
+                Cmd::Start { start_id, ready_tx } => apply_start_command(
+                    start_id,
+                    ready_tx,
+                    &mut processed_samples,
+                    &mut recording,
+                    &mut warmup_remaining,
+                    &mut visualizer,
+                    &vad,
+                    &mut pending_start_ready,
+                    &mut pre_roll_frames,
+                ),
+                other => {
+                    defer_remaining_cmds = true;
+                    deferred_cmds.push(other);
+                }
+            }
+        }
+
         // ---------- existing pipeline ------------------------------------ //
         frame_resampler.push(&raw, &mut |frame: &[f32]| {
+            if !recording {
+                pre_roll_frames.push_frame(frame);
+                return;
+            }
+
+            if let Some(pending) = pending_start_ready.take() {
+                if pending
+                    .ready_tx
+                    .send(StartReadyAck {
+                        start_id: pending.start_id,
+                        status: StartReadyStatus::CaptureReady,
+                    })
+                    .is_err()
+                {
+                    // Caller abandoned the start wait (timeout/cancel), so cancel this start
+                    // to avoid recording after the manager has already treated start as failed.
+                    tracing::warn!(
+                        "Capture-ready receiver dropped before acknowledgement; cancelling pending start"
+                    );
+                    recording = false;
+                    processed_samples.clear();
+                    pre_roll_frames.push_frame(frame);
+                    return;
+                }
+            }
+
             // Skip initial warmup frames to allow microphone/VAD to stabilize
             if warmup_remaining > 0 {
                 warmup_remaining -= 1;
@@ -368,36 +707,543 @@ fn run_consumer(
             handle_frame(frame, recording, &vad, &mut processed_samples)
         });
 
+        // Handle deferred non-start commands after processing this packet.
+        for cmd in deferred_cmds {
+            match cmd {
+                Cmd::Stop(reply_tx) => apply_stop_command(
+                    reply_tx,
+                    &mut recording,
+                    &mut pending_start_ready,
+                    &sample_rx,
+                    &mut frame_resampler,
+                    &vad,
+                    &mut processed_samples,
+                ),
+                Cmd::Shutdown => return,
+                Cmd::Start { start_id, ready_tx } => apply_start_command(
+                    start_id,
+                    ready_tx,
+                    &mut processed_samples,
+                    &mut recording,
+                    &mut warmup_remaining,
+                    &mut visualizer,
+                    &vad,
+                    &mut pending_start_ready,
+                    &mut pre_roll_frames,
+                ),
+            }
+        }
+
         // non-blocking check for a command
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                Cmd::Start => {
-                    processed_samples.clear();
-                    recording = true;
-                    warmup_remaining = WARMUP_FRAMES; // Initialize warmup counter
-                    visualizer.reset(); // Reset visualization buffer
-                    if let Some(v) = &vad {
-                        v.lock().unwrap().reset();
-                    }
-                }
-                Cmd::Stop(reply_tx) => {
-                    recording = false;
-
-                    // Drain any audio chunks that were captured but not yet consumed
-                    while let Ok(remaining) = sample_rx.try_recv() {
-                        frame_resampler.push(&remaining, &mut |frame: &[f32]| {
-                            handle_frame(frame, true, &vad, &mut processed_samples)
-                        });
-                    }
-
-                    frame_resampler.finish(&mut |frame: &[f32]| {
-                        handle_frame(frame, true, &vad, &mut processed_samples)
-                    });
-
-                    let _ = reply_tx.send(std::mem::take(&mut processed_samples));
-                }
+                Cmd::Start { start_id, ready_tx } => apply_start_command(
+                    start_id,
+                    ready_tx,
+                    &mut processed_samples,
+                    &mut recording,
+                    &mut warmup_remaining,
+                    &mut visualizer,
+                    &vad,
+                    &mut pending_start_ready,
+                    &mut pre_roll_frames,
+                ),
+                Cmd::Stop(reply_tx) => apply_stop_command(
+                    reply_tx,
+                    &mut recording,
+                    &mut pending_start_ready,
+                    &sample_rx,
+                    &mut frame_resampler,
+                    &vad,
+                    &mut processed_samples,
+                ),
                 Cmd::Shutdown => return,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{run_consumer, AudioRecorder, Cmd, RecorderStartError, StartReadyStatus};
+    use crate::audio_toolkit::constants;
+    use std::sync::{
+        atomic::AtomicU64,
+        mpsc, Arc, Mutex,
+    };
+    use std::time::Duration;
+
+    fn spawn_consumer() -> (
+        mpsc::Sender<Vec<f32>>,
+        mpsc::Sender<Cmd>,
+        std::thread::JoinHandle<()>,
+    ) {
+        let (sample_tx, cmd_tx, _, worker) = spawn_consumer_with_done();
+        (sample_tx, cmd_tx, worker)
+    }
+
+    fn spawn_consumer_with_done() -> (
+        mpsc::Sender<Vec<f32>>,
+        mpsc::Sender<Cmd>,
+        mpsc::Receiver<()>,
+        std::thread::JoinHandle<()>,
+    ) {
+        let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
+        let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>();
+        let (done_tx, done_rx) = mpsc::channel::<()>();
+        let worker = std::thread::spawn(move || {
+            run_consumer(
+                constants::WHISPER_SAMPLE_RATE,
+                None,
+                sample_rx,
+                cmd_rx,
+                None,
+                None,
+            );
+            let _ = done_tx.send(());
+        });
+        (sample_tx, cmd_tx, done_rx, worker)
+    }
+
+    #[test]
+    fn start_ack_arrives_after_first_recorded_frame() {
+        let (sample_tx, cmd_tx, worker) = spawn_consumer();
+        let (ready_tx, ready_rx) = mpsc::channel();
+
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 1,
+                ready_tx: Some(ready_tx),
+            })
+            .unwrap();
+
+        sample_tx.send(vec![0.5; 480]).unwrap();
+        let ready_ack = ready_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("capture-ready acknowledgement should arrive");
+        assert_eq!(ready_ack.start_id, 1);
+        assert_eq!(ready_ack.status, StartReadyStatus::CaptureReady);
+
+        let (stop_tx, stop_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_tx)).unwrap();
+        sample_tx.send(Vec::new()).unwrap();
+
+        let samples = stop_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop should return captured samples");
+        assert!(
+            !samples.is_empty(),
+            "first frame should be captured once start is acknowledged"
+        );
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn pre_roll_frames_are_included_after_start() {
+        let (sample_tx, cmd_tx, worker) = spawn_consumer();
+
+        // Feed audio before Start so it can be buffered in pre-roll.
+        sample_tx.send(vec![0.25; 480]).unwrap();
+
+        let (ready_tx, ready_rx) = mpsc::channel();
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 1,
+                ready_tx: Some(ready_tx),
+            })
+            .unwrap();
+        sample_tx.send(vec![0.5; 480]).unwrap();
+        let ready_ack = ready_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("capture-ready acknowledgement should arrive");
+        assert_eq!(ready_ack.start_id, 1);
+        assert_eq!(ready_ack.status, StartReadyStatus::CaptureReady);
+
+        let (stop_tx, stop_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_tx)).unwrap();
+        sample_tx.send(Vec::new()).unwrap();
+
+        let samples = stop_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop should return captured samples");
+        let has_preroll = samples.iter().any(|s| (*s - 0.25).abs() < 1e-3);
+        let has_speech = samples.iter().any(|s| (*s - 0.5).abs() < 1e-3);
+        assert!(has_preroll, "pre-roll frame must be present in final samples");
+        assert!(has_speech, "speech frame must be present in final samples");
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn pre_roll_wraparound_keeps_latest_frames_in_order() {
+        let (sample_tx, cmd_tx, worker) = spawn_consumer();
+
+        // Feed more than PREROLL_FRAMES so the oldest buffered frames are dropped.
+        for value in 10..=20 {
+            sample_tx.send(vec![value as f32; 480]).unwrap();
+        }
+
+        let (ready_tx, ready_rx) = mpsc::channel();
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 1,
+                ready_tx: Some(ready_tx),
+            })
+            .unwrap();
+        sample_tx.send(vec![99.0; 480]).unwrap();
+        let ready_ack = ready_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("capture-ready acknowledgement should arrive");
+        assert_eq!(ready_ack.start_id, 1);
+        assert_eq!(ready_ack.status, StartReadyStatus::CaptureReady);
+
+        let (stop_tx, stop_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_tx)).unwrap();
+        sample_tx.send(Vec::new()).unwrap();
+        let samples = stop_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop should return captured samples");
+
+        let frame_values: Vec<f32> = samples
+            .chunks(480)
+            .filter_map(|chunk| chunk.first().copied())
+            .collect();
+        let expected_preroll: Vec<f32> = (12..=20).map(|value| value as f32).collect();
+        let has_expected_preroll_order = frame_values.windows(expected_preroll.len()).any(|window| {
+            window
+                .iter()
+                .zip(expected_preroll.iter())
+                .all(|(actual, expected)| (*actual - *expected).abs() < 1e-3)
+        });
+        assert!(
+            has_expected_preroll_order,
+            "pre-roll should retain only the newest frames in chronological order"
+        );
+        assert!(
+            samples.iter().any(|s| (*s - 99.0).abs() < 1e-3),
+            "speech frame after start must still be present"
+        );
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn dropped_ready_receiver_cancels_pending_start() {
+        let (sample_tx, cmd_tx, worker) = spawn_consumer();
+
+        // Buffer pre-roll so Start seeds processed samples, then verify cancellation clears them.
+        sample_tx.send(vec![0.25; 480]).unwrap();
+
+        let (ready_tx, ready_rx) = mpsc::channel();
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 1,
+                ready_tx: Some(ready_tx),
+            })
+            .unwrap();
+
+        // Simulate caller timeout/cancel by dropping the receiver before first recorded frame.
+        drop(ready_rx);
+        sample_tx.send(vec![0.5; 480]).unwrap();
+
+        let (stop_tx, stop_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_tx)).unwrap();
+        sample_tx.send(Vec::new()).unwrap();
+
+        let samples = stop_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop should return captured samples");
+        assert!(
+            samples.is_empty(),
+            "abandoned start must not keep captured audio"
+        );
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn newer_start_supersedes_older_pending_start() {
+        let (sample_tx, cmd_tx, worker) = spawn_consumer();
+        let (ready_a_tx, ready_a_rx) = mpsc::channel();
+        let (ready_b_tx, ready_b_rx) = mpsc::channel();
+
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 10,
+                ready_tx: Some(ready_a_tx),
+            })
+            .unwrap();
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 11,
+                ready_tx: Some(ready_b_tx),
+            })
+            .unwrap();
+
+        let superseded_ack = ready_a_rx
+            .recv_timeout(Duration::from_millis(250))
+            .expect("older pending start should be superseded explicitly");
+        assert_eq!(superseded_ack.start_id, 10);
+        assert_eq!(
+            superseded_ack.status,
+            StartReadyStatus::SupersededByNewStart
+        );
+
+        sample_tx.send(vec![0.75; 480]).unwrap();
+        let capture_ready_ack = ready_b_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("latest start should receive capture-ready acknowledgement");
+        assert_eq!(capture_ready_ack.start_id, 11);
+        assert_eq!(capture_ready_ack.status, StartReadyStatus::CaptureReady);
+
+        let (stop_tx, stop_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_tx)).unwrap();
+        sample_tx.send(Vec::new()).unwrap();
+        let samples = stop_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop should return captured samples");
+        assert!(
+            !samples.is_empty(),
+            "latest start should continue recording after superseding an older start"
+        );
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn stop_then_start_same_batch_preserves_fifo() {
+        let (sample_tx, cmd_tx, worker) = spawn_consumer();
+
+        let (ready_a_tx, ready_a_rx) = mpsc::channel();
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 100,
+                ready_tx: Some(ready_a_tx),
+            })
+            .unwrap();
+        sample_tx.send(vec![0.11; 480]).unwrap();
+        let ready_a_ack = ready_a_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("first start should become capture-ready");
+        assert_eq!(ready_a_ack.start_id, 100);
+        assert_eq!(ready_a_ack.status, StartReadyStatus::CaptureReady);
+
+        sample_tx.send(vec![0.22; 480]).unwrap();
+
+        let (stop_a_tx, stop_a_rx) = mpsc::channel();
+        let (ready_b_tx, ready_b_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_a_tx)).unwrap();
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 101,
+                ready_tx: Some(ready_b_tx),
+            })
+            .unwrap();
+
+        sample_tx.send(vec![0.33; 480]).unwrap();
+        let stop_a_samples = stop_a_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("older stop should complete before newer start is armed");
+        assert!(
+            stop_a_samples.iter().any(|s| (*s - 0.22).abs() < 1e-3),
+            "older stop window should preserve already-recorded audio"
+        );
+
+        sample_tx.send(vec![0.44; 480]).unwrap();
+        let ready_b_ack = ready_b_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("second start should become capture-ready");
+        assert_eq!(ready_b_ack.start_id, 101);
+        assert_eq!(ready_b_ack.status, StartReadyStatus::CaptureReady);
+
+        let (stop_b_tx, stop_b_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_b_tx)).unwrap();
+        sample_tx.send(Vec::new()).unwrap();
+        let stop_b_samples = stop_b_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second stop should return samples from the newer recording");
+        assert!(
+            stop_b_samples.iter().any(|s| (*s - 0.44).abs() < 1e-3),
+            "newer recording should capture post-restart audio"
+        );
+        assert!(
+            !stop_b_samples.iter().any(|s| (*s - 0.22).abs() < 1e-3),
+            "newer recording must not inherit old-window samples"
+        );
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn stop_then_start_does_not_clear_old_stop_window_incorrectly() {
+        let (sample_tx, cmd_tx, worker) = spawn_consumer();
+
+        let (ready_a_tx, ready_a_rx) = mpsc::channel();
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 200,
+                ready_tx: Some(ready_a_tx),
+            })
+            .unwrap();
+        sample_tx.send(vec![0.51; 480]).unwrap();
+        let ready_a_ack = ready_a_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("first start should become capture-ready");
+        assert_eq!(ready_a_ack.start_id, 200);
+        assert_eq!(ready_a_ack.status, StartReadyStatus::CaptureReady);
+
+        sample_tx.send(vec![0.61; 480]).unwrap();
+
+        let (stop_tx, stop_rx) = mpsc::channel();
+        let (ready_b_tx, _ready_b_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_tx)).unwrap();
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 201,
+                ready_tx: Some(ready_b_tx),
+            })
+            .unwrap();
+
+        sample_tx.send(vec![0.71; 480]).unwrap();
+        let stopped_samples = stop_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop should return the old recording window");
+        assert!(
+            stopped_samples.iter().any(|s| (*s - 0.61).abs() < 1e-3),
+            "old recording marker must survive stop->start same-batch sequencing"
+        );
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn start_then_stop_same_batch_still_captures_expected_current_frame_behavior() {
+        let (sample_tx, cmd_tx, worker) = spawn_consumer();
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (stop_tx, stop_rx) = mpsc::channel();
+
+        cmd_tx
+            .send(Cmd::Start {
+                start_id: 300,
+                ready_tx: Some(ready_tx),
+            })
+            .unwrap();
+        cmd_tx.send(Cmd::Stop(stop_tx)).unwrap();
+
+        sample_tx.send(vec![0.81; 480]).unwrap();
+
+        let ready_ack = ready_rx
+            .recv_timeout(Duration::from_millis(500))
+            .expect("start should be armed before packet processing");
+        assert_eq!(ready_ack.start_id, 300);
+        assert_eq!(ready_ack.status, StartReadyStatus::CaptureReady);
+
+        let samples = stop_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("stop should include current-frame samples");
+        assert!(
+            samples.iter().any(|s| (*s - 0.81).abs() < 1e-3),
+            "start->stop same batch should preserve start-before-frame semantics"
+        );
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn shutdown_exits_without_samples() {
+        let (sample_tx, cmd_tx, done_rx, worker) = spawn_consumer_with_done();
+
+        cmd_tx.send(Cmd::Shutdown).unwrap();
+        done_rx
+            .recv_timeout(Duration::from_millis(250))
+            .expect("shutdown must exit promptly even without audio samples");
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn stop_while_not_recording_returns_without_samples() {
+        let (sample_tx, cmd_tx, done_rx, worker) = spawn_consumer_with_done();
+
+        let (stop_tx, stop_rx) = mpsc::channel();
+        cmd_tx.send(Cmd::Stop(stop_tx)).unwrap();
+        let samples = stop_rx
+            .recv_timeout(Duration::from_millis(250))
+            .expect("stop should return quickly when not recording");
+        assert!(samples.is_empty(), "stop without recording should return no audio");
+
+        cmd_tx.send(Cmd::Shutdown).unwrap();
+        done_rx
+            .recv_timeout(Duration::from_millis(250))
+            .expect("shutdown must still exit promptly after stop");
+
+        drop(sample_tx);
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn stop_returns_error_when_command_channel_missing() {
+        let recorder = AudioRecorder::new().expect("recorder should construct");
+        let err = recorder
+            .stop()
+            .expect_err("stop should fail-fast when command channel is not available");
+        let io_err = err
+            .downcast_ref::<std::io::Error>()
+            .expect("stop error should be an io::Error");
+        assert_eq!(io_err.kind(), std::io::ErrorKind::NotConnected);
+    }
+
+    #[test]
+    fn begin_start_blocking_allows_wait_outside_external_mutex() {
+        let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>();
+        let recorder = AudioRecorder {
+            device: None,
+            cmd_tx: Some(cmd_tx),
+            worker_handle: None,
+            vad: None,
+            level_cb: None,
+            cached_config: None,
+            next_start_id: AtomicU64::new(1),
+        };
+        let recorder_mutex = Arc::new(Mutex::new(Some(recorder)));
+
+        // Simulate manager behavior: hold mutex only long enough to dispatch Start.
+        let start_wait = {
+            let guard = recorder_mutex.lock().unwrap();
+            guard
+                .as_ref()
+                .expect("recorder must exist")
+                .begin_start_blocking()
+                .expect("start dispatch should succeed")
+        };
+
+        // While wait is pending, external code should still acquire the same mutex.
+        let recorder_mutex_for_thread = Arc::clone(&recorder_mutex);
+        let wait_thread = std::thread::spawn(move || start_wait.wait(Duration::from_millis(50)));
+        let guard = recorder_mutex_for_thread
+            .lock()
+            .expect("external mutex acquisition should not block on capture-ready wait");
+        assert!(guard.is_some());
+        drop(guard);
+
+        let wait_result = wait_thread.join().unwrap();
+        assert!(matches!(
+            wait_result,
+            Err(RecorderStartError::CaptureReadyTimeout(timeout))
+            if timeout == Duration::from_millis(50)
+        ));
+
+        // Keep the receiver alive through the wait timeout.
+        drop(cmd_rx);
     }
 }

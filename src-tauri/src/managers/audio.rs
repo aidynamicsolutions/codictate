@@ -1,4 +1,6 @@
-use crate::audio_toolkit::audio::{list_input_devices, AudioRecorder};
+use crate::audio_toolkit::audio::{
+    list_input_devices, AudioRecorder, RecorderStartError, RecorderStartWait,
+};
 use crate::audio_toolkit::vad::SmoothedVad;
 use crate::audio_toolkit::SileroVad;
 use crate::helpers::clamshell;
@@ -6,11 +8,12 @@ use crate::overlay;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
 use anyhow::Result;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
-use tracing::{debug, error, info, warn};
 use tauri_plugin_notification::NotificationExt;
+use tracing::{debug, error, info, warn};
 
 fn set_mute(mute: bool) {
     // Expected behavior:
@@ -144,7 +147,14 @@ fn build_stopped_recording(
 #[derive(Clone, Debug)]
 pub enum RecordingState {
     Idle,
-    Preparing { binding_id: String },
+    Preparing {
+        binding_id: String,
+        prepare_token: PrepareToken,
+    },
+    CancellingPrepare {
+        binding_id: String,
+        prepare_token: PrepareToken,
+    },
     Recording { binding_id: String, session_id: String },
 }
 
@@ -152,6 +162,334 @@ pub enum RecordingState {
 pub enum MicrophoneMode {
     AlwaysOn,
     OnDemand,
+}
+
+#[derive(Clone, Debug)]
+pub struct RecordingStartSuccess {
+    pub capture_ready_latency: Duration,
+    pub active_device_name: Option<String>,
+}
+
+pub type PrepareToken = u64;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecordingStartOwner {
+    SelfOwned,
+    OtherOwned,
+}
+
+impl RecordingStartOwner {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RecordingStartOwner::SelfOwned => "self",
+            RecordingStartOwner::OtherOwned => "other",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StateMismatchKind {
+    PreparingForDifferentBinding { active_binding: String },
+    SupersededByNewPrepareToken {
+        active_prepare_token: PrepareToken,
+        requested_prepare_token: PrepareToken,
+    },
+    IdleDuringPrepare,
+    CancellingPrepare {
+        active_binding: String,
+        active_prepare_token: PrepareToken,
+    },
+    UnexpectedState { state: String },
+    IdleBeforeCommit,
+    StateChangedBeforeCommit { state: String },
+}
+
+impl StateMismatchKind {
+    fn details(&self) -> String {
+        match self {
+            StateMismatchKind::PreparingForDifferentBinding { active_binding } => {
+                format!("preparing_for_different_binding:{active_binding}")
+            }
+            StateMismatchKind::SupersededByNewPrepareToken {
+                active_prepare_token,
+                requested_prepare_token,
+            } => format!(
+                "prepare_token_superseded:active={active_prepare_token},requested={requested_prepare_token}"
+            ),
+            StateMismatchKind::IdleDuringPrepare => "state_idle_during_prepare".to_string(),
+            StateMismatchKind::CancellingPrepare {
+                active_binding,
+                active_prepare_token,
+            } => format!(
+                "state_cancelling_prepare:binding={active_binding},prepare_token={active_prepare_token}"
+            ),
+            StateMismatchKind::UnexpectedState { state } => format!("unexpected_state:{state}"),
+            StateMismatchKind::IdleBeforeCommit => "state_idle_before_recording_commit".to_string(),
+            StateMismatchKind::StateChangedBeforeCommit { state } => {
+                format!("state_changed_before_recording_commit:{state}")
+            }
+        }
+    }
+
+    fn owner(&self) -> RecordingStartOwner {
+        match self {
+            StateMismatchKind::IdleDuringPrepare
+            | StateMismatchKind::CancellingPrepare { .. }
+            | StateMismatchKind::IdleBeforeCommit => RecordingStartOwner::SelfOwned,
+            StateMismatchKind::PreparingForDifferentBinding { .. }
+            | StateMismatchKind::SupersededByNewPrepareToken { .. }
+            | StateMismatchKind::UnexpectedState { .. }
+            | StateMismatchKind::StateChangedBeforeCommit { .. } => RecordingStartOwner::OtherOwned,
+        }
+    }
+
+    fn should_cleanup_ui(&self) -> bool {
+        matches!(
+            self,
+            StateMismatchKind::IdleDuringPrepare
+                | StateMismatchKind::CancellingPrepare { .. }
+                | StateMismatchKind::IdleBeforeCommit
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RecordingStartFailure {
+    StateMismatch(StateMismatchKind),
+    StartAbandonedDueToSupersededState(String),
+    MaintenanceMode,
+    StreamOpenFailed(String),
+    RecorderUnavailable,
+    CaptureReadyTimeout(Duration),
+    StartCommandFailed(String),
+}
+
+impl RecordingStartFailure {
+    pub fn label(&self) -> &'static str {
+        match self {
+            RecordingStartFailure::StateMismatch(_) => "state_mismatch",
+            RecordingStartFailure::StartAbandonedDueToSupersededState(_) => {
+                "start_abandoned_superseded_state"
+            }
+            RecordingStartFailure::MaintenanceMode => "maintenance_mode",
+            RecordingStartFailure::StreamOpenFailed(_) => "stream_open_failed",
+            RecordingStartFailure::RecorderUnavailable => "recorder_unavailable",
+            RecordingStartFailure::CaptureReadyTimeout(_) => "capture_ready_timeout",
+            RecordingStartFailure::StartCommandFailed(_) => "start_command_failed",
+        }
+    }
+
+    pub fn details(&self) -> String {
+        match self {
+            RecordingStartFailure::StateMismatch(kind) => kind.details(),
+            RecordingStartFailure::StartAbandonedDueToSupersededState(detail) => detail.clone(),
+            RecordingStartFailure::MaintenanceMode => "blocked_by_maintenance_mode".to_string(),
+            RecordingStartFailure::StreamOpenFailed(detail) => detail.clone(),
+            RecordingStartFailure::RecorderUnavailable => "recorder_not_initialized".to_string(),
+            RecordingStartFailure::CaptureReadyTimeout(timeout) => {
+                format!("timeout_ms={}", timeout.as_millis())
+            }
+            RecordingStartFailure::StartCommandFailed(detail) => detail.clone(),
+        }
+    }
+
+    pub fn owner(&self) -> RecordingStartOwner {
+        match self {
+            RecordingStartFailure::StateMismatch(kind) => kind.owner(),
+            RecordingStartFailure::StartAbandonedDueToSupersededState(_) => {
+                RecordingStartOwner::OtherOwned
+            }
+            RecordingStartFailure::MaintenanceMode
+            | RecordingStartFailure::StreamOpenFailed(_)
+            | RecordingStartFailure::RecorderUnavailable
+            | RecordingStartFailure::CaptureReadyTimeout(_)
+            | RecordingStartFailure::StartCommandFailed(_) => RecordingStartOwner::SelfOwned,
+        }
+    }
+
+    pub fn should_cleanup_ui(&self) -> bool {
+        match self {
+            RecordingStartFailure::StateMismatch(kind) => kind.should_cleanup_ui(),
+            RecordingStartFailure::StartAbandonedDueToSupersededState(_) => false,
+            RecordingStartFailure::MaintenanceMode
+            | RecordingStartFailure::StreamOpenFailed(_)
+            | RecordingStartFailure::RecorderUnavailable
+            | RecordingStartFailure::CaptureReadyTimeout(_)
+            | RecordingStartFailure::StartCommandFailed(_) => true,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RecordingStartOutcome {
+    Started(RecordingStartSuccess),
+    Failed(RecordingStartFailure),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StartFailureCleanupAction {
+    ClearPreparingAndCloseStream,
+    CloseStream,
+    Noop,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StartCommitMismatchOwner {
+    SelfCancelled,
+    SupersededByOther,
+}
+
+impl StartCommitMismatchOwner {
+    fn as_str(self) -> &'static str {
+        match self {
+            StartCommitMismatchOwner::SelfCancelled => "self",
+            StartCommitMismatchOwner::SupersededByOther => "other",
+        }
+    }
+}
+
+fn classify_start_failure_cleanup(
+    state: &RecordingState,
+    binding_id: &str,
+    prepare_token: PrepareToken,
+) -> StartFailureCleanupAction {
+    match state {
+        RecordingState::Preparing {
+            binding_id: active_binding,
+            prepare_token: active_prepare_token,
+        } if active_binding == binding_id && *active_prepare_token == prepare_token => {
+            StartFailureCleanupAction::ClearPreparingAndCloseStream
+        }
+        RecordingState::Idle => StartFailureCleanupAction::CloseStream,
+        RecordingState::Preparing { .. }
+        | RecordingState::CancellingPrepare { .. }
+        | RecordingState::Recording { .. } => {
+            StartFailureCleanupAction::Noop
+        }
+    }
+}
+
+fn should_stop_stream_for_start_cleanup(
+    mode: &MicrophoneMode,
+    cleanup_action: StartFailureCleanupAction,
+) -> bool {
+    matches!(mode, MicrophoneMode::OnDemand)
+        && matches!(
+            cleanup_action,
+            StartFailureCleanupAction::ClearPreparingAndCloseStream
+                | StartFailureCleanupAction::CloseStream
+        )
+}
+
+fn map_recorder_start_error(
+    err: RecorderStartError,
+    cleanup_action: StartFailureCleanupAction,
+) -> RecordingStartFailure {
+    match err {
+        RecorderStartError::CaptureReadyTimeout(timeout) => {
+            RecordingStartFailure::CaptureReadyTimeout(timeout)
+        }
+        RecorderStartError::SupersededByNewStart => {
+            RecordingStartFailure::StartAbandonedDueToSupersededState(
+                "recorder_start_superseded_by_new_start".to_string(),
+            )
+        }
+        RecorderStartError::CommandChannelUnavailable => RecordingStartFailure::RecorderUnavailable,
+        RecorderStartError::CommandSendFailed | RecorderStartError::WorkerDisconnected => {
+            if cleanup_action == StartFailureCleanupAction::Noop {
+                RecordingStartFailure::StartAbandonedDueToSupersededState(err.to_string())
+            } else {
+                RecordingStartFailure::StartCommandFailed(err.to_string())
+            }
+        }
+        RecorderStartError::UnexpectedAcknowledgement { .. } => {
+            RecordingStartFailure::StartCommandFailed(err.to_string())
+        }
+    }
+}
+
+fn classify_start_commit_mismatch(
+    state: &RecordingState,
+    binding_id: &str,
+    prepare_token: PrepareToken,
+) -> Option<(StateMismatchKind, StartCommitMismatchOwner)> {
+    match state {
+        RecordingState::Preparing {
+            binding_id: active_binding,
+            prepare_token: active_prepare_token,
+        } if active_binding == binding_id && *active_prepare_token == prepare_token => None,
+        RecordingState::Preparing {
+            binding_id: active_binding,
+            prepare_token: active_prepare_token,
+        } if active_binding == binding_id => Some((
+            StateMismatchKind::SupersededByNewPrepareToken {
+                active_prepare_token: *active_prepare_token,
+                requested_prepare_token: prepare_token,
+            },
+            StartCommitMismatchOwner::SupersededByOther,
+        )),
+        RecordingState::CancellingPrepare {
+            binding_id: active_binding,
+            prepare_token: active_prepare_token,
+        } => Some((
+            StateMismatchKind::CancellingPrepare {
+                active_binding: active_binding.clone(),
+                active_prepare_token: *active_prepare_token,
+            },
+            StartCommitMismatchOwner::SelfCancelled,
+        )),
+        RecordingState::Idle => Some((
+            StateMismatchKind::IdleBeforeCommit,
+            StartCommitMismatchOwner::SelfCancelled,
+        )),
+        other => Some((
+            StateMismatchKind::StateChangedBeforeCommit {
+                state: format!("{other:?}"),
+            },
+            StartCommitMismatchOwner::SupersededByOther,
+        )),
+    }
+}
+
+fn begin_prepare_cancellation(
+    state: &mut RecordingState,
+    binding_filter: Option<&str>,
+) -> Option<(String, PrepareToken)> {
+    match state {
+        RecordingState::Preparing {
+            binding_id,
+            prepare_token,
+        } => {
+            if binding_filter.is_some_and(|requested| requested != binding_id) {
+                return None;
+            }
+            let cancelled_binding = binding_id.clone();
+            let cancelled_token = *prepare_token;
+            *state = RecordingState::CancellingPrepare {
+                binding_id: cancelled_binding.clone(),
+                prepare_token: cancelled_token,
+            };
+            Some((cancelled_binding, cancelled_token))
+        }
+        _ => None,
+    }
+}
+
+fn finalize_prepare_cancellation(
+    state: &mut RecordingState,
+    binding_id: &str,
+    prepare_token: PrepareToken,
+) -> bool {
+    match state {
+        RecordingState::CancellingPrepare {
+            binding_id: active_binding,
+            prepare_token: active_token,
+        } if active_binding == binding_id && *active_token == prepare_token => {
+            *state = RecordingState::Idle;
+            true
+        }
+        _ => false,
+    }
 }
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -186,6 +524,8 @@ pub struct AudioRecordingManager {
     mode: Arc<Mutex<MicrophoneMode>>,
     app_handle: tauri::AppHandle,
 
+    // Locking invariant: manager mutexes should be acquired one-at-a-time.
+    // Do not nest these locks; release before blocking or slow operations.
     recorder: Arc<Mutex<Option<AudioRecorder>>>,
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
@@ -203,6 +543,7 @@ pub struct AudioRecordingManager {
     /// Short-lived cache for input device enumeration to speed first trigger after startup.
     device_cache:
         Arc<Mutex<Option<(Instant, Vec<crate::audio_toolkit::audio::CpalDeviceInfo>)>>>,
+    next_prepare_token: Arc<AtomicU64>,
 }
 
 impl AudioRecordingManager {
@@ -230,6 +571,7 @@ impl AudioRecordingManager {
             timer_stop_tx: Arc::new(Mutex::new(None)),
             current_device_name: Arc::new(Mutex::new(None)),
             device_cache: Arc::new(Mutex::new(None)),
+            next_prepare_token: Arc::new(AtomicU64::new(1)),
         };
 
         // Always-on?  Open immediately.
@@ -1049,94 +1391,373 @@ impl AudioRecordingManager {
 
     /* ---------- recording --------------------------------------------------- */
 
-    pub fn prepare_recording(&self, binding_id: &str) -> bool {
+    pub fn prepare_recording(&self, binding_id: &str) -> Option<PrepareToken> {
         let mut state = self.state.lock().unwrap();
         if let RecordingState::Idle = *state {
+            let prepare_token = self.next_prepare_token.fetch_add(1, Ordering::Relaxed);
             *state = RecordingState::Preparing {
                 binding_id: binding_id.to_string(),
+                prepare_token,
             };
-            debug!("Prepared recording for binding {}", binding_id);
-            true
+            debug!(
+                "Prepared recording for binding {} (prepare_token={})",
+                binding_id, prepare_token
+            );
+            Some(prepare_token)
         } else {
             debug!("Cannot prepare recording: state is not Idle (current: {:?})", *state);
-            false
+            None
         }
     }
 
-    pub fn try_start_recording(&self, binding_id: &str, session_id: &str) -> bool {
+    fn cancel_preparing_recording(&self, binding_filter: Option<&str>) -> bool {
+        let cancellation = {
+            let mut state = self.state.lock().unwrap();
+            begin_prepare_cancellation(&mut state, binding_filter)
+        };
+
+        let Some((binding_id, prepare_token)) = cancellation else {
+            return false;
+        };
+
+        // Cleanup runs after publishing a non-Idle transient state so new prepares
+        // cannot race between cancellation intent and stream teardown.
+        if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+            self.stop_microphone_stream();
+        }
+
+        let finalized = {
+            let mut state = self.state.lock().unwrap();
+            finalize_prepare_cancellation(&mut state, &binding_id, prepare_token)
+        };
+
+        if !finalized {
+            warn!(
+                "Prepare cancellation finalization skipped due to state ownership change (binding='{}', token={})",
+                binding_id, prepare_token
+            );
+        }
+
+        true
+    }
+
+    pub fn try_start_recording(
+        &self,
+        binding_id: &str,
+        session_id: &str,
+        prepare_token: PrepareToken,
+    ) -> RecordingStartOutcome {
         // Note: Microphone permission is checked in TranscribeAction::start() before
         // the overlay is shown. This allows for better UX - we can show a modal dialog
         // instead of the overlay when permission is denied.
-        
-        let mut state = self.state.lock().unwrap();
 
-        // Validate that we are in the expected Preparing state for this binding
-        match *state {
-            RecordingState::Preparing { binding_id: ref active_binding, .. } if active_binding == binding_id => {
-                // Good to go - state is Preparing for the same binding we're trying to start
-            },
-            RecordingState::Preparing { binding_id: ref active_binding, .. } => {
-                // Preparing for a DIFFERENT binding - abort this stale request
-                debug!("try_start_recording aborted: preparing for different binding '{}', not '{}'", 
-                       active_binding, binding_id);
-                return false;
-            },
-            // If state is Idle, user called stop before start completed (quick release).
-            // Abort the recording - don't start a new orphaned recording session.
-            RecordingState::Idle => {
-                debug!("try_start_recording aborted: state is Idle (stop was called during prepare)");
-                return false;
-            },
-            // If state implies we are already recording, abort
-            ref other => {
-                error!("try_start_recording aborted: state changed to {:?}", other);
-                return false;
+        // Phase A: validate precondition quickly under lock, then release.
+        {
+            let state = self.state.lock().unwrap();
+            match &*state {
+                RecordingState::Preparing {
+                    binding_id: active_binding,
+                    prepare_token: active_prepare_token,
+                } if active_binding == binding_id && *active_prepare_token == prepare_token => {
+                    // Expected state.
+                }
+                RecordingState::Preparing {
+                    binding_id: active_binding,
+                    prepare_token: active_prepare_token,
+                } if active_binding == binding_id => {
+                    debug!(
+                        "try_start_recording aborted: prepare token superseded (active={}, requested={})",
+                        active_prepare_token, prepare_token
+                    );
+                    return RecordingStartOutcome::Failed(RecordingStartFailure::StateMismatch(
+                        StateMismatchKind::SupersededByNewPrepareToken {
+                            active_prepare_token: *active_prepare_token,
+                            requested_prepare_token: prepare_token,
+                        },
+                    ));
+                }
+                RecordingState::Preparing {
+                    binding_id: active_binding,
+                    ..
+                } => {
+                    debug!(
+                        "try_start_recording aborted: preparing for different binding '{}', not '{}'",
+                        active_binding, binding_id
+                    );
+                    return RecordingStartOutcome::Failed(RecordingStartFailure::StateMismatch(
+                        StateMismatchKind::PreparingForDifferentBinding {
+                            active_binding: active_binding.clone(),
+                        },
+                    ));
+                }
+                RecordingState::Idle => {
+                    debug!(
+                        "try_start_recording aborted: state is Idle (stop was called during prepare)"
+                    );
+                    return RecordingStartOutcome::Failed(RecordingStartFailure::StateMismatch(
+                        StateMismatchKind::IdleDuringPrepare,
+                    ));
+                }
+                RecordingState::CancellingPrepare {
+                    binding_id: active_binding,
+                    prepare_token: active_prepare_token,
+                } => {
+                    debug!(
+                        "try_start_recording aborted: prepare cancellation in progress for binding '{}' (token={})",
+                        active_binding, active_prepare_token
+                    );
+                    return RecordingStartOutcome::Failed(RecordingStartFailure::StateMismatch(
+                        StateMismatchKind::CancellingPrepare {
+                            active_binding: active_binding.clone(),
+                            active_prepare_token: *active_prepare_token,
+                        },
+                    ));
+                }
+                other => {
+                    error!("try_start_recording aborted: state changed to {:?}", other);
+                    return RecordingStartOutcome::Failed(RecordingStartFailure::StateMismatch(
+                        StateMismatchKind::UnexpectedState {
+                            state: format!("{other:?}"),
+                        },
+                    ));
+                }
             }
         }
 
+        let cleanup_failed_start = || -> StartFailureCleanupAction {
+            let cleanup_action = {
+                let mut state = self.state.lock().unwrap();
+                let action = classify_start_failure_cleanup(&state, binding_id, prepare_token);
+                if matches!(
+                    action,
+                    StartFailureCleanupAction::ClearPreparingAndCloseStream
+                ) {
+                    *state = RecordingState::Idle;
+                }
+                action
+            };
+
+            let should_close_stream = {
+                let mode = self.mode.lock().unwrap();
+                should_stop_stream_for_start_cleanup(&mode, cleanup_action)
+            };
+            if should_close_stream {
+                self.stop_microphone_stream();
+            }
+            cleanup_action
+        };
+
+        // Phase B: blocking/slow operations outside the state lock.
         if !crate::backup_restore::ensure_transcription_start_allowed(&self.app_handle) {
             warn!(
                 "Blocking recording start for '{}' because backup/restore maintenance mode is active",
                 binding_id
             );
-            *state = RecordingState::Idle;
-            return false;
+            let _ = cleanup_failed_start();
+            return RecordingStartOutcome::Failed(RecordingStartFailure::MaintenanceMode);
         }
 
-        // Ensure microphone is open in on-demand mode
         if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
             if let Err(e) = self.start_microphone_stream() {
                 error!("Failed to open microphone stream: {e}");
-                // If we failed, reset state to Idle so next attempt can work
-                *state = RecordingState::Idle;
-                return false;
+                let _ = cleanup_failed_start();
+                return RecordingStartOutcome::Failed(RecordingStartFailure::StreamOpenFailed(
+                    e.to_string(),
+                ));
             }
         }
 
-        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-            if rec.start().is_ok() {
-                *self.is_recording.lock().unwrap() = true;
-                *state = RecordingState::Recording {
-                    binding_id: binding_id.to_string(),
-                    session_id: session_id.to_string(),
+        let is_stream_open = *self.is_open.lock().unwrap();
+        if is_stream_open {
+            let active_device_name = self.current_device_name.lock().unwrap().clone();
+            info!(
+                session = session_id,
+                binding = binding_id,
+                device = active_device_name
+                    .clone()
+                    .unwrap_or_else(|| "unknown".to_string()),
+                event_code = "stream_open_ready",
+                "Microphone stream ready before capture-ready wait"
+            );
+        } else {
+            warn!(
+                session = session_id,
+                binding = binding_id,
+                event_code = "stream_not_yet_open",
+                owner = "self",
+                "Microphone stream not open yet; continuing to wait for capture-ready"
+            );
+        }
+
+        const CAPTURE_READY_TIMEOUT: Duration = Duration::from_millis(500);
+
+        let start_wait: Option<Result<RecorderStartWait, RecorderStartError>> = {
+            let recorder_guard = self.recorder.lock().unwrap();
+            recorder_guard
+                .as_ref()
+                .map(|rec| rec.begin_start_blocking())
+        };
+        let Some(start_wait) = start_wait else {
+            error!("Recorder not available");
+            let _ = cleanup_failed_start();
+            return RecordingStartOutcome::Failed(RecordingStartFailure::RecorderUnavailable);
+        };
+        let capture_ready_wait_started = Instant::now();
+        let start_result = start_wait.and_then(|wait| wait.wait(CAPTURE_READY_TIMEOUT));
+
+        match start_result {
+            Ok(()) => {
+                let capture_ready_latency = capture_ready_wait_started.elapsed();
+                let active_device_name = self.current_device_name.lock().unwrap().clone();
+
+                // Phase C: commit start atomically under lock.
+                let commit_mismatch = {
+                    let mut state = self.state.lock().unwrap();
+                    match classify_start_commit_mismatch(&state, binding_id, prepare_token) {
+                        None => {
+                            *self.is_recording.lock().unwrap() = true;
+                            *state = RecordingState::Recording {
+                                binding_id: binding_id.to_string(),
+                                session_id: session_id.to_string(),
+                            };
+                            None
+                        }
+                        Some(mismatch) => Some(mismatch),
+                    }
                 };
-                
+
+                if let Some((mismatch_kind, owner)) = commit_mismatch {
+                    let detail = mismatch_kind.details();
+                    let owner_label = owner.as_str();
+                    debug_assert_eq!(owner_label, mismatch_kind.owner().as_str());
+                    warn!(
+                        session = session_id,
+                        binding = binding_id,
+                        owner = owner_label,
+                        event_code = "recording_start_failed",
+                        detail = detail,
+                        "Recording start acknowledged but state no longer allows commit; cancelling start"
+                    );
+
+                    if owner == StartCommitMismatchOwner::SelfCancelled {
+                        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                            if let Err(err) = rec.stop() {
+                                let is_channel_unavailable = err
+                                    .downcast_ref::<std::io::Error>()
+                                    .is_some_and(|io_err| {
+                                        io_err.kind() == std::io::ErrorKind::NotConnected
+                                    });
+                                if is_channel_unavailable {
+                                    debug!(
+                                        session = session_id,
+                                        binding = binding_id,
+                                        "Recorder stop skipped during self-cancel cleanup: command channel unavailable"
+                                    );
+                                } else {
+                                    warn!(
+                                        session = session_id,
+                                        binding = binding_id,
+                                        error = err.to_string(),
+                                        "Recorder stop failed during self-cancel cleanup"
+                                    );
+                                }
+                            }
+                        }
+                        let should_close_stream = {
+                            let mode = self.mode.lock().unwrap();
+                            should_stop_stream_for_start_cleanup(
+                                &mode,
+                                StartFailureCleanupAction::CloseStream,
+                            )
+                        };
+                        if should_close_stream {
+                            self.stop_microphone_stream();
+                        }
+                        return RecordingStartOutcome::Failed(RecordingStartFailure::StateMismatch(
+                            mismatch_kind,
+                        ));
+                    }
+
+                    return RecordingStartOutcome::Failed(
+                        RecordingStartFailure::StartAbandonedDueToSupersededState(detail),
+                    );
+                }
+
                 // Start recording timer
                 let start_time = Instant::now();
                 *self.recording_start_time.lock().unwrap() = Some(start_time);
                 self.start_recording_timer(binding_id.to_string());
-                
+
                 // Mark that we've successfully recorded (for first-trigger detection)
                 self.mark_recording_started();
-                
-                debug!(session = session_id, "Recording started for binding {binding_id}");
-                return true;
+
+                info!(
+                    session = session_id,
+                    binding = binding_id,
+                    latency_ms = capture_ready_latency.as_millis(),
+                    device = active_device_name.clone().unwrap_or_else(|| "unknown".to_string()),
+                    event_code = "capture_ready_ack",
+                    "Recording capture-ready acknowledgement received"
+                );
+
+                RecordingStartOutcome::Started(RecordingStartSuccess {
+                    capture_ready_latency,
+                    active_device_name,
+                })
+            }
+            Err(err) => {
+                let cleanup_action = cleanup_failed_start();
+                let failure = map_recorder_start_error(err, cleanup_action);
+
+                match &failure {
+                    RecordingStartFailure::CaptureReadyTimeout(timeout) => {
+                        error!(
+                            session = session_id,
+                            binding = binding_id,
+                            timeout_ms = timeout.as_millis(),
+                            event_code = "recording_start_failed",
+                            "Capture-ready acknowledgement timed out"
+                        );
+                    }
+                    RecordingStartFailure::RecorderUnavailable => {
+                        error!(
+                            session = session_id,
+                            binding = binding_id,
+                            event_code = "recording_start_failed",
+                            "Recorder command channel unavailable before capture-ready"
+                        );
+                    }
+                    RecordingStartFailure::StartCommandFailed(detail) => {
+                        error!(
+                            session = session_id,
+                            binding = binding_id,
+                            error = detail,
+                            event_code = "recording_start_failed",
+                            "Recorder start command failed before capture-ready"
+                        );
+                    }
+                    RecordingStartFailure::StartAbandonedDueToSupersededState(detail) => {
+                        warn!(
+                            session = session_id,
+                            binding = binding_id,
+                            owner = failure.owner().as_str(),
+                            detail = detail,
+                            event_code = "recording_start_failed",
+                            "Recorder start attempt superseded by a newer start request"
+                        );
+                    }
+                    RecordingStartFailure::StateMismatch(_)
+                    | RecordingStartFailure::MaintenanceMode
+                    | RecordingStartFailure::StreamOpenFailed(_) => {
+                        unreachable!(
+                            "Typed recorder start errors only map to timeout/superseded/recorder/start-command failures"
+                        );
+                    }
+                }
+
+                RecordingStartOutcome::Failed(failure)
             }
         }
-        // If we got here, something failed. Reset state.
-        error!("Recorder not available or start failed");
-        *state = RecordingState::Idle;
-        false
     }
     
     /// Start a timer thread that emits recording time updates every second
@@ -1260,18 +1881,14 @@ impl AudioRecordingManager {
     }
 
     pub fn stop_recording(&self, binding_id: &str) -> Option<StoppedRecording> {
+        if self.cancel_preparing_recording(Some(binding_id)) {
+            debug!("stop_recording called while Preparing. Cancelling start.");
+            return None;
+        }
+
         let mut state = self.state.lock().unwrap();
 
         match *state {
-            RecordingState::Preparing {
-                binding_id: ref active,
-                ..
-            } if active == binding_id => {
-                // Race condition handled: User stopped before start completed!
-                debug!("stop_recording called while Preparing. Cancelling start.");
-                *state = RecordingState::Idle;
-                return None;
-            }
             RecordingState::Recording {
                 binding_id: ref active,
                 session_id: _,
@@ -1340,6 +1957,7 @@ impl AudioRecordingManager {
         match &*self.state.lock().unwrap() {
             RecordingState::Recording { binding_id, .. } => Some(binding_id.clone()),
             RecordingState::Preparing { binding_id, .. } => Some(binding_id.clone()),
+            RecordingState::CancellingPrepare { binding_id, .. } => Some(binding_id.clone()),
             RecordingState::Idle => None,
         }
     }
@@ -1348,7 +1966,9 @@ impl AudioRecordingManager {
     pub fn get_current_session_id(&self) -> Option<String> {
         match &*self.state.lock().unwrap() {
             RecordingState::Recording { session_id, .. } => Some(session_id.clone()),
-            RecordingState::Idle | RecordingState::Preparing { .. } => None,
+            RecordingState::Idle
+            | RecordingState::Preparing { .. }
+            | RecordingState::CancellingPrepare { .. } => None,
         }
     }
 
@@ -1357,13 +1977,14 @@ impl AudioRecordingManager {
 
     /// Cancel any ongoing recording without returning audio samples
     pub fn cancel_recording(&self) {
+        if self.cancel_preparing_recording(None) {
+            debug!("Cancelled recording (while preparing)");
+            return;
+        }
+
         let mut state = self.state.lock().unwrap();
 
         match *state {
-            RecordingState::Preparing { .. } => {
-                *state = RecordingState::Idle;
-                debug!("Cancelled recording (while preparing)");
-            }
             RecordingState::Recording { .. } => {
                 *state = RecordingState::Idle;
                 drop(state);
@@ -1382,14 +2003,24 @@ impl AudioRecordingManager {
                     self.stop_microphone_stream();
                 }
             }
-            RecordingState::Idle => {}
+            RecordingState::Idle
+            | RecordingState::Preparing { .. }
+            | RecordingState::CancellingPrepare { .. } => {}
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{build_stopped_recording, WHISPER_SAMPLE_RATE};
+    use super::{
+        begin_prepare_cancellation, build_stopped_recording, classify_start_commit_mismatch,
+        classify_start_failure_cleanup, finalize_prepare_cancellation, map_recorder_start_error,
+        should_stop_stream_for_start_cleanup, MicrophoneMode, PrepareToken, RecordingStartFailure, RecordingState,
+        StateMismatchKind,
+        StartCommitMismatchOwner, StartFailureCleanupAction, WHISPER_SAMPLE_RATE,
+    };
+    use crate::audio_toolkit::audio::RecorderStartError;
+    use std::time::Duration;
 
     #[test]
     fn short_clip_padding_does_not_change_duration_fields() {
@@ -1408,5 +2039,320 @@ mod tests {
 
         assert_eq!(stopped.speech_duration_ms, 400);
         assert_eq!(stopped.recording_duration_ms, 400);
+    }
+
+    #[test]
+    fn cleanup_classification_clears_matching_preparing_state() {
+        let prepare_token: PrepareToken = 10;
+        let state = RecordingState::Preparing {
+            binding_id: "transcribe".to_string(),
+            prepare_token,
+        };
+        let action = classify_start_failure_cleanup(&state, "transcribe", prepare_token);
+        assert_eq!(
+            action,
+            StartFailureCleanupAction::ClearPreparingAndCloseStream
+        );
+    }
+
+    #[test]
+    fn cleanup_classification_closes_stream_when_state_is_idle() {
+        let action = classify_start_failure_cleanup(&RecordingState::Idle, "transcribe", 10);
+        assert_eq!(action, StartFailureCleanupAction::CloseStream);
+    }
+
+    #[test]
+    fn cleanup_stream_policy_on_demand_allows_stream_teardown_actions() {
+        assert!(should_stop_stream_for_start_cleanup(
+            &MicrophoneMode::OnDemand,
+            StartFailureCleanupAction::ClearPreparingAndCloseStream
+        ));
+        assert!(should_stop_stream_for_start_cleanup(
+            &MicrophoneMode::OnDemand,
+            StartFailureCleanupAction::CloseStream
+        ));
+        assert!(!should_stop_stream_for_start_cleanup(
+            &MicrophoneMode::OnDemand,
+            StartFailureCleanupAction::Noop
+        ));
+    }
+
+    #[test]
+    fn cleanup_stream_policy_always_on_blocks_stream_teardown_actions() {
+        assert!(!should_stop_stream_for_start_cleanup(
+            &MicrophoneMode::AlwaysOn,
+            StartFailureCleanupAction::ClearPreparingAndCloseStream
+        ));
+        assert!(!should_stop_stream_for_start_cleanup(
+            &MicrophoneMode::AlwaysOn,
+            StartFailureCleanupAction::CloseStream
+        ));
+        assert!(!should_stop_stream_for_start_cleanup(
+            &MicrophoneMode::AlwaysOn,
+            StartFailureCleanupAction::Noop
+        ));
+    }
+
+    #[test]
+    fn cleanup_classification_skips_when_other_work_is_active() {
+        let preparing_other = RecordingState::Preparing {
+            binding_id: "transcribe_handsfree".to_string(),
+            prepare_token: 2,
+        };
+        let cancelling_other = RecordingState::CancellingPrepare {
+            binding_id: "transcribe_handsfree".to_string(),
+            prepare_token: 2,
+        };
+        let recording_other = RecordingState::Recording {
+            binding_id: "transcribe_handsfree".to_string(),
+            session_id: "abc12345".to_string(),
+        };
+        assert_eq!(
+            classify_start_failure_cleanup(&preparing_other, "transcribe", 1),
+            StartFailureCleanupAction::Noop
+        );
+        assert_eq!(
+            classify_start_failure_cleanup(&cancelling_other, "transcribe", 1),
+            StartFailureCleanupAction::Noop
+        );
+        assert_eq!(
+            classify_start_failure_cleanup(&recording_other, "transcribe", 1),
+            StartFailureCleanupAction::Noop
+        );
+    }
+
+    #[test]
+    fn idle_mismatch_performs_self_cleanup() {
+        let mismatch = classify_start_commit_mismatch(&RecordingState::Idle, "transcribe", 1)
+            .expect("idle state should produce self-cancelled mismatch");
+        assert_eq!(
+            mismatch,
+            (
+                StateMismatchKind::IdleBeforeCommit,
+                StartCommitMismatchOwner::SelfCancelled,
+            )
+        );
+    }
+
+    #[test]
+    fn commit_mismatch_with_other_owner_is_non_destructive() {
+        let mismatch = classify_start_commit_mismatch(
+            &RecordingState::Recording {
+                binding_id: "transcribe_handsfree".to_string(),
+                session_id: "abc12345".to_string(),
+            },
+            "transcribe",
+            10,
+        )
+        .expect("different owner state should produce superseded mismatch");
+        assert_eq!(mismatch.1, StartCommitMismatchOwner::SupersededByOther);
+        match mismatch.0 {
+            StateMismatchKind::StateChangedBeforeCommit { state } => {
+                assert!(state.contains("Recording"));
+            }
+            other => panic!("unexpected mismatch kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cleanup_classification_is_noop_when_same_binding_has_newer_prepare_token() {
+        let state = RecordingState::Preparing {
+            binding_id: "transcribe".to_string(),
+            prepare_token: 11,
+        };
+        assert_eq!(
+            classify_start_failure_cleanup(&state, "transcribe", 10),
+            StartFailureCleanupAction::Noop
+        );
+    }
+
+    #[test]
+    fn commit_mismatch_with_same_binding_and_different_token_is_other_owned() {
+        let mismatch = classify_start_commit_mismatch(
+            &RecordingState::Preparing {
+                binding_id: "transcribe".to_string(),
+                prepare_token: 11,
+            },
+            "transcribe",
+            10,
+        )
+        .expect("different token must be treated as superseded");
+        assert_eq!(mismatch.1, StartCommitMismatchOwner::SupersededByOther);
+        assert_eq!(
+            mismatch.0,
+            StateMismatchKind::SupersededByNewPrepareToken {
+                active_prepare_token: 11,
+                requested_prepare_token: 10,
+            }
+        );
+    }
+
+    #[test]
+    fn recorder_start_error_mapping_preserves_timeout_variant() {
+        let failure = map_recorder_start_error(
+            RecorderStartError::CaptureReadyTimeout(Duration::from_millis(500)),
+            StartFailureCleanupAction::ClearPreparingAndCloseStream,
+        );
+        assert_eq!(
+            failure,
+            RecordingStartFailure::CaptureReadyTimeout(Duration::from_millis(500))
+        );
+    }
+
+    #[test]
+    fn recorder_start_error_mapping_treats_unavailable_channel_as_recorder_unavailable() {
+        let failure = map_recorder_start_error(
+            RecorderStartError::CommandChannelUnavailable,
+            StartFailureCleanupAction::Noop,
+        );
+        assert_eq!(failure, RecordingStartFailure::RecorderUnavailable);
+    }
+
+    #[test]
+    fn recorder_start_error_mapping_treats_superseded_start_as_abandoned() {
+        let failure = map_recorder_start_error(
+            RecorderStartError::SupersededByNewStart,
+            StartFailureCleanupAction::ClearPreparingAndCloseStream,
+        );
+        assert_eq!(
+            failure,
+            RecordingStartFailure::StartAbandonedDueToSupersededState(
+                "recorder_start_superseded_by_new_start".to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn recorder_start_error_mapping_uses_start_command_failed_for_self_owned_worker_errors() {
+        let failure = map_recorder_start_error(
+            RecorderStartError::WorkerDisconnected,
+            StartFailureCleanupAction::CloseStream,
+        );
+        match failure {
+            RecordingStartFailure::StartCommandFailed(detail) => {
+                assert!(detail.contains("disconnected"));
+            }
+            other => panic!("unexpected mapping for worker error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recorder_start_error_mapping_treats_worker_disconnect_as_abandoned_when_superseded() {
+        let failure = map_recorder_start_error(
+            RecorderStartError::WorkerDisconnected,
+            StartFailureCleanupAction::Noop,
+        );
+        match failure {
+            RecordingStartFailure::StartAbandonedDueToSupersededState(detail) => {
+                assert!(detail.contains("disconnected"));
+            }
+            other => panic!("unexpected mapping for superseded worker disconnect: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recorder_start_error_mapping_treats_send_failure_as_abandoned_when_superseded() {
+        let failure = map_recorder_start_error(
+            RecorderStartError::CommandSendFailed,
+            StartFailureCleanupAction::Noop,
+        );
+        match failure {
+            RecordingStartFailure::StartAbandonedDueToSupersededState(detail) => {
+                assert!(detail.contains("Failed to send start command"));
+            }
+            other => panic!("unexpected mapping for superseded send failure: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn commit_mismatch_in_cancelling_prepare_is_self_owned() {
+        let mismatch = classify_start_commit_mismatch(
+            &RecordingState::CancellingPrepare {
+                binding_id: "transcribe".to_string(),
+                prepare_token: 11,
+            },
+            "transcribe",
+            10,
+        )
+        .expect("cancelling state must reject stale commit as self-cancelled");
+        assert_eq!(mismatch.1, StartCommitMismatchOwner::SelfCancelled);
+        assert_eq!(
+            mismatch.0,
+            StateMismatchKind::CancellingPrepare {
+                active_binding: "transcribe".to_string(),
+                active_prepare_token: 11,
+            }
+        );
+    }
+
+    #[test]
+    fn begin_prepare_cancellation_moves_state_to_transient_and_finalize_returns_idle() {
+        let mut state = RecordingState::Preparing {
+            binding_id: "transcribe".to_string(),
+            prepare_token: 42,
+        };
+
+        let cancelled = begin_prepare_cancellation(&mut state, Some("transcribe"))
+            .expect("matching prepare should enter cancellation state");
+        assert_eq!(cancelled, ("transcribe".to_string(), 42));
+        assert!(matches!(
+            state,
+            RecordingState::CancellingPrepare {
+                ref binding_id,
+                prepare_token: 42,
+            } if binding_id == "transcribe"
+        ));
+
+        assert!(finalize_prepare_cancellation(&mut state, "transcribe", 42));
+        assert!(matches!(state, RecordingState::Idle));
+    }
+
+    #[test]
+    fn begin_prepare_cancellation_respects_binding_filter_and_blocks_reentry() {
+        let mut state = RecordingState::Preparing {
+            binding_id: "transcribe_handsfree".to_string(),
+            prepare_token: 9,
+        };
+
+        assert_eq!(
+            begin_prepare_cancellation(&mut state, Some("transcribe")),
+            None,
+            "different binding must not be cancelled"
+        );
+        assert_eq!(
+            begin_prepare_cancellation(&mut state, Some("transcribe_handsfree")),
+            Some(("transcribe_handsfree".to_string(), 9))
+        );
+        assert_eq!(
+            begin_prepare_cancellation(&mut state, Some("transcribe_handsfree")),
+            None,
+            "cancellation is one-way until finalized"
+        );
+    }
+
+    #[test]
+    fn superseded_start_then_cancelled_new_prepare_never_reverts_to_new_owner() {
+        let mut state = RecordingState::Preparing {
+            binding_id: "transcribe".to_string(),
+            prepare_token: 11,
+        };
+
+        let stale_commit = classify_start_commit_mismatch(&state, "transcribe", 10)
+            .expect("older token must be treated as superseded");
+        assert_eq!(stale_commit.1, StartCommitMismatchOwner::SupersededByOther);
+
+        let cancelled = begin_prepare_cancellation(&mut state, Some("transcribe"))
+            .expect("stop during preparing should enter cancellation state");
+        assert_eq!(cancelled.1, 11);
+
+        let stale_commit_during_cancel = classify_start_commit_mismatch(&state, "transcribe", 10)
+            .expect("stale commit must still be rejected during cancellation");
+        assert_eq!(
+            stale_commit_during_cancel.1,
+            StartCommitMismatchOwner::SelfCancelled
+        );
+
+        assert!(finalize_prepare_cancellation(&mut state, "transcribe", 11));
+        assert!(matches!(state, RecordingState::Idle));
     }
 }

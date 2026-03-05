@@ -70,9 +70,13 @@ To ensure the overlay appears **instantly (0ms delay)** when the shortcut is pre
 *   **Solution**: The `NSPanel` is created with `.visible(true)` in the builder. This forces the OS to treat the window as active from birth, even though it is visually transparent.
 
 #### 2. Audio Stream Consistency
-*   **Wait for Ready**: `actions.rs` calls `try_start_recording` (blocking ~100ms) *before* showing the overlay.
-*   **Result**: This guarantees that if the user sees the "Recording" UI, the microphone stream is definitively active and capturing audio. The latency is minimal thanks to startup pre-warming.
-*   **Bluetooth**: For Bluetooth devices, a "Starting microphone..." state is shown during the longer wakeup phase.
+*   **Wait for Ready**: `actions.rs` calls `try_start_recording` and waits for capture-ready acknowledgement *before* showing the recording overlay.
+*   **Result**: If the user sees the "Recording" UI, the stream is definitively active. Typical latency is ~100-200ms with pre-warming. Start can fail in two windows: stream-open/data-flow startup (up to ~3s `open()` timeout) and capture-ready acknowledgement (500ms timeout after start command).
+*   **Connecting Feedback**: A "Starting microphone..." state is shown immediately for known Bluetooth devices, and shown for other devices only when startup exceeds a 120ms threshold.
+*   **Robust Cleanup**: commit-mismatch cleanup is ownership-aware (`owner=self|other`) via per-attempt `prepare_token` tracking, and tray/overlay cleanup is owner-gated so stale starts (including same-binding re-triggers) never stop or visually clobber a newer active recording.
+*   **Serialized Prepare Cancellation**: stopping during `Preparing` now transitions through a transient `CancellingPrepare` state before returning to `Idle`, and on-demand stream teardown happens inside that serialized window so new prepare attempts cannot race in before cleanup finishes.
+*   **Supersession Semantics**: superseded pending starts are reported as cancellation-class outcomes (`SupersededByNewStart` / `StartAbandonedDueToSupersededState`), not recorder-worker failures.
+*   **Silent-Device Safety**: recorder control commands are polled on a short timeout, so `Stop`/`Shutdown` stay responsive even when no audio packets are flowing.
 
 #### 3. Frontend Rendering
 *   **Non-Blocking**: Heavy operations (like language sync) are fire-and-forget.

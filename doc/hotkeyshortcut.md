@@ -70,8 +70,8 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
  2. **VAD & Model Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading the ASR model (`initiate_model_load`) at app startup. This eliminates the ~700ms cold start delay for the first recording.
  3. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
-    - **Cons**: Small initial delay (~100-200ms) before UI appears.
-    - **Implementation**: `TranscribeAction::start` waits for the audio stream to be active (blocking ~100ms) before triggering the overlay. Thanks to pre-warming, this is barely perceptible.
+    - **Cons**: Small initial delay (typically ~100-200ms) before UI appears; start fails after capture-ready timeout (500ms) instead of showing a false recording state.
+    - **Implementation**: `TranscribeAction::start` waits for `try_start_recording()` to return `RecordingStartOutcome::Started(...)` before showing recording UI. If startup is slow, a "Starting microphone..." connecting overlay appears (immediate for known Bluetooth devices, or after a 120ms threshold for slower non-Bluetooth starts).
 
 ### Bluetooth Microphone Handling
 
@@ -80,7 +80,7 @@ Bluetooth mics (e.g., AirPods) require special handling due to the A2DP→HFP pr
 **Pre-warming**: On app startup, if a Bluetooth mic is selected, the system briefly opens the audio stream in the background to trigger the profile switch. This happens before the user presses fn.
 
 **Overlay Behavior**:
-- **Internal mics**: Skip "Starting microphone..." → go directly to recording overlay (fast ~100-200ms init)
+- **Internal mics**: Usually go directly to recording overlay (fast ~100-200ms init); if startup crosses the 120ms threshold, "Starting microphone..." is shown briefly.
 - **Bluetooth mics**: Show "Starting microphone..." connecting overlay → warmup delay → recording overlay
 
 **Warmup Delays** (Bluetooth only):
@@ -88,7 +88,7 @@ Bluetooth mics (e.g., AirPods) require special handling due to the A2DP→HFP pr
 - Subsequent triggers: 750ms (buffer stabilization)
 
 **Key Files**:
-- [audio.rs](../src-tauri/src/managers/audio.rs): `prewarm_bluetooth_mic()`, `is_current_device_bluetooth()`
+- [audio.rs](../src-tauri/src/managers/audio.rs): `prewarm_bluetooth_mic()`, `should_show_connecting_overlay_pre_start()`, `is_active_stream_bluetooth()`
 - [lib.rs](../src-tauri/src/lib.rs): Calls prewarm on app startup
 - [actions.rs](../src-tauri/src/actions.rs): Warmup delay logic
 
@@ -158,13 +158,18 @@ This ensures that the "cleanup" phase of Session 1 does not inadvertently hide t
 
 ### Recording State Machine Protection
 
-The `AudioRecordingManager` uses a state machine (`Idle` → `Preparing` → `Recording` → `Idle`) to track recording status. Several race conditions are protected:
+The `AudioRecordingManager` uses a state machine with branching transitions:
+- Success path: `Idle` → `Preparing` → `Recording` → `Idle`
+- Cancellation path: `Preparing` → `CancellingPrepare` → `Idle` (transient cancellation state)
+
+Several race conditions are protected:
 
 **1. Quick Release (Stop Before Ready)**
 
 When user releases key before microphone finishes warming up:
-- `stop_recording()` sets state to `Idle` during `Preparing` phase
-- `try_start_recording()` checks for `Idle` state and **aborts** (returns false)
+- `stop_recording()` transitions `Preparing` to `CancellingPrepare` first, then tears down on-demand stream/recorder, then finalizes to `Idle`
+- `try_start_recording()` checks for `Idle` state and **aborts** with `RecordingStartOutcome::Failed(RecordingStartFailure::StateMismatch(...))`
+- In on-demand mode, **self-owned** aborted/failed starts tear down the microphone stream; `owner=other` superseded starts leave the active owner's stream/UI intact.
 - This prevents orphaned recordings that act as "hands-free" when they shouldn't
 
 **2. Stale Async Task Rejection (Binding ID Mismatch)**
@@ -184,15 +189,33 @@ match *state {
     },
     RecordingState::Preparing { binding_id: ref active, .. } => {
         // ABORT - stale request for different binding
-        return false;
+        return RecordingStartOutcome::Failed(
+            RecordingStartFailure::StateMismatch(...)
+        );
     },
     RecordingState::Idle => {
         // ABORT - stop was called during prepare
-        return false;
+        return RecordingStartOutcome::Failed(
+            RecordingStartFailure::StateMismatch(...)
+        );
     },
     // ...
 }
 ```
+
+**Ownership-safe commit mismatch cleanup**: if capture-ready ack arrives after state ownership changed, cleanup is owner-aware using a per-attempt `prepare_token` (not just binding id).
+- `owner=self` (`Idle` during commit): stop local recorder and close on-demand stream.
+- `owner=other` (`Preparing/Recording` moved to another binding/session, including same-binding re-trigger with a newer `prepare_token`): do **not** stop the shared recorder; return `StartAbandonedDueToSupersededState` and let the active owner continue.
+- `CancellingPrepare` is treated as `owner=self` for commit mismatch classification, so stale start acknowledgements during cancellation cannot survive as active captures.
+- Recorder protocol now marks this as a cancellation-class outcome (`SupersededByNewStart`), not a recorder-worker failure.
+- If a stale start loses ownership and later observes recorder disconnect/send failure during cancellation teardown, it is classified as `StartAbandonedDueToSupersededState` (cancellation-class) rather than `StartCommandFailed`.
+- `owner=other` failures are log-only for UI cleanup: stale starts do **not** hide overlay or set tray icon to idle.
+This prevents stale async starts from terminating newer active recordings.
+
+**Control-path responsiveness in silent states**: recorder command handling no longer depends on incoming audio packets.
+The consumer loop polls commands on a short timeout, so `Stop`/`Shutdown` complete promptly even if the device has not produced samples yet (for example during timeout/recovery windows).
+
+**FIFO command ordering with safe pre-frame acceleration**: recorder commands are consumed in strict channel order. The consumer applies only the leading contiguous `Start` prefix before processing the current audio packet; once a non-start command (`Stop`/`Shutdown`) is encountered, that command and all subsequent commands are deferred in original order. This preserves first-word capture while preventing `Start` from overtaking older control commands.
 
 **3. FlagsChanged Event Handling (Fn-only)**
 

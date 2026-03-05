@@ -3,7 +3,7 @@ use crate::apple_intelligence;
 use crate::analytics::{self, BackendAnalyticsEvent};
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::growth::{self, FeatureName};
-use crate::managers::audio::AudioRecordingManager;
+use crate::managers::audio::{AudioRecordingManager, RecordingStartFailure, RecordingStartOutcome};
 use crate::managers::history::{HistoryEntry, HistoryManager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::managers::mlx::MlxModelManager;
@@ -22,8 +22,9 @@ use crate::TranscriptionCoordinator;
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use regex::Regex;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
@@ -545,6 +546,43 @@ fn transcription_delivery_succeeded(
         )
 }
 
+// Intentional thin wrappers so call sites and unit tests can import pure helpers
+// without depending on enum method syntax in each assertion.
+fn recording_start_failure_label(failure: &RecordingStartFailure) -> &'static str {
+    failure.label()
+}
+
+fn recording_start_failure_details(failure: &RecordingStartFailure) -> String {
+    failure.details()
+}
+
+fn recording_start_failure_owner(failure: &RecordingStartFailure) -> &'static str {
+    failure.owner().as_str()
+}
+
+fn should_cleanup_ui_for_recording_start_failure(failure: &RecordingStartFailure) -> bool {
+    failure.should_cleanup_ui()
+}
+
+const CONNECTING_PHASE_PENDING: u8 = 0;
+const CONNECTING_PHASE_SHOWN: u8 = 1;
+const CONNECTING_PHASE_COMPLETED: u8 = 2;
+
+fn try_mark_connecting_overlay_shown(phase: &AtomicU8) -> bool {
+    phase
+        .compare_exchange(
+            CONNECTING_PHASE_PENDING,
+            CONNECTING_PHASE_SHOWN,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        )
+        .is_ok()
+}
+
+fn complete_connecting_overlay_phase(phase: &AtomicU8) -> u8 {
+    phase.swap(CONNECTING_PHASE_COMPLETED, Ordering::SeqCst)
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         if !crate::backup_restore::ensure_transcription_start_allowed(app) {
@@ -571,13 +609,13 @@ impl ShortcutAction for TranscribeAction {
         // This sets the state to "Preparing" so if stop() is called immediately,
         // it can cancel the start operation.
         let rm = app.state::<Arc<AudioRecordingManager>>();
-        if !rm.prepare_recording(binding_id) {
+        let Some(prepare_token) = rm.prepare_recording(binding_id) else {
             debug!(
                 "Failed to prepare recording for binding {} (state not Idle)",
                 binding_id
             );
             return;
-        }
+        };
 
         // Spawn a thread to avoid blocking the event tap/caller
         std::thread::spawn(move || {
@@ -616,6 +654,12 @@ impl ShortcutAction for TranscribeAction {
             let settings = get_settings(app);
             let is_always_on = settings.always_on_microphone;
             debug!("Microphone mode - always_on: {}", is_always_on);
+            info!(
+                binding = binding_id,
+                session = %session_id,
+                event_code = "recording_start_triggered",
+                "Recording start triggered"
+            );
 
             let mut recording_started = false;
 
@@ -634,18 +678,51 @@ impl ShortcutAction for TranscribeAction {
                     rm_clone.apply_mute();
                 });
 
-                if rm.try_start_recording(binding_id, &session_id) {
-                    recording_started = true;
-                    // Show overlay only after recording started success
-                    info!("TranscribeAction::start: showing recording overlay (always-on)");
-                    show_recording_overlay(app);
-                } else {
-                    debug!("Failed to start recording (always-on)");
+                match rm.try_start_recording(binding_id, &session_id, prepare_token) {
+                    RecordingStartOutcome::Started(start_success) => {
+                        recording_started = true;
+                        info!(
+                            session = %session_id,
+                            binding = binding_id,
+                            latency_ms = start_success.capture_ready_latency.as_millis(),
+                            device = start_success
+                                .active_device_name
+                                .unwrap_or_else(|| "unknown".to_string()),
+                            event_code = "capture_ready_ack",
+                            "Always-on recording capture-ready"
+                        );
+                        // Show overlay only after recording started success
+                        info!("TranscribeAction::start: showing recording overlay (always-on)");
+                        show_recording_overlay(app);
+                        info!(
+                            session = %session_id,
+                            binding = binding_id,
+                            event_code = "overlay_recording_shown",
+                            "Recording overlay shown after capture-ready"
+                        );
+                    }
+                    RecordingStartOutcome::Failed(reason) => {
+                        let should_cleanup_ui =
+                            should_cleanup_ui_for_recording_start_failure(&reason);
+                        warn!(
+                            session = %session_id,
+                            binding = binding_id,
+                            reason = recording_start_failure_label(&reason),
+                            details = recording_start_failure_details(&reason),
+                            owner = recording_start_failure_owner(&reason),
+                            event_code = "recording_start_failed",
+                            "Failed to start recording (always-on)"
+                        );
+                        if should_cleanup_ui {
+                            change_tray_icon(app, TrayIconState::Idle);
+                        }
+                    }
                 }
             } else {
                 // On-demand mode: Start recording first, then play audio feedback, then apply mute
                 // This allows the microphone to be activated before playing the sound
                 debug!("On-demand mode: Starting recording first (blocking), then audio feedback");
+                const CONNECTING_OVERLAY_THRESHOLD: Duration = Duration::from_millis(120);
 
                 let is_first_trigger = rm.is_first_trigger();
                 // Fast pre-start hint only from explicit settings.
@@ -658,75 +735,134 @@ impl ShortcutAction for TranscribeAction {
                     false
                 });
 
-                // Only show "Starting microphone..." for Bluetooth devices.
-                // Internal mics start fast enough (~100-200ms) that we can just wait
-                // and show the recording overlay directly - no confusing state transitions.
-                // Bluetooth mics need 1-2s warmup, so the connecting overlay sets expectations.
+                let connecting_phase = Arc::new(AtomicU8::new(CONNECTING_PHASE_PENDING));
+
+                // Show connecting immediately for known Bluetooth devices.
                 if likely_bluetooth {
-                    info!("Bluetooth mic detected, showing connecting overlay");
-                    utils::show_connecting_overlay(app);
+                    info!(
+                        event_code = "overlay_connecting_shown",
+                        "Bluetooth mic detected, showing connecting overlay"
+                    );
+                    if try_mark_connecting_overlay_shown(&connecting_phase) {
+                        utils::show_connecting_overlay(app);
+                    }
+                } else {
+                    // For non-Bluetooth starts, only show connecting if startup is visibly slow.
+                    let app_for_threshold = app.clone();
+                    let connecting_phase_for_threshold = Arc::clone(&connecting_phase);
+                    std::thread::spawn(move || {
+                        std::thread::sleep(CONNECTING_OVERLAY_THRESHOLD);
+                        if try_mark_connecting_overlay_shown(&connecting_phase_for_threshold) {
+                            info!(
+                                threshold_ms = CONNECTING_OVERLAY_THRESHOLD.as_millis(),
+                                event_code = "overlay_connecting_shown",
+                                "Recording start exceeded threshold, showing connecting overlay"
+                            );
+                            utils::show_connecting_overlay(&app_for_threshold);
+                        }
+                    });
                 }
 
                 let recording_start_time = Instant::now();
 
                 // Blocks here until Mic is ready (~100-200ms for internal, ~500ms+ for Bluetooth)
-                if rm.try_start_recording(binding_id, &session_id) {
-                    recording_started = true;
-                    debug!("Recording started in {:?}", recording_start_time.elapsed());
+                let start_outcome = rm.try_start_recording(binding_id, &session_id, prepare_token);
 
-                    // Determine Bluetooth status from the actual opened stream device.
-                    // This avoids redundant pre-start device scans and stays accurate.
-                    let is_bluetooth = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        rm.is_active_stream_bluetooth()
-                    }))
-                    .unwrap_or_else(|e| {
-                        error!("Panic in active-stream Bluetooth detection: {:?}", e);
-                        false
-                    });
-
-                    // If we couldn't infer Bluetooth from settings pre-start (e.g. Default mic),
-                    // but the active stream is Bluetooth, still show connecting state before delay.
-                    if is_bluetooth && !likely_bluetooth {
-                        info!("Bluetooth mic detected after stream open, showing connecting overlay");
-                        utils::show_connecting_overlay(app);
-                    }
-
-                    // Add warmup delay for Bluetooth microphones.
-                    // Bluetooth mics often send silence while waking up, causing first words to be lost.
-                    // Pre-warming triggers the Bluetooth profile switch at app startup, so we only need
-                    // a short delay here for audio buffer stabilization:
-                    // - First trigger (no pre-warm): 1000ms (longer, in case pre-warm didn't happen)
-                    // - Subsequent triggers: 750ms (buffer stabilization)
-                    if is_bluetooth {
-                        let warmup_delay_ms: u64 = if is_first_trigger { 1000 } else { 750 };
+                match start_outcome {
+                    RecordingStartOutcome::Started(start_success) => {
+                        recording_started = true;
+                        debug!("Recording started in {:?}", recording_start_time.elapsed());
                         info!(
-                            delay_ms = warmup_delay_ms,
-                            is_first_trigger = is_first_trigger,
-                            "Bluetooth microphone: adding warmup delay (pre-warmed)"
+                            session = %session_id,
+                            binding = binding_id,
+                            latency_ms = start_success.capture_ready_latency.as_millis(),
+                            device = start_success
+                                .active_device_name
+                                .unwrap_or_else(|| "unknown".to_string()),
+                            event_code = "capture_ready_ack",
+                            "On-demand recording capture-ready"
                         );
-                        std::thread::sleep(std::time::Duration::from_millis(warmup_delay_ms));
-                        debug!("Bluetooth warmup delay completed");
+
+                        // Determine Bluetooth status from the actual opened stream device.
+                        // This avoids redundant pre-start device scans and stays accurate.
+                        let is_bluetooth = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                            || rm.is_active_stream_bluetooth(),
+                        ))
+                        .unwrap_or_else(|e| {
+                            error!("Panic in active-stream Bluetooth detection: {:?}", e);
+                            false
+                        });
+
+                        // If we couldn't infer Bluetooth from settings pre-start (e.g. Default mic),
+                        // but the active stream is Bluetooth, still show connecting state before delay.
+                        if is_bluetooth && try_mark_connecting_overlay_shown(&connecting_phase) {
+                            info!(
+                                "Bluetooth mic detected after stream open, showing connecting overlay"
+                            );
+                            utils::show_connecting_overlay(app);
+                        }
+                        let _ = complete_connecting_overlay_phase(&connecting_phase);
+
+                        // Add warmup delay for Bluetooth microphones.
+                        // Bluetooth mics often send silence while waking up, causing first words to be lost.
+                        // Pre-warming triggers the Bluetooth profile switch at app startup, so we only need
+                        // a short delay here for audio buffer stabilization:
+                        // - First trigger (no pre-warm): 1000ms (longer, in case pre-warm didn't happen)
+                        // - Subsequent triggers: 750ms (buffer stabilization)
+                        if is_bluetooth {
+                            let warmup_delay_ms: u64 = if is_first_trigger { 1000 } else { 750 };
+                            info!(
+                                delay_ms = warmup_delay_ms,
+                                is_first_trigger = is_first_trigger,
+                                "Bluetooth microphone: adding warmup delay (pre-warmed)"
+                            );
+                            std::thread::sleep(std::time::Duration::from_millis(warmup_delay_ms));
+                            debug!("Bluetooth warmup delay completed");
+                        }
+
+                        // Show overlay recording state NOW (with smooth fade-in animation)
+                        info!("TranscribeAction::start: showing recording overlay (on-demand)");
+                        show_recording_overlay(app);
+                        info!(
+                            session = %session_id,
+                            binding = binding_id,
+                            event_code = "overlay_recording_shown",
+                            "Recording overlay shown after capture-ready"
+                        );
+
+                        // Small delay to ensure microphone stream is active (extra safety)
+                        let app_clone = app.clone();
+                        let rm_clone = Arc::clone(&rm);
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            debug!("Handling delayed audio feedback/mute sequence");
+                            // Helper handles disabled audio feedback by returning early, so we reuse it
+                            // to keep mute sequencing consistent in every mode.
+                            play_feedback_sound_blocking(&app_clone, SoundType::Start);
+                            rm_clone.apply_mute();
+                        });
                     }
-
-                    // Show overlay recording state NOW (with smooth fade-in animation)
-                    info!("TranscribeAction::start: showing recording overlay (on-demand)");
-                    show_recording_overlay(app);
-
-                    // Small delay to ensure microphone stream is active (extra safety)
-                    let app_clone = app.clone();
-                    let rm_clone = Arc::clone(&rm);
-                    std::thread::spawn(move || {
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                        debug!("Handling delayed audio feedback/mute sequence");
-                        // Helper handles disabled audio feedback by returning early, so we reuse it
-                        // to keep mute sequencing consistent in every mode.
-                        play_feedback_sound_blocking(&app_clone, SoundType::Start);
-                        rm_clone.apply_mute();
-                    });
-                } else {
-                    debug!("Failed to start recording (on-demand)");
-                    // Ensure icon is reset if we failed
-                    change_tray_icon(app, TrayIconState::Idle);
+                    RecordingStartOutcome::Failed(reason) => {
+                        let previous_phase = complete_connecting_overlay_phase(&connecting_phase);
+                        let should_cleanup_ui =
+                            should_cleanup_ui_for_recording_start_failure(&reason);
+                        warn!(
+                            session = %session_id,
+                            binding = binding_id,
+                            reason = recording_start_failure_label(&reason),
+                            details = recording_start_failure_details(&reason),
+                            owner = recording_start_failure_owner(&reason),
+                            event_code = "recording_start_failed",
+                            "Failed to start recording (on-demand)"
+                        );
+                        if should_cleanup_ui && previous_phase == CONNECTING_PHASE_SHOWN {
+                            utils::hide_recording_overlay(app);
+                        }
+                        if should_cleanup_ui {
+                            // Ensure icon is reset for self-owned failed starts only.
+                            change_tray_icon(app, TrayIconState::Idle);
+                        }
+                    }
                 }
             }
 
@@ -1664,13 +1800,21 @@ pub static ACTION_MAP: LazyLock<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy
 mod tests {
     use super::{
         auto_refined_from_post_processed_text, build_undo_paste_capture,
+        complete_connecting_overlay_phase,
+        should_cleanup_ui_for_recording_start_failure, try_mark_connecting_overlay_shown,
         maybe_inserted_text_from_paste_result, paste_last_preparation_mode, select_inserted_text_for_refine_replace,
         sanitize_refine_punctuation_artifacts, select_text_for_paste_last, select_text_for_refine_input,
         should_commit_refine_history_from_paste_result, transcription_delivery_succeeded,
+        CONNECTING_PHASE_COMPLETED,
+        CONNECTING_PHASE_PENDING,
+        CONNECTING_PHASE_SHOWN,
     };
     use crate::clipboard::PastePreparationMode;
+    use crate::managers::audio::{RecordingStartFailure, StateMismatchKind};
     use crate::managers::history::HistoryEntry;
     use crate::settings::ClipboardHandling;
+    use std::sync::atomic::AtomicU8;
+    use std::time::Duration;
 
     fn sample_history_entry() -> HistoryEntry {
         HistoryEntry {
@@ -1903,5 +2047,88 @@ mod tests {
             sanitize_refine_punctuation_artifacts(source, refined),
             "alpha - - beta"
         );
+    }
+
+    #[test]
+    fn connecting_overlay_phase_marks_shown_only_once_from_pending() {
+        let phase = AtomicU8::new(CONNECTING_PHASE_PENDING);
+        assert!(try_mark_connecting_overlay_shown(&phase));
+        assert!(!try_mark_connecting_overlay_shown(&phase));
+    }
+
+    #[test]
+    fn connecting_overlay_phase_rejects_show_after_completion() {
+        let phase = AtomicU8::new(CONNECTING_PHASE_PENDING);
+        let previous = complete_connecting_overlay_phase(&phase);
+        assert_eq!(previous, CONNECTING_PHASE_PENDING);
+        assert!(!try_mark_connecting_overlay_shown(&phase));
+    }
+
+    #[test]
+    fn completing_phase_returns_shown_when_overlay_already_visible() {
+        let phase = AtomicU8::new(CONNECTING_PHASE_SHOWN);
+        let previous = complete_connecting_overlay_phase(&phase);
+        assert_eq!(previous, CONNECTING_PHASE_SHOWN);
+        assert_eq!(complete_connecting_overlay_phase(&phase), CONNECTING_PHASE_COMPLETED);
+    }
+
+    #[test]
+    fn stale_superseded_start_failure_does_not_cleanup_ui() {
+        let failure = RecordingStartFailure::StartAbandonedDueToSupersededState(
+            "state_changed_before_recording_commit".to_string(),
+        );
+        assert!(!should_cleanup_ui_for_recording_start_failure(&failure));
+    }
+
+    #[test]
+    fn superseded_worker_disconnect_failure_does_not_cleanup_ui() {
+        let failure = RecordingStartFailure::StartAbandonedDueToSupersededState(
+            "Recorder worker disconnected before capture-ready acknowledgement".to_string(),
+        );
+        assert!(!should_cleanup_ui_for_recording_start_failure(&failure));
+    }
+
+    #[test]
+    fn self_cancelled_state_mismatch_cleans_up_ui() {
+        let failure = RecordingStartFailure::StateMismatch(StateMismatchKind::IdleDuringPrepare);
+        assert!(should_cleanup_ui_for_recording_start_failure(&failure));
+    }
+
+    #[test]
+    fn mismatched_binding_state_mismatch_does_not_cleanup_ui() {
+        let failure = RecordingStartFailure::StateMismatch(
+            StateMismatchKind::PreparingForDifferentBinding {
+                active_binding: "other".to_string(),
+            },
+        );
+        assert!(!should_cleanup_ui_for_recording_start_failure(&failure));
+    }
+
+    #[test]
+    fn cleanup_policy_is_not_affected_by_detail_text() {
+        let failure = RecordingStartFailure::StateMismatch(
+            StateMismatchKind::StateChangedBeforeCommit {
+                state: "Recording { binding_id: \"cancel_me\" }".to_string(),
+            },
+        );
+        assert!(!should_cleanup_ui_for_recording_start_failure(&failure));
+    }
+
+    #[test]
+    fn operational_start_failures_always_cleanup_ui() {
+        let failures = [
+            RecordingStartFailure::MaintenanceMode,
+            RecordingStartFailure::StreamOpenFailed("open_error".to_string()),
+            RecordingStartFailure::RecorderUnavailable,
+            RecordingStartFailure::CaptureReadyTimeout(Duration::from_millis(500)),
+            RecordingStartFailure::StartCommandFailed("send_failed".to_string()),
+        ];
+
+        for failure in failures {
+            assert!(
+                should_cleanup_ui_for_recording_start_failure(&failure),
+                "expected failure to cleanup UI: {failure:?}"
+            );
+        }
     }
 }
