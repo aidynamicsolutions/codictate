@@ -13,7 +13,117 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 #[cfg(target_os = "linux")]
 use crate::utils::{is_kde_wayland, is_wayland};
 
-/// Pastes text using the clipboard: saves current content, writes text, sends paste keystroke, restores clipboard.
+const CLIPBOARD_RESTORE_VERIFY_ATTEMPTS: usize = 6;
+const CLIPBOARD_RESTORE_VERIFY_INTERVAL_MS: u64 = 40;
+const CLIPBOARD_RESTORE_DELAYED_RETRY_ATTEMPTS: usize = 2;
+const CLIPBOARD_RESTORE_DELAYED_RETRY_INTERVAL_MS: u64 = 120;
+
+fn read_clipboard_backup(app_handle: &AppHandle) -> Result<String, String> {
+    app_handle
+        .clipboard()
+        .read_text()
+        .map_err(|err| format!("Failed to read clipboard backup: {err}"))
+}
+
+fn restore_clipboard_with_verification_inner<W, R>(
+    expected_text: &str,
+    attempts: usize,
+    verify_interval: Duration,
+    mut write_text: W,
+    mut read_text: R,
+) -> Result<usize, String>
+where
+    W: FnMut(&str) -> Result<(), String>,
+    R: FnMut() -> Result<String, String>,
+{
+    let expected_chars = expected_text.chars().count();
+
+    for attempt in 1..=attempts {
+        if let Err(err) = write_text(expected_text) {
+            warn!(
+                attempt,
+                attempts,
+                error = %err,
+                "Clipboard restore write attempt failed"
+            );
+
+            if attempt < attempts {
+                std::thread::sleep(verify_interval);
+            }
+            continue;
+        }
+
+        match read_text() {
+            Ok(observed) if observed == expected_text => {
+                debug!(
+                    attempt,
+                    attempts,
+                    backup_chars = expected_chars,
+                    "Clipboard restore verified"
+                );
+                return Ok(attempt);
+            }
+            Ok(observed) => {
+                warn!(
+                    attempt,
+                    attempts,
+                    expected_chars,
+                    observed_chars = observed.chars().count(),
+                    "Clipboard restore verification mismatch"
+                );
+            }
+            Err(err) => {
+                warn!(
+                    attempt,
+                    attempts,
+                    error = %err,
+                    "Clipboard restore verification read failed"
+                );
+            }
+        }
+
+        if attempt < attempts {
+            std::thread::sleep(verify_interval);
+        }
+    }
+
+    Err(format!(
+        "Clipboard restore could not be verified after {attempts} attempts"
+    ))
+}
+
+fn restore_clipboard_with_verification(
+    app_handle: &AppHandle,
+    backup_text: &str,
+    attempts: usize,
+    verify_interval_ms: u64,
+) -> Result<usize, String> {
+    let clipboard = app_handle.clipboard();
+
+    restore_clipboard_with_verification_inner(
+        backup_text,
+        attempts,
+        Duration::from_millis(verify_interval_ms),
+        |text| {
+            #[cfg(target_os = "linux")]
+            if is_wayland() && is_wl_copy_available() {
+                return write_clipboard_via_wl_copy(text);
+            }
+
+            clipboard
+                .write_text(text)
+                .map_err(|err| format!("Failed to write clipboard restore text: {err}"))
+        },
+        || {
+            clipboard
+                .read_text()
+                .map_err(|err| format!("Failed to read clipboard for restore verification: {err}"))
+        },
+    )
+}
+
+/// Pastes text using the clipboard: writes text, sends paste keystroke, and
+/// optionally restores clipboard content when a backup is provided.
 fn paste_via_clipboard(
     enigo: &mut Enigo,
     text: &str,
@@ -21,24 +131,9 @@ fn paste_via_clipboard(
     paste_method: &PasteMethod,
     paste_delay_ms: u64,
     paste_restore_delay_ms: u64,
+    backup_for_restore: Option<&str>,
 ) -> Result<(), String> {
     let clipboard = app_handle.clipboard();
-    let clipboard_content = match clipboard.read_text() {
-        Ok(value) => {
-            debug!(
-                backup_chars = value.chars().count(),
-                "Captured clipboard backup before paste"
-            );
-            value
-        }
-        Err(err) => {
-            warn!(
-                error = %err,
-                "Failed to read clipboard backup before paste; using empty fallback"
-            );
-            String::new()
-        }
-    };
 
     // Write text to clipboard first
     // On Wayland, prefer wl-copy for better compatibility (especially with umlauts)
@@ -84,33 +179,42 @@ fn paste_via_clipboard(
 
     std::thread::sleep(std::time::Duration::from_millis(paste_restore_delay_ms));
 
-    // Restore original clipboard content
-    // On Wayland, prefer wl-copy for better compatibility
-    #[cfg(target_os = "linux")]
-    let restore_result = if is_wayland() && is_wl_copy_available() {
-        write_clipboard_via_wl_copy(&clipboard_content)
-    } else {
-        clipboard
-            .write_text(&clipboard_content)
-            .map_err(|e| format!("Failed to restore clipboard: {}", e))
-    };
+    if let Some(backup_text) = backup_for_restore {
+        if let Err(err) = restore_clipboard_with_verification(
+            app_handle,
+            backup_text,
+            CLIPBOARD_RESTORE_VERIFY_ATTEMPTS,
+            CLIPBOARD_RESTORE_VERIFY_INTERVAL_MS,
+        ) {
+            warn!(
+                error = %err,
+                backup_chars = backup_text.chars().count(),
+                "Clipboard restore verification failed after paste; attempting delayed retry"
+            );
 
-    #[cfg(not(target_os = "linux"))]
-    let restore_result = clipboard
-        .write_text(&clipboard_content)
-        .map_err(|e| format!("Failed to restore clipboard: {}", e));
-
-    if let Err(err) = restore_result {
-        warn!(
-            error = %err,
-            backup_chars = clipboard_content.chars().count(),
-            "Clipboard restore failed after paste"
-        );
-    } else {
-        debug!(
-            backup_chars = clipboard_content.chars().count(),
-            "Clipboard restored after paste"
-        );
+            if let Err(retry_err) = restore_clipboard_with_verification(
+                app_handle,
+                backup_text,
+                CLIPBOARD_RESTORE_DELAYED_RETRY_ATTEMPTS,
+                CLIPBOARD_RESTORE_DELAYED_RETRY_INTERVAL_MS,
+            ) {
+                tracing::error!(
+                    error = %retry_err,
+                    backup_chars = backup_text.chars().count(),
+                    "clipboard_restore_unverified"
+                );
+            } else {
+                warn!(
+                    backup_chars = backup_text.chars().count(),
+                    "Clipboard restore succeeded during delayed retry"
+                );
+            }
+        } else {
+            debug!(
+                backup_chars = backup_text.chars().count(),
+                "Clipboard restored after paste"
+            );
+        }
     }
 
     Ok(())
@@ -755,14 +859,47 @@ pub fn paste_with_mode(
             true
         }
         PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert => {
-            paste_via_clipboard(
-                enigo,
-                &prepared_text,
-                &app_handle,
-                &paste_method,
-                paste_delay_ms,
-                paste_restore_delay_ms,
-            )?;
+            if settings.clipboard_handling == ClipboardHandling::DontModify {
+                match read_clipboard_backup(&app_handle) {
+                    Ok(backup_text) => {
+                        debug!(
+                            backup_chars = backup_text.chars().count(),
+                            "Captured clipboard backup before paste"
+                        );
+                        paste_via_clipboard(
+                            enigo,
+                            &prepared_text,
+                            &app_handle,
+                            &paste_method,
+                            paste_delay_ms,
+                            paste_restore_delay_ms,
+                            Some(&backup_text),
+                        )?;
+                    }
+                    Err(err) => {
+                        warn!(
+                            error = %err,
+                            "Clipboard backup unavailable for DontModify; falling back to direct paste for this transcription"
+                        );
+                        paste_direct(
+                            enigo,
+                            &prepared_text,
+                            #[cfg(target_os = "linux")]
+                            settings.typing_tool,
+                        )?;
+                    }
+                }
+            } else {
+                paste_via_clipboard(
+                    enigo,
+                    &prepared_text,
+                    &app_handle,
+                    &paste_method,
+                    paste_delay_ms,
+                    paste_restore_delay_ms,
+                    None,
+                )?;
+            }
             true
         }
         PasteMethod::ExternalScript => {
@@ -809,6 +946,8 @@ pub fn paste_with_mode(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
+    use std::time::Duration;
 
     fn sentence_start_context() -> crate::accessibility::TextInsertionContext {
         crate::accessibility::TextInsertionContext {
@@ -875,5 +1014,71 @@ mod tests {
         assert!(should_send_auto_submit(true, PasteMethod::Direct));
         assert!(should_send_auto_submit(true, PasteMethod::CtrlShiftV));
         assert!(should_send_auto_submit(true, PasteMethod::ShiftInsert));
+    }
+
+    #[test]
+    fn restore_verification_succeeds_first_try() {
+        let clipboard = RefCell::new(String::new());
+
+        let attempt = restore_clipboard_with_verification_inner(
+            "hello",
+            3,
+            Duration::from_millis(0),
+            |text| {
+                *clipboard.borrow_mut() = text.to_string();
+                Ok(())
+            },
+            || Ok(clipboard.borrow().clone()),
+        )
+        .expect("restore should verify on first attempt");
+
+        assert_eq!(attempt, 1);
+    }
+
+    #[test]
+    fn restore_verification_retries_then_succeeds() {
+        let clipboard = RefCell::new(String::new());
+        let read_attempts = Cell::new(0);
+
+        let attempt = restore_clipboard_with_verification_inner(
+            "expected",
+            4,
+            Duration::from_millis(0),
+            |text| {
+                *clipboard.borrow_mut() = text.to_string();
+                Ok(())
+            },
+            || {
+                let next = read_attempts.get() + 1;
+                read_attempts.set(next);
+                if next < 3 {
+                    Ok("mismatch".to_string())
+                } else {
+                    Ok(clipboard.borrow().clone())
+                }
+            },
+        )
+        .expect("restore should eventually verify");
+
+        assert_eq!(attempt, 3);
+    }
+
+    #[test]
+    fn restore_verification_fails_after_max_attempts() {
+        let result = restore_clipboard_with_verification_inner(
+            "expected",
+            2,
+            Duration::from_millis(0),
+            |_text| Ok(()),
+            || Ok("always-mismatch".to_string()),
+        );
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .err()
+                .unwrap_or_default()
+                .contains("after 2 attempts")
+        );
     }
 }
