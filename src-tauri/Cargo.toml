@@ -1,8 +1,7 @@
 [package]
 name = "codictate"
-version = "0.7.7"
+version = "0.7.9"
 description = "Codictate"
-
 authors = ["cjpais"]
 edition = "2021"
 license = "MIT"
@@ -41,7 +40,7 @@ serde = { version = "1", features = ["derive"] }
 
 [dependencies]
 once_cell = "1"
-tauri = { version = "2.10.1", features = [
+tauri = { version = "2.10.2", features = [
   "protocol-asset",
   "macos-private-api",
   "tray-icon",
@@ -79,8 +78,8 @@ chrono = "0.4"
 rusqlite = { version = "0.37", features = ["bundled"] }
 tar = "0.4.44"
 flate2 = "1.0"
-transcribe-rs = { version = "0.2.5", features = ["whisper", "parakeet", "moonshine", "sense_voice"] }
-handy-keys = "0.2.1"
+transcribe-rs = { version = "0.2.8", features = ["whisper", "parakeet", "moonshine", "sense_voice", "gigaam"] }
+handy-keys = "0.2.2"
 ferrous-opencc = "0.2.3"
 clap = { version = "4", features = ["derive"] }
 specta = "=2.0.0-rc.22"
@@ -95,7 +94,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 uuid = { version = "1.0", features = ["v4"] }
-tauri-plugin-dialog = "2.6.0"
+tauri-plugin-dialog = "2.6"
 log = "0.4.29"
 sha2 = "0.10"
 zip = { version = "2.2.1", default-features = false, features = ["deflate"] }
@@ -136,9 +135,9 @@ gtk-layer-shell = { version = "0.8", features = ["v0_6"] }
 gtk = "0.18"
 
 [patch.crates-io]
-tauri-runtime = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.9.1" }
-tauri-runtime-wry = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.9.1" }
-tauri-utils = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.9.1" }
+tauri-runtime = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
+tauri-runtime-wry = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
+tauri-utils = { git = "https://github.com/cjpais/tauri.git", branch = "handy-2.10.2" }
 # Temporary safety patch:
 # Aptabase plugin v1.0.0 uses `tokio::spawn` during plugin setup, which can panic
 # in this app context with "there is no reactor running".
