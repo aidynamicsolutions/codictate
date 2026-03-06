@@ -3,7 +3,10 @@ use crate::apple_intelligence;
 use crate::analytics::{self, BackendAnalyticsEvent};
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::growth::{self, FeatureName};
-use crate::managers::audio::{AudioRecordingManager, RecordingStartFailure, RecordingStartOutcome};
+use crate::managers::audio::{
+    AudioRecordingManager, InputDeviceCacheRefreshPolicy, InputDeviceCacheRefreshReason,
+    RecordingPrearmSource, RecordingStartFailure, RecordingStartOutcome,
+};
 use crate::managers::history::{HistoryEntry, HistoryManager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::managers::mlx::MlxModelManager;
@@ -583,8 +586,28 @@ fn complete_connecting_overlay_phase(phase: &AtomicU8) -> u8 {
     phase.swap(CONNECTING_PHASE_COMPLETED, Ordering::SeqCst)
 }
 
+fn prearm_source_from_shortcut(shortcut_str: &str) -> RecordingPrearmSource {
+    let normalized = shortcut_str.trim();
+    if normalized.eq_ignore_ascii_case("fn") || normalized.eq_ignore_ascii_case("fn+space") {
+        RecordingPrearmSource::FnKeyDown
+    } else if normalized.eq_ignore_ascii_case("CLI") || normalized.starts_with("SIGUSR") {
+        RecordingPrearmSource::SignalStart
+    } else {
+        RecordingPrearmSource::ShortcutStart
+    }
+}
+
+fn cache_refresh_reason_from_prearm_source(source: RecordingPrearmSource) -> InputDeviceCacheRefreshReason {
+    match source {
+        RecordingPrearmSource::FnKeyDown => InputDeviceCacheRefreshReason::FnKeyDown,
+        RecordingPrearmSource::ShortcutStart | RecordingPrearmSource::SignalStart => {
+            InputDeviceCacheRefreshReason::ShortcutTrigger
+        }
+    }
+}
+
 impl ShortcutAction for TranscribeAction {
-    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         if !crate::backup_restore::ensure_transcription_start_allowed(app) {
             debug!(
                 "Skipped transcription start for '{}' because backup/restore maintenance mode is active",
@@ -604,6 +627,7 @@ impl ShortcutAction for TranscribeAction {
 
         let app_clone = app.clone();
         let binding_id_clone = binding_id.to_string();
+        let shortcut_str_clone = shortcut_str.to_string();
 
         // Synchronously prepare recording state to handle race conditions
         // This sets the state to "Preparing" so if stop() is called immediately,
@@ -639,6 +663,14 @@ impl ShortcutAction for TranscribeAction {
                 }
             }
 
+            let prearm_source = prearm_source_from_shortcut(&shortcut_str_clone);
+            let rm = app.state::<Arc<AudioRecordingManager>>();
+            rm.refresh_input_device_cache_async(
+                InputDeviceCacheRefreshPolicy::IfStaleOrDirty,
+                cache_refresh_reason_from_prearm_source(prearm_source),
+            );
+            rm.kickoff_on_demand_prearm(prearm_source);
+
             let start_time = Instant::now();
             info!("Recording started for binding: {}", binding_id);
 
@@ -647,8 +679,6 @@ impl ShortcutAction for TranscribeAction {
             tm.initiate_model_load();
 
             change_tray_icon(app, TrayIconState::Recording);
-
-            let rm = app.state::<Arc<AudioRecordingManager>>();
 
             // Get the microphone mode to determine audio feedback timing
             let settings = get_settings(app);

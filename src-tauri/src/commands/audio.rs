@@ -1,6 +1,9 @@
 use crate::audio_feedback;
 use crate::audio_toolkit::audio::{list_input_devices, list_output_devices};
-use crate::managers::audio::{AudioRecordingManager, MicrophoneMode};
+use crate::managers::audio::{
+    AudioRecordingManager, InputDeviceCacheRefreshPolicy, InputDeviceCacheRefreshReason,
+    MicrophoneMode,
+};
 use crate::settings::{get_settings, write_settings};
 use tracing::warn;
 use serde::{Deserialize, Serialize};
@@ -127,6 +130,12 @@ pub fn set_selected_microphone(app: AppHandle, device_name: String) -> Result<()
     };
     write_settings(&app, settings);
 
+    rm.mark_input_device_cache_dirty(InputDeviceCacheRefreshReason::SelectedMicrophoneChanged);
+    rm.refresh_input_device_cache_async(
+        InputDeviceCacheRefreshPolicy::Force,
+        InputDeviceCacheRefreshReason::SelectedMicrophoneChanged,
+    );
+
     // Update the audio manager to use the new device
     // Spawn this on a background task so we don't block the UI while waiting for the stream
     // to initialize (which can take 3-6s if devices are failing/retrying)
@@ -213,6 +222,8 @@ pub async fn play_test_sound(app: AppHandle, sound_type: String) {
 #[tauri::command]
 #[specta::specta]
 pub fn set_clamshell_microphone(app: AppHandle, device_name: String) -> Result<(), String> {
+    let rm = app.state::<Arc<AudioRecordingManager>>().inner().clone();
+
     let mut settings = get_settings(&app);
     settings.clamshell_microphone = if device_name == "default" {
         None
@@ -220,6 +231,13 @@ pub fn set_clamshell_microphone(app: AppHandle, device_name: String) -> Result<(
         Some(device_name)
     };
     write_settings(&app, settings);
+
+    rm.mark_input_device_cache_dirty(InputDeviceCacheRefreshReason::ClamshellMicrophoneChanged);
+    rm.refresh_input_device_cache_async(
+        InputDeviceCacheRefreshPolicy::Force,
+        InputDeviceCacheRefreshReason::ClamshellMicrophoneChanged,
+    );
+
     Ok(())
 }
 
@@ -246,6 +264,7 @@ pub async fn start_mic_preview(app: AppHandle) -> Result<(), String> {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager
         .start_microphone_stream()
+        .map(|_| ())
         .map_err(|e| format!("Failed to start mic preview: {}", e))
 }
 

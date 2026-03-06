@@ -6,7 +6,7 @@ Concise documentation of Codictate's keyboard shortcut system for speech-to-text
 
 | Action | Default Shortcut | Behavior | Description |
 |--------|------------------|----------|-------------|
-| **Transcribe** | `Option+Space` (or `fn`) | **Push-to-Talk** | Hold to record, release to transcribe. Always instant. |
+| **Transcribe** | `Option+Space` (or `fn`) | **Push-to-Talk** | Hold to record, release to transcribe. Waits for capture-ready before showing recording UI. |
 | **Hands-free** | `fn+space` | **Toggle** | Press to start, press again to stop. |
 | Cancel | `esc` | Instant | Cancel current operation (recording or transcription) |
 
@@ -40,10 +40,10 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
   User presses Fn
         │
         ▼
-  ┌─────────────────┐
-  │ Start Recording │  ──▶ PUSH-TO-TALK MODE
-  │  Immediately    │      (recording active)
-  └─────────────────┘
+  ┌─────────────────────────┐
+  │ Prepare + Pre-arm Start │  ──▶ PUSH-TO-TALK MODE
+  │     (non-blocking)      │      (wait for capture-ready commit)
+  └─────────────────────────┘
         │
         ├──── Space pressed while holding Fn ──▶ HANDS-FREE MODE (Cancel PTT, Start Hands-free)
         │
@@ -66,9 +66,10 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
 
  To eliminate audio cutoff (the "first word missing" problem), the system employs several strategies:
 
- 1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time.
+ 1. **Input Topology Caching + Refresh Policy**: `AudioRecordingManager` keeps a short-lived input-device topology cache (10 minute TTL) with dirty/in-flight/throttle guards. Shortcut and window-focus triggers refresh with `IfStaleOrDirty`; selected/clamshell updates force refresh.
  2. **VAD & Model Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading the ASR model (`initiate_model_load`) at app startup. This eliminates the ~700ms cold start delay for the first recording.
- 3. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
+ 3. **On-Demand Pre-arm**: Fn down / shortcut starts can pre-open the stream in the background, then auto-close safely if recording does not commit within the grace window.
+ 4. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
     - **Cons**: Small initial delay (typically ~100-200ms) before UI appears; start fails after capture-ready timeout (500ms) instead of showing a false recording state.
     - **Implementation**: `TranscribeAction::start` waits for `try_start_recording()` to return `RecordingStartOutcome::Started(...)` before showing recording UI. If startup is slow, a "Starting microphone..." connecting overlay appears (immediate for known Bluetooth devices, or after a 120ms threshold for slower non-Bluetooth starts).

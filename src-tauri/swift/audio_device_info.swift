@@ -6,6 +6,86 @@ import AudioToolbox
 import CoreAudio
 import Foundation
 
+private let routeMonitorLock = NSLock()
+private var routeMonitorStarted = false
+private var inputRouteChangeGeneration: UInt64 = 0
+
+private func inputRouteChangeListener(
+    _ inObjectID: AudioObjectID,
+    _ inNumberAddresses: UInt32,
+    _ inAddresses: UnsafePointer<AudioObjectPropertyAddress>,
+    _ inClientData: UnsafeMutableRawPointer?
+) -> OSStatus {
+    routeMonitorLock.lock()
+    inputRouteChangeGeneration &+= 1
+    routeMonitorLock.unlock()
+    return noErr
+}
+
+/// Start listening for CoreAudio default-input/topology changes.
+/// Returns 0 if started, 1 if already active, -1 on failure.
+@_cdecl("start_input_route_change_monitor")
+public func startInputRouteChangeMonitor() -> Int32 {
+    routeMonitorLock.lock()
+    if routeMonitorStarted {
+        routeMonitorLock.unlock()
+        return 1
+    }
+    routeMonitorLock.unlock()
+
+    let systemObject = AudioObjectID(kAudioObjectSystemObject)
+    var defaultInputAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDefaultInputDevice,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+    var devicesAddress = AudioObjectPropertyAddress(
+        mSelector: kAudioHardwarePropertyDevices,
+        mScope: kAudioObjectPropertyScopeGlobal,
+        mElement: kAudioObjectPropertyElementMain
+    )
+
+    let defaultStatus = AudioObjectAddPropertyListener(
+        systemObject,
+        &defaultInputAddress,
+        inputRouteChangeListener,
+        nil
+    )
+    if defaultStatus != noErr {
+        return -1
+    }
+
+    let devicesStatus = AudioObjectAddPropertyListener(
+        systemObject,
+        &devicesAddress,
+        inputRouteChangeListener,
+        nil
+    )
+    if devicesStatus != noErr {
+        _ = AudioObjectRemovePropertyListener(
+            systemObject,
+            &defaultInputAddress,
+            inputRouteChangeListener,
+            nil
+        )
+        return -1
+    }
+
+    routeMonitorLock.lock()
+    routeMonitorStarted = true
+    routeMonitorLock.unlock()
+    return 0
+}
+
+/// Read monotonic input-route change generation.
+@_cdecl("get_input_route_change_generation")
+public func getInputRouteChangeGeneration() -> UInt64 {
+    routeMonitorLock.lock()
+    let generation = inputRouteChangeGeneration
+    routeMonitorLock.unlock()
+    return generation
+}
+
 /// Checks if an audio device with the given name is a Bluetooth device.
 /// Returns 1 if Bluetooth, 0 if not, -1 if device not found.
 @_cdecl("is_audio_device_bluetooth")
