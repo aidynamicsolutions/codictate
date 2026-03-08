@@ -56,6 +56,24 @@ pub struct TextInsertionContext {
     pub has_selection: bool,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct OverlayCursorScreenProbe {
+    pub rect_x: f64,
+    pub rect_y: f64,
+    pub rect_width: f64,
+    pub rect_height: f64,
+    pub point_x: f64,
+    pub point_y: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OverlayWindowScreenFrame {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
 pub(crate) fn is_sentence_boundary_prefix_delimiter(c: char) -> bool {
     matches!(
         c,
@@ -135,5 +153,21 @@ pub fn select_text_in_app_last_occurrence(
 pub fn capture_insertion_context(
     _app_handle: &tauri::AppHandle,
 ) -> Option<TextInsertionContext> {
+    None
+}
+
+/// Stub for non-macOS platforms.
+#[cfg(not(target_os = "macos"))]
+pub fn capture_active_cursor_screen_probe(
+    _app_handle: &tauri::AppHandle,
+) -> Option<OverlayCursorScreenProbe> {
+    None
+}
+
+/// Stub for non-macOS platforms.
+#[cfg(not(target_os = "macos"))]
+pub fn capture_focused_window_screen_frame(
+    _app_handle: &tauri::AppHandle,
+) -> Option<OverlayWindowScreenFrame> {
     None
 }

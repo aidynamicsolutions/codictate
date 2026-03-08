@@ -6,6 +6,8 @@ The recording overlay is a high-performance, always-on-top window that visualize
 
 To prevent visual flickering associated with OS window mapping/unmapping (`show()`/`hide()`), we use a **transparency + event pass-through** strategy.
 
+On macOS, "always mapped" is now paired with an explicit **present** step on every visible transition. The panel staying mapped keeps the webview warm, but it is **not** treated as proof that the user can currently see it. Native presentation and final placement are handled separately.
+
 ### Visibility States
 
 1.  **Hidden (Standby)**
@@ -63,11 +65,12 @@ On Retina displays, hover hit-testing can fail if coordinate spaces are mixed.
 
 ### Zero-Latency Optimizations
 
-To ensure the overlay appears **instantly (0ms delay)** when the shortcut is pressed, we implement several critical optimizations:
+To ensure the overlay appears **instantly** when any activation shortcut is pressed, we implement several critical optimizations:
 
 #### 1. macOS App Nap Prevention
 *   **Problem**: macOS suspends hidden webviews ("App Nap"), causing a ~1s wake-up delay.
 *   **Solution**: The `NSPanel` is created with `.visible(true)` in the builder. This forces the OS to treat the window as active from birth, even though it is visually transparent.
+*   **Guardrail**: no activation path is allowed to reintroduce blocking readiness waits, remounts, or synchronous post-move verification before the overlay becomes visible.
 
 #### 2. Audio Stream Consistency
 *   **Wait for Ready**: `actions.rs` calls `try_start_recording` and waits for capture-ready acknowledgement *before* showing the recording overlay.
@@ -93,9 +96,52 @@ This ensures the user has immediate feedback that the system is responsive, whil
 
 ## Platform Implementation
 
-*   **macOS**: Uses `NSPanel` via `tauri-nspanel` for "Status" level floating behavior (appears above full-screen apps), configured as a non-activating panel (`no_activate`, `nonactivating_panel`, cannot become key/main) so overlay interaction does not focus the main app window.
+*   **macOS**: Uses `NSPanel` via `tauri-nspanel` at `PopUpMenu` level, configured as a non-activating panel (`no_activate`, `nonactivating_panel`, cannot become key/main) so overlay interaction does not focus the main app window. Every visible overlay state now routes through a unified `present_overlay_panel` path that:
+    1. resolves a target point from active text focus
+    2. resolves the final `NSScreen.visibleFrame` in AppKit coordinates
+    3. applies the frame directly to the `NSPanel`
+    4. reapplies panel level / collection behavior
+    5. orders the panel front
+*   **macOS collection behavior**: prefer `moveToActiveSpace + fullScreenAuxiliary` for a cursor-following HUD. The panel remains always mapped for performance, but AppKit presentation is still performed on every visible transition.
 *   **Windows**: Uses Win32 `SetWindowPos` to strictly enforce `HWND_TOPMOST`.
 *   **Linux**: Standard Tauri webview with `always_on_top`.
+*   **Multi-monitor placement**: Overlay placement is active-text-focus first. The resolution chain is:
+    1. Active insertion caret (AX `AXBoundsForRange`, strict 80ms timeout) — normalizes AX geometry into AppKit coordinates, rejects degenerate caret rects
+    2. Focused AX window frame (AX `AXPosition` + `AXSize`, strict 80ms timeout)
+    3. Cached last-successful target screen center (instant, no I/O)
+    4. Mouse cursor position
+    5. Onboarding activation target (main window's monitor, only when Learn step is active)
+    6. Primary monitor center (final fallback)
+    On macOS, display selection is done from `NSScreen.frame` so bottom-edge inputs still target the correct monitor, while final overlay coordinates are clamped into that screen's `NSScreen.visibleFrame`.
+*   **macOS top/bottom semantics**: AppKit overlay placement uses `visibleFrame` directly, so `Top` is derived from `visibleFrame.maxY` and `Bottom` from `visibleFrame.minY`. This keeps the Settings choice aligned with where the overlay actually appears on screen.
+*   **Deferred verification**: final panel-frame verification is diagnostic and asynchronous. It updates logs and cache state after presentation, but never blocks any activation shortcut.
+
+### Architecture: macOS Presentation Flow
+
+```
+present_overlay_panel(source)
+│
+├─ resolve_overlay_target_point(include_cached=true)
+│  ├─ 1. AX caret probe → normalize to AppKit
+│  ├─ 2. AX focused window → normalize to AppKit
+│  ├─ 3. Cached last-successful screen center
+│  ├─ 4. Mouse cursor
+│  ├─ 5. Onboarding main window monitor
+│  └─ 6. Primary monitor center
+│
+├─ dispatch_overlay_panel_presentation(target, seq)
+│  │  (run_on_main_thread)
+│  ├─ resolve_screen_target_for_point(NSScreen)
+│  │  ├─ strict frame containment
+│  │  ├─ tolerant frame containment (±2pt)
+│  │  └─ nearest frame by distance
+│  ├─ compute_overlay_position_for_visible_frame
+│  ├─ setFrame_display → orderFrontRegardless
+│  └─ schedule_overlay_presentation_sample (async diagnostic)
+│
+└─ [if fallback] schedule_overlay_target_refresh
+   └─ 80ms delay → re-resolve → dispatch if changed
+```
 
 ## Event Flow
 

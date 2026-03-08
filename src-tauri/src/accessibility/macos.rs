@@ -6,9 +6,12 @@
 
 use core_foundation::base::{CFGetTypeID, CFRelease, CFTypeRef, TCFType};
 use core_foundation::string::{CFString, CFStringGetTypeID, CFStringRef};
+use std::time::Instant;
 use tracing::{debug, error, info, warn};
 
-use super::{CapturedContext, TextInsertionContext};
+use super::{
+    CapturedContext, OverlayCursorScreenProbe, OverlayWindowScreenFrame, TextInsertionContext,
+};
 
 // ─── AXUIElement FFI ────────────────────────────────────────────────
 
@@ -18,6 +21,9 @@ type AXUIElementRef = CFTypeRef;
 type AXError = i32;
 
 const K_AX_ERROR_SUCCESS: AXError = 0;
+const K_AX_ERROR_CANNOT_COMPLETE: AXError = -25204;
+const INSERTION_CONTEXT_AX_TIMEOUT_SECONDS: f32 = 0.15;
+const OVERLAY_CURSOR_MONITOR_AX_TIMEOUT_SECONDS: f32 = 0.08;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
@@ -38,6 +44,7 @@ extern "C" {
         attribute: CFStringRef,
         value: CFTypeRef,
     ) -> AXError;
+    fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, timeout_in_seconds: f32) -> AXError;
 }
 
 // Attribute name constants
@@ -46,6 +53,9 @@ fn ax_focused_application() -> CFString {
 }
 fn ax_focused_ui_element() -> CFString {
     CFString::new("AXFocusedUIElement")
+}
+fn ax_focused_window() -> CFString {
+    CFString::new("AXFocusedWindow")
 }
 fn ax_selected_text() -> CFString {
     CFString::new("AXSelectedText")
@@ -58,6 +68,12 @@ fn ax_selected_text_range() -> CFString {
 }
 fn ax_bounds_for_range() -> CFString {
     CFString::new("AXBoundsForRange")
+}
+fn ax_position() -> CFString {
+    CFString::new("AXPosition")
+}
+fn ax_size() -> CFString {
+    CFString::new("AXSize")
 }
 
 // ─── CFRange / AXValue helpers ──────────────────────────────────────
@@ -80,7 +96,23 @@ struct AXRect {
     height: f64,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct AXPoint {
+    x: f64,
+    y: f64,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+struct AXSize {
+    width: f64,
+    height: f64,
+}
+
 // AXValueType constants (from HIServices/AXValue.h)
+const K_AX_VALUE_TYPE_CG_POINT: u32 = 1;
+const K_AX_VALUE_TYPE_CG_SIZE: u32 = 2;
 const K_AX_VALUE_TYPE_CF_RANGE: u32 = 4;
 const K_AX_VALUE_TYPE_CG_RECT: u32 = 3;
 
@@ -93,12 +125,49 @@ extern "C" {
 // ─── Core functions ─────────────────────────────────────────────────
 
 /// Get the AXUIElement for the focused UI element across all apps.
+#[derive(Debug)]
+struct AxLookupError {
+    message: String,
+    code: Option<AXError>,
+}
+
+fn classify_ax_error_reason(code: Option<AXError>) -> &'static str {
+    match code {
+        Some(K_AX_ERROR_CANNOT_COMPLETE) => "ax_cannot_complete",
+        Some(_) => "ax_lookup_failed",
+        None => "ax_unknown",
+    }
+}
+
 fn get_focused_element() -> Result<AXUIElementRef, String> {
+    get_focused_element_with_timeout(None).map_err(|err| err.message)
+}
+
+fn get_focused_element_with_timeout(
+    timeout_in_seconds: Option<f32>,
+) -> Result<AXUIElementRef, AxLookupError> {
     unsafe {
         let system_wide = AXUIElementCreateSystemWide();
         if system_wide.is_null() {
             error!("AXUIElementCreateSystemWide returned null");
-            return Err("Failed to create system-wide AX element".to_string());
+            return Err(AxLookupError {
+                message: "Failed to create system-wide AX element".to_string(),
+                code: None,
+            });
+        }
+
+        let mut timeout_applied = false;
+        if let Some(timeout_seconds) = timeout_in_seconds {
+            let timeout_err = AXUIElementSetMessagingTimeout(system_wide, timeout_seconds);
+            if timeout_err == K_AX_ERROR_SUCCESS {
+                timeout_applied = true;
+            } else {
+                debug!(
+                    timeout_seconds,
+                    ax_error = timeout_err,
+                    "Failed to set AX messaging timeout; using default timeout"
+                );
+            }
         }
 
         // First get the focused app
@@ -109,10 +178,16 @@ fn get_focused_element() -> Result<AXUIElementRef, String> {
             &mut focused_app,
         );
         if err != K_AX_ERROR_SUCCESS || focused_app.is_null() {
+            if timeout_applied {
+                let _ = AXUIElementSetMessagingTimeout(system_wide, 0.0);
+            }
             CFRelease(system_wide);
             let msg = format!("Failed to get focused application (AXError: {})", err);
             warn!("{}", msg);
-            return Err(msg);
+            return Err(AxLookupError {
+                message: msg,
+                code: Some(err),
+            });
         }
         debug!("Got focused application AXUIElement");
 
@@ -124,13 +199,26 @@ fn get_focused_element() -> Result<AXUIElementRef, String> {
             &mut focused_element,
         );
 
+        if timeout_applied {
+            let reset_err = AXUIElementSetMessagingTimeout(system_wide, 0.0);
+            if reset_err != K_AX_ERROR_SUCCESS {
+                debug!(
+                    ax_error = reset_err,
+                    "Failed to reset AX messaging timeout to default"
+                );
+            }
+        }
+
         CFRelease(focused_app);
         CFRelease(system_wide);
 
         if err != K_AX_ERROR_SUCCESS || focused_element.is_null() {
             let msg = format!("Failed to get focused UI element (AXError: {})", err);
             warn!("{}", msg);
-            return Err(msg);
+            return Err(AxLookupError {
+                message: msg,
+                code: Some(err),
+            });
         }
 
         debug!("Got focused UI element");
@@ -243,8 +331,8 @@ fn get_selected_text_range(element: AXUIElementRef) -> Option<CFRange> {
 }
 
 /// Get the screen bounds of a text range via AXBoundsForRange.
-/// Returns (x, y) of the top-left corner of that range's bounding rect.
-fn get_bounds_for_range(element: AXUIElementRef, range: CFRange) -> Option<(f64, f64)> {
+/// Returns the CGRect bounds for the requested range.
+fn get_rect_for_range(element: AXUIElementRef, range: CFRange) -> Option<AXRect> {
     unsafe {
         // Create an AXValue wrapping the CFRange
         let range_value = AXValueCreate(
@@ -288,13 +376,170 @@ fn get_bounds_for_range(element: AXUIElementRef, range: CFRange) -> Option<(f64,
 
         if ok {
             debug!(x = rect.x, y = rect.y, w = rect.width, h = rect.height, "Got bounds for range");
-            // Return bottom-left of the range rect (good position for overlay below cursor)
-            Some((rect.x, rect.y + rect.height))
+            Some(rect)
         } else {
             warn!("AXValueGetValue failed for CGRect bounds");
             None
         }
     }
+}
+
+fn get_attribute_ax_point(element: AXUIElementRef, attribute: CFString) -> Option<AXPoint> {
+    unsafe {
+        let mut value: CFTypeRef = std::ptr::null();
+        let err = AXUIElementCopyAttributeValue(
+            element,
+            attribute.as_concrete_TypeRef(),
+            &mut value,
+        );
+        if err != K_AX_ERROR_SUCCESS || value.is_null() {
+            debug!("Failed to get AXPoint attribute (AXError: {})", err);
+            return None;
+        }
+
+        let mut point = AXPoint { x: 0.0, y: 0.0 };
+        let ok = AXValueGetValue(
+            value,
+            K_AX_VALUE_TYPE_CG_POINT,
+            &mut point as *mut AXPoint as *mut std::ffi::c_void,
+        );
+        CFRelease(value);
+
+        if ok {
+            Some(point)
+        } else {
+            warn!("AXValueGetValue failed for CGPoint attribute");
+            None
+        }
+    }
+}
+
+fn get_attribute_ax_size(element: AXUIElementRef, attribute: CFString) -> Option<AXSize> {
+    unsafe {
+        let mut value: CFTypeRef = std::ptr::null();
+        let err = AXUIElementCopyAttributeValue(
+            element,
+            attribute.as_concrete_TypeRef(),
+            &mut value,
+        );
+        if err != K_AX_ERROR_SUCCESS || value.is_null() {
+            debug!("Failed to get AXSize attribute (AXError: {})", err);
+            return None;
+        }
+
+        let mut size = AXSize {
+            width: 0.0,
+            height: 0.0,
+        };
+        let ok = AXValueGetValue(
+            value,
+            K_AX_VALUE_TYPE_CG_SIZE,
+            &mut size as *mut AXSize as *mut std::ffi::c_void,
+        );
+        CFRelease(value);
+
+        if ok {
+            Some(size)
+        } else {
+            warn!("AXValueGetValue failed for CGSize attribute");
+            None
+        }
+    }
+}
+
+fn get_focused_window_rect_with_timeout(timeout_in_seconds: Option<f32>) -> Result<AXRect, AxLookupError> {
+    unsafe {
+        let system_wide = AXUIElementCreateSystemWide();
+        if system_wide.is_null() {
+            return Err(AxLookupError {
+                message: "Failed to create system-wide AX element".to_string(),
+                code: None,
+            });
+        }
+
+        let mut timeout_applied = false;
+        if let Some(timeout_seconds) = timeout_in_seconds {
+            let timeout_err = AXUIElementSetMessagingTimeout(system_wide, timeout_seconds);
+            if timeout_err == K_AX_ERROR_SUCCESS {
+                timeout_applied = true;
+            }
+        }
+
+        let mut focused_app: CFTypeRef = std::ptr::null();
+        let focused_app_err = AXUIElementCopyAttributeValue(
+            system_wide,
+            ax_focused_application().as_concrete_TypeRef(),
+            &mut focused_app,
+        );
+        if focused_app_err != K_AX_ERROR_SUCCESS || focused_app.is_null() {
+            if timeout_applied {
+                let _ = AXUIElementSetMessagingTimeout(system_wide, 0.0);
+            }
+            CFRelease(system_wide);
+            return Err(AxLookupError {
+                message: format!(
+                    "Failed to get focused application for focused window (AXError: {})",
+                    focused_app_err
+                ),
+                code: Some(focused_app_err),
+            });
+        }
+
+        // Propagate the timeout to focused_app so the AXFocusedWindow query
+        // is also bounded. AXUIElementSetMessagingTimeout is per-element and
+        // does not inherit from the system-wide element.
+        if let Some(timeout_seconds) = timeout_in_seconds {
+            let _ = AXUIElementSetMessagingTimeout(focused_app as AXUIElementRef, timeout_seconds);
+        }
+
+        let mut focused_window: CFTypeRef = std::ptr::null();
+        let focused_window_err = AXUIElementCopyAttributeValue(
+            focused_app,
+            ax_focused_window().as_concrete_TypeRef(),
+            &mut focused_window,
+        );
+
+        if timeout_applied {
+            let _ = AXUIElementSetMessagingTimeout(system_wide, 0.0);
+        }
+
+        CFRelease(focused_app);
+        CFRelease(system_wide);
+
+        if focused_window_err != K_AX_ERROR_SUCCESS || focused_window.is_null() {
+            return Err(AxLookupError {
+                message: format!(
+                    "Failed to get focused window (AXError: {})",
+                    focused_window_err
+                ),
+                code: Some(focused_window_err),
+            });
+        }
+
+        let position = get_attribute_ax_point(focused_window, ax_position());
+        let size = get_attribute_ax_size(focused_window, ax_size());
+        CFRelease(focused_window);
+
+        match (position, size) {
+            (Some(position), Some(size)) => Ok(AXRect {
+                x: position.x,
+                y: position.y,
+                width: size.width,
+                height: size.height,
+            }),
+            _ => Err(AxLookupError {
+                message: "Focused window frame attributes unavailable".to_string(),
+                code: None,
+            }),
+        }
+    }
+}
+
+/// Get the screen bounds of a text range via AXBoundsForRange.
+/// Returns (x, y) of the bottom-left corner of that range's bounding rect.
+fn get_bounds_for_range(element: AXUIElementRef, range: CFRange) -> Option<(f64, f64)> {
+    let rect = get_rect_for_range(element, range)?;
+    Some((rect.x, rect.y + rect.height))
 }
 
 /// Get the text cursor's screen position.  
@@ -607,38 +852,254 @@ fn capture_via_clipboard(app_handle: &tauri::AppHandle) -> Option<String> {
 /// This intentionally avoids clipboard fallback to prevent side-effects during
 /// regular paste operations.
 pub fn capture_insertion_context(_app_handle: &tauri::AppHandle) -> Option<TextInsertionContext> {
+    let capture_start = Instant::now();
+
     if !crate::permissions::check_accessibility_permission() {
-        debug!("Skipping insertion context capture: accessibility permission missing");
+        debug!(
+            event_code = "insertion_context_capture_completed",
+            context_available = false,
+            fallback_reason = "accessibility_permission_missing",
+            total_elapsed_ms = capture_start.elapsed().as_millis(),
+            "Skipping insertion context capture: accessibility permission missing"
+        );
         return None;
     }
 
-    let element = match get_focused_element() {
+    let focused_element_lookup_start = Instant::now();
+    let element = match get_focused_element_with_timeout(Some(INSERTION_CONTEXT_AX_TIMEOUT_SECONDS))
+    {
         Ok(el) => el,
-        Err(e) => {
-            debug!("Skipping insertion context capture: focused element unavailable ({})", e);
+        Err(err) => {
+            let lookup_elapsed_ms = focused_element_lookup_start.elapsed().as_millis();
+            let fallback_reason = classify_ax_error_reason(err.code);
+            debug!(
+                event_code = "insertion_context_capture_completed",
+                context_available = false,
+                fallback_reason,
+                focused_lookup_elapsed_ms = lookup_elapsed_ms,
+                total_elapsed_ms = capture_start.elapsed().as_millis(),
+                "Skipping insertion context capture: focused element unavailable ({})",
+                err.message
+            );
             return None;
         }
     };
+    let focused_lookup_elapsed_ms = focused_element_lookup_start.elapsed().as_millis();
 
+    let full_text_lookup_start = Instant::now();
     let full_text = get_full_text(element);
+    let full_text_lookup_elapsed_ms = full_text_lookup_start.elapsed().as_millis();
+    let range_lookup_start = Instant::now();
     let range = get_selected_text_range(element);
+    let range_lookup_elapsed_ms = range_lookup_start.elapsed().as_millis();
 
     unsafe { CFRelease(element) };
 
     let Some(full_text) = full_text else {
-        debug!("Skipping insertion context capture: AXValue text unavailable");
+        debug!(
+            event_code = "insertion_context_capture_completed",
+            context_available = false,
+            fallback_reason = "ax_value_unavailable",
+            focused_lookup_elapsed_ms,
+            full_text_lookup_elapsed_ms,
+            range_lookup_elapsed_ms,
+            total_elapsed_ms = capture_start.elapsed().as_millis(),
+            "Skipping insertion context capture: AXValue text unavailable"
+        );
         return None;
     };
     let Some(range) = range else {
-        debug!("Skipping insertion context capture: AXSelectedTextRange unavailable");
+        debug!(
+            event_code = "insertion_context_capture_completed",
+            context_available = false,
+            fallback_reason = "ax_selected_text_range_unavailable",
+            focused_lookup_elapsed_ms,
+            full_text_lookup_elapsed_ms,
+            range_lookup_elapsed_ms,
+            total_elapsed_ms = capture_start.elapsed().as_millis(),
+            "Skipping insertion context capture: AXSelectedTextRange unavailable"
+        );
         return None;
     };
 
+    let context_build_start = Instant::now();
     let context = build_insertion_context(&full_text, range);
+    let context_build_elapsed_ms = context_build_start.elapsed().as_millis();
     if context.is_none() {
-        debug!("Skipping insertion context capture: invalid text range");
+        debug!(
+            event_code = "insertion_context_capture_completed",
+            context_available = false,
+            fallback_reason = "invalid_text_range",
+            focused_lookup_elapsed_ms,
+            full_text_lookup_elapsed_ms,
+            range_lookup_elapsed_ms,
+            context_build_elapsed_ms,
+            total_elapsed_ms = capture_start.elapsed().as_millis(),
+            "Skipping insertion context capture: invalid text range"
+        );
+    } else {
+        debug!(
+            event_code = "insertion_context_capture_completed",
+            context_available = true,
+            fallback_reason = "none",
+            focused_lookup_elapsed_ms,
+            full_text_lookup_elapsed_ms,
+            range_lookup_elapsed_ms,
+            context_build_elapsed_ms,
+            total_elapsed_ms = capture_start.elapsed().as_millis(),
+            "Completed insertion context capture"
+        );
     }
     context
+}
+
+/// Capture only the active insertion point screen position for overlay monitor routing.
+///
+/// This is intentionally lightweight:
+/// - uses a strict AX timeout to avoid blocking overlay show
+/// - does not fall back to clipboard or mouse position
+/// - returns `None` when cursor geometry cannot be resolved quickly
+pub fn capture_active_cursor_screen_probe(
+    _app_handle: &tauri::AppHandle,
+) -> Option<OverlayCursorScreenProbe> {
+    let capture_start = Instant::now();
+
+    let focused_lookup_start = Instant::now();
+    let element = match get_focused_element_with_timeout(Some(
+        OVERLAY_CURSOR_MONITOR_AX_TIMEOUT_SECONDS,
+    )) {
+        Ok(element) => element,
+        Err(err) => {
+            debug!(
+                event_code = "overlay_cursor_position_capture_completed",
+                position_available = false,
+                fallback_reason = classify_ax_error_reason(err.code),
+                focused_lookup_elapsed_ms = focused_lookup_start.elapsed().as_millis(),
+                total_elapsed_ms = capture_start.elapsed().as_millis(),
+                "Skipping overlay cursor position capture: focused element unavailable ({})",
+                err.message
+            );
+            return None;
+        }
+    };
+    let focused_lookup_elapsed_ms = focused_lookup_start.elapsed().as_millis();
+
+    let range_lookup_start = Instant::now();
+    let range = get_selected_text_range(element);
+    let range_lookup_elapsed_ms = range_lookup_start.elapsed().as_millis();
+    let Some(range) = range else {
+        unsafe { CFRelease(element) };
+        debug!(
+            event_code = "overlay_cursor_position_capture_completed",
+            position_available = false,
+            fallback_reason = "missing_selected_text_range",
+            focused_lookup_elapsed_ms,
+            range_lookup_elapsed_ms,
+            total_elapsed_ms = capture_start.elapsed().as_millis(),
+            "Skipping overlay cursor position capture: selected text range unavailable"
+        );
+        return None;
+    };
+
+    let bounds_lookup_start = Instant::now();
+    let cursor_range = CFRange {
+        location: range.location,
+        length: 1.coerced_to(range.length.max(1)),
+    };
+    let rect = get_rect_for_range(element, cursor_range);
+    let bounds_lookup_elapsed_ms = bounds_lookup_start.elapsed().as_millis();
+    unsafe { CFRelease(element) };
+
+    if let Some(rect) = rect {
+        // Probe slightly inside the caret rect to avoid monitor seam/border ambiguity.
+        let vertical_inset = if rect.height >= 1.0 {
+            0.5
+        } else {
+            (rect.height / 2.0).max(0.0)
+        };
+        let x = rect.x;
+        let y = rect.y + rect.height - vertical_inset;
+        debug!(
+            event_code = "overlay_cursor_position_capture_completed",
+            position_available = true,
+            fallback_reason = "none",
+            focused_lookup_elapsed_ms,
+            range_lookup_elapsed_ms,
+            bounds_lookup_elapsed_ms,
+            total_elapsed_ms = capture_start.elapsed().as_millis(),
+            rect_x = rect.x,
+            rect_y = rect.y,
+            rect_width = rect.width,
+            rect_height = rect.height,
+            cursor_x = x,
+            cursor_y = y,
+            "Captured overlay cursor position"
+        );
+        Some(OverlayCursorScreenProbe {
+            rect_x: rect.x,
+            rect_y: rect.y,
+            rect_width: rect.width,
+            rect_height: rect.height,
+            point_x: x,
+            point_y: y,
+        })
+    } else {
+        debug!(
+            event_code = "overlay_cursor_position_capture_completed",
+            position_available = false,
+            fallback_reason = "bounds_unavailable",
+            focused_lookup_elapsed_ms,
+            range_lookup_elapsed_ms,
+            bounds_lookup_elapsed_ms,
+            total_elapsed_ms = capture_start.elapsed().as_millis(),
+            "Skipping overlay cursor position capture: AX bounds unavailable"
+        );
+        None
+    }
+}
+
+/// Capture the focused window frame in screen coordinates for overlay monitor routing.
+///
+/// This is a low-cost fallback used when caret geometry is unavailable.
+pub fn capture_focused_window_screen_frame(
+    _app_handle: &tauri::AppHandle,
+) -> Option<OverlayWindowScreenFrame> {
+    let capture_start = Instant::now();
+
+    match get_focused_window_rect_with_timeout(Some(
+        OVERLAY_CURSOR_MONITOR_AX_TIMEOUT_SECONDS,
+    )) {
+        Ok(rect) => {
+            debug!(
+                event_code = "overlay_focused_window_capture_completed",
+                frame_available = true,
+                fallback_reason = "none",
+                total_elapsed_ms = capture_start.elapsed().as_millis(),
+                rect_x = rect.x,
+                rect_y = rect.y,
+                rect_width = rect.width,
+                rect_height = rect.height,
+                "Captured focused window frame for overlay routing"
+            );
+            Some(OverlayWindowScreenFrame {
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
+            })
+        }
+        Err(err) => {
+            debug!(
+                event_code = "overlay_focused_window_capture_completed",
+                frame_available = false,
+                fallback_reason = classify_ax_error_reason(err.code),
+                total_elapsed_ms = capture_start.elapsed().as_millis(),
+                "Skipping focused window frame capture: {}",
+                err.message
+            );
+            None
+        }
+    }
 }
 
 /// Capture text context from the currently focused application.
