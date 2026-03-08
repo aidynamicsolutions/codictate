@@ -1,4 +1,6 @@
 use crate::input::{self, EnigoState};
+#[cfg(target_os = "macos")]
+use crate::macos_transient_clipboard;
 #[cfg(target_os = "linux")]
 use crate::settings::TypingTool;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
@@ -160,22 +162,7 @@ fn paste_via_clipboard(
 
     std::thread::sleep(Duration::from_millis(paste_delay_ms));
 
-    // Send paste key combo
-    #[cfg(target_os = "linux")]
-    let key_combo_sent = try_send_key_combo_linux(paste_method)?;
-
-    #[cfg(not(target_os = "linux"))]
-    let key_combo_sent = false;
-
-    // Fall back to enigo if no native tool handled it
-    if !key_combo_sent {
-        match paste_method {
-            PasteMethod::CtrlV => input::send_paste_ctrl_v(enigo)?,
-            PasteMethod::CtrlShiftV => input::send_paste_ctrl_shift_v(enigo)?,
-            PasteMethod::ShiftInsert => input::send_paste_shift_insert(enigo)?,
-            _ => return Err("Invalid paste method for clipboard paste".into()),
-        }
-    }
+    send_paste_shortcut(enigo, paste_method)?;
 
     std::thread::sleep(std::time::Duration::from_millis(paste_restore_delay_ms));
 
@@ -214,6 +201,25 @@ fn paste_via_clipboard(
                 backup_chars = backup_text.chars().count(),
                 "Clipboard restored after paste"
             );
+        }
+    }
+
+    Ok(())
+}
+
+fn send_paste_shortcut(enigo: &mut Enigo, paste_method: &PasteMethod) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    let key_combo_sent = try_send_key_combo_linux(paste_method)?;
+
+    #[cfg(not(target_os = "linux"))]
+    let key_combo_sent = false;
+
+    if !key_combo_sent {
+        match paste_method {
+            PasteMethod::CtrlV => input::send_paste_ctrl_v(enigo)?,
+            PasteMethod::CtrlShiftV => input::send_paste_ctrl_shift_v(enigo)?,
+            PasteMethod::ShiftInsert => input::send_paste_shift_insert(enigo)?,
+            _ => return Err("Invalid paste method for clipboard paste".into()),
         }
     }
 
@@ -726,6 +732,25 @@ fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Result<(), Str
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn paste_via_transient_clipboard(
+    enigo: &mut Enigo,
+    text: &str,
+    backup_text: &str,
+    paste_method: &PasteMethod,
+    paste_delay_ms: u64,
+) -> Result<(), String> {
+    macos_transient_clipboard::stage_transient_text(text, Some(backup_text))?;
+    debug!(
+        text_chars = text.chars().count(),
+        backup_chars = backup_text.chars().count(),
+        "Staged transient macOS clipboard item"
+    );
+
+    std::thread::sleep(Duration::from_millis(paste_delay_ms));
+    send_paste_shortcut(enigo, paste_method)
+}
+
 fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool {
     auto_submit && paste_method_performs_paste(paste_method)
 }
@@ -866,15 +891,44 @@ pub fn paste_with_mode(
                             backup_chars = backup_text.chars().count(),
                             "Captured clipboard backup before paste"
                         );
-                        paste_via_clipboard(
-                            enigo,
-                            &prepared_text,
-                            &app_handle,
-                            &paste_method,
-                            paste_delay_ms,
-                            paste_restore_delay_ms,
-                            Some(&backup_text),
-                        )?;
+
+                        #[cfg(target_os = "macos")]
+                        {
+                            match paste_via_transient_clipboard(
+                                enigo,
+                                &prepared_text,
+                                &backup_text,
+                                &paste_method,
+                                paste_delay_ms,
+                            ) {
+                                Ok(()) => {}
+                                Err(err) => {
+                                    warn!(
+                                        error = %err,
+                                        "Transient clipboard staging failed; falling back to direct paste for this transcription"
+                                    );
+                                    paste_direct(
+                                        enigo,
+                                        &prepared_text,
+                                        #[cfg(target_os = "linux")]
+                                        settings.typing_tool,
+                                    )?;
+                                }
+                            }
+                        }
+
+                        #[cfg(not(target_os = "macos"))]
+                        {
+                            paste_via_clipboard(
+                                enigo,
+                                &prepared_text,
+                                &app_handle,
+                                &paste_method,
+                                paste_delay_ms,
+                                paste_restore_delay_ms,
+                                Some(&backup_text),
+                            )?;
+                        }
                     }
                     Err(err) => {
                         warn!(

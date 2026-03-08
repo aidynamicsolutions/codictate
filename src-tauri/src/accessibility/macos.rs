@@ -1206,9 +1206,9 @@ pub fn capture_context(app_handle: &tauri::AppHandle) -> Result<CapturedContext,
 ///
 /// Strategy:
 /// 1. Try to re-select the original text via AX API (robust against cursor movement)
-/// 2. Put replacement text on clipboard
+/// 2. Stage replacement text on the general pasteboard
 /// 3. Simulate Cmd+V to paste
-/// 4. Restore original clipboard synchronously
+/// 4. Restore the original clipboard only after AppKit no longer needs the staged item
 pub fn replace_text_in_app(
     app_handle: &tauri::AppHandle,
     original: &str,
@@ -1233,40 +1233,35 @@ pub fn replace_text_in_app(
         clip.read_text().ok()
     };
 
-    // 2. Put replacement text on clipboard
-    {
-        let clip = app_handle.clipboard();
-        clip.write_text(replacement.to_string())
-            .map_err(|e| format!("Failed to write to clipboard: {:?}", e))?;
-    }
-
-    // 3. Small delay for clipboard to update
-    std::thread::sleep(std::time::Duration::from_millis(50));
-
-    // 4. Simulate Cmd+V to paste
+    // 2. Stage the replacement and paste it into the current selection.
     let enigo_state = app_handle
         .try_state::<crate::input::EnigoState>()
         .ok_or("EnigoState not available")?;
     {
         let mut guard = enigo_state.0.lock().unwrap();
         if let Some(ref mut enigo) = *guard {
-            crate::input::send_paste_ctrl_v(enigo)?;
+            match crate::macos_transient_clipboard::stage_transient_text(
+                replacement,
+                clipboard_backup.as_deref(),
+            ) {
+                Ok(()) => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    crate::input::send_paste_ctrl_v(enigo)?;
+                }
+                Err(err) => {
+                    warn!(
+                        error = %err,
+                        "Transient clipboard staging failed for text replacement; falling back to direct typing"
+                    );
+                    crate::input::paste_text_direct(enigo, replacement)?;
+                }
+            }
         } else {
             return Err("Enigo not initialized".to_string());
         }
     }
 
     debug!("Paste command sent for text replacement");
-
-    // 5. Restore clipboard synchronously after paste completes.
-    //    This runs on a spawned thread (from fn_key_monitor accept handler),
-    //    so blocking here is safe and eliminates the clipboard race window.
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    if let Some(original_clipboard) = clipboard_backup {
-        let clip = app_handle.clipboard();
-        let _ = clip.write_text(original_clipboard);
-        debug!("Clipboard restored after text replacement");
-    }
 
     info!("Text replacement complete");
     Ok(())

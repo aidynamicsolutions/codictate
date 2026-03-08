@@ -4,6 +4,8 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     build_audio_device_info_bridge();
+    #[cfg(target_os = "macos")]
+    build_transient_pasteboard_bridge();
 
     generate_tray_translations();
 
@@ -364,4 +366,84 @@ fn build_audio_device_info_bridge() {
     println!("cargo:rustc-link-lib=framework=AudioToolbox");
 
     println!("cargo:warning=Built audio_device_info bridge for Bluetooth detection");
+}
+
+#[cfg(target_os = "macos")]
+fn build_transient_pasteboard_bridge() {
+    use std::env;
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    const SWIFT_FILE: &str = "swift/transient_pasteboard.swift";
+    const BRIDGE_HEADER: &str = "swift/transient_pasteboard_bridge.h";
+
+    println!("cargo:rerun-if-changed={SWIFT_FILE}");
+    println!("cargo:rerun-if-changed={BRIDGE_HEADER}");
+
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
+    let object_path = out_dir.join("transient_pasteboard.o");
+    let static_lib_path = out_dir.join("libtransient_pasteboard.a");
+
+    let sdk_path = command_stdout_or_panic(
+        "xcrun",
+        &["--sdk", "macosx", "--show-sdk-path"],
+        "Locating macOS SDK for transient_pasteboard bridge",
+    );
+
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_else(|_| "aarch64".to_string());
+    let swift_arch = match target_arch.as_str() {
+        "x86_64" => "x86_64",
+        "aarch64" => "arm64",
+        _ => "arm64",
+    };
+    let swift_target = format!("{swift_arch}-apple-macosx11.0");
+
+    let status = Command::new("xcrun")
+        .args([
+            "swiftc",
+            "-target",
+            &swift_target,
+            "-sdk",
+            &sdk_path,
+            "-O",
+            "-import-objc-header",
+            BRIDGE_HEADER,
+            "-c",
+            SWIFT_FILE,
+            "-o",
+            object_path
+                .to_str()
+                .expect("Failed to convert object path to string"),
+        ])
+        .status()
+        .expect("Failed to invoke swiftc for transient_pasteboard bridge");
+
+    if !status.success() {
+        panic!("swiftc failed to compile {SWIFT_FILE}");
+    }
+
+    let status = Command::new("libtool")
+        .args([
+            "-static",
+            "-o",
+            static_lib_path
+                .to_str()
+                .expect("Failed to convert static lib path to string"),
+            object_path
+                .to_str()
+                .expect("Failed to convert object path to string"),
+        ])
+        .status()
+        .expect("Failed to create static library for transient_pasteboard bridge");
+
+    if !status.success() {
+        panic!("libtool failed for transient_pasteboard bridge");
+    }
+
+    println!("cargo:rustc-link-search=native={}", out_dir.display());
+    println!("cargo:rustc-link-lib=static=transient_pasteboard");
+    println!("cargo:rustc-link-lib=framework=AppKit");
+    println!("cargo:rustc-link-lib=framework=Foundation");
+
+    println!("cargo:warning=Built transient_pasteboard bridge for macOS clipboard staging");
 }

@@ -5,8 +5,9 @@
 import AudioToolbox
 import CoreAudio
 import Foundation
+import os
 
-private let routeMonitorLock = NSLock()
+private var routeMonitorLock = os_unfair_lock_s()
 private var routeMonitorStarted = false
 private var inputRouteChangeGeneration: UInt64 = 0
 
@@ -16,9 +17,9 @@ private func inputRouteChangeListener(
     _ inAddresses: UnsafePointer<AudioObjectPropertyAddress>,
     _ inClientData: UnsafeMutableRawPointer?
 ) -> OSStatus {
-    routeMonitorLock.lock()
+    os_unfair_lock_lock(&routeMonitorLock)
     inputRouteChangeGeneration &+= 1
-    routeMonitorLock.unlock()
+    os_unfair_lock_unlock(&routeMonitorLock)
     return noErr
 }
 
@@ -26,12 +27,12 @@ private func inputRouteChangeListener(
 /// Returns 0 if started, 1 if already active, -1 on failure.
 @_cdecl("start_input_route_change_monitor")
 public func startInputRouteChangeMonitor() -> Int32 {
-    routeMonitorLock.lock()
+    os_unfair_lock_lock(&routeMonitorLock)
     if routeMonitorStarted {
-        routeMonitorLock.unlock()
+        os_unfair_lock_unlock(&routeMonitorLock)
         return 1
     }
-    routeMonitorLock.unlock()
+    os_unfair_lock_unlock(&routeMonitorLock)
 
     let systemObject = AudioObjectID(kAudioObjectSystemObject)
     var defaultInputAddress = AudioObjectPropertyAddress(
@@ -71,18 +72,18 @@ public func startInputRouteChangeMonitor() -> Int32 {
         return -1
     }
 
-    routeMonitorLock.lock()
+    os_unfair_lock_lock(&routeMonitorLock)
     routeMonitorStarted = true
-    routeMonitorLock.unlock()
+    os_unfair_lock_unlock(&routeMonitorLock)
     return 0
 }
 
 /// Read monotonic input-route change generation.
 @_cdecl("get_input_route_change_generation")
 public func getInputRouteChangeGeneration() -> UInt64 {
-    routeMonitorLock.lock()
+    os_unfair_lock_lock(&routeMonitorLock)
     let generation = inputRouteChangeGeneration
-    routeMonitorLock.unlock()
+    os_unfair_lock_unlock(&routeMonitorLock)
     return generation
 }
 
