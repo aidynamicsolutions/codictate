@@ -385,7 +385,9 @@
     "modelError": "Error del Modelo",
     "modelUnloaded": "Modelo Descargado",
     "noModelDownloadRequired": "Sin Modelo - Descarga Requerida",
-    "deleteModel": "Eliminar {{modelName}}"
+    "deleteModel": "Eliminar {{modelName}}",
+    "downloadFailed": "Descarga fallida",
+    "retry": "Reintentar"
   },
   "settings": {
     "general": {

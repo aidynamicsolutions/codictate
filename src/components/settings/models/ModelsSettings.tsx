@@ -85,6 +85,7 @@ export const ModelsSettings: React.FC = () => {
     downloadingModels,
     downloadProgress,
     downloadStats,
+    failedDownloads,
     extractingModels,
     loading,
     downloadModel,
@@ -170,6 +171,9 @@ export const ModelsSettings: React.FC = () => {
     if (modelId in downloadingModels) {
       return "downloading";
     }
+    if (modelId in failedDownloads) {
+      return "download_failed";
+    }
     if (switchingModelId === modelId) {
       return "switching";
     }
@@ -193,6 +197,10 @@ export const ModelsSettings: React.FC = () => {
     return stats?.speed;
   };
 
+  const getDownloadError = (modelId: string): string | undefined => {
+    return failedDownloads[modelId]?.message;
+  };
+
   const handleModelSelect = async (modelId: string) => {
     setSwitchingModelId(modelId);
     try {
@@ -203,6 +211,10 @@ export const ModelsSettings: React.FC = () => {
   };
 
   const handleModelDownload = async (modelId: string) => {
+    await downloadModel(modelId);
+  };
+
+  const handleModelRetry = async (modelId: string) => {
     await downloadModel(modelId);
   };
 
@@ -301,17 +313,24 @@ export const ModelsSettings: React.FC = () => {
     });
   }, [models, languageFilter]);
 
-  // Split filtered models into downloaded and available sections
-  const { downloadedModels, availableModels } = useMemo(() => {
+  // Split filtered models into active downloads, downloaded, and available sections
+  const { activeDownloadModels, downloadedModels, availableModels } = useMemo(() => {
+    const activeDownloadIds = new Set([
+      ...Object.keys(downloadingModels),
+      ...Object.keys(extractingModels),
+      ...Object.keys(failedDownloads),
+    ]);
+    const activeDownloads: ModelInfo[] = [];
     const downloaded: ModelInfo[] = [];
     const available: ModelInfo[] = [];
 
     for (const model of filteredModels) {
-      const isDownloaded =
-        model.is_downloaded ||
-        model.id in downloadingModels ||
-        model.id in extractingModels;
-      if (isDownloaded) {
+      if (activeDownloadIds.has(model.id)) {
+        activeDownloads.push(model);
+        continue;
+      }
+
+      if (model.is_downloaded) {
         downloaded.push(model);
       } else {
         available.push(model);
@@ -326,8 +345,12 @@ export const ModelsSettings: React.FC = () => {
       return 0;
     });
 
-    return { downloadedModels: downloaded, availableModels: available };
-  }, [filteredModels, downloadingModels, extractingModels, currentModel]);
+    return {
+      activeDownloadModels: activeDownloads,
+      downloadedModels: downloaded,
+      availableModels: available,
+    };
+  }, [filteredModels, downloadingModels, extractingModels, failedDownloads, currentModel]);
 
   // Split MLX models into downloaded and available sections
   const { downloadedMlxModels, availableMlxModels } = useMemo(() => {
@@ -381,6 +404,31 @@ export const ModelsSettings: React.FC = () => {
       </div>
       {filteredModels.length > 0 ? (
         <div className="space-y-6">
+          {/* Active Downloads Section */}
+          {activeDownloadModels.length > 0 && (
+            <div className="space-y-3">
+              <h2 className="text-sm font-medium text-text/60">
+                {t("settings.models.activeDownloads")}
+              </h2>
+              {activeDownloadModels.map((model: ModelInfo) => (
+                <ModelCard
+                  key={model.id}
+                  model={model}
+                  status={getModelStatus(model.id)}
+                  onSelect={handleModelSelect}
+                  onDownload={handleModelDownload}
+                  onDelete={handleModelDelete}
+                  onCancel={handleModelCancel}
+                  onRetry={handleModelRetry}
+                  downloadProgress={getDownloadProgress(model.id)}
+                  downloadSpeed={getDownloadSpeed(model.id)}
+                  downloadError={getDownloadError(model.id)}
+                  showRecommended={false}
+                />
+              ))}
+            </div>
+          )}
+
           {/* Downloaded Models Section */}
           {downloadedModels.length > 0 && (
             <div className="space-y-3" ref={downloadedModelsSectionRef}>
@@ -493,8 +541,10 @@ export const ModelsSettings: React.FC = () => {
                   onDownload={handleModelDownload}
                   onDelete={handleModelDelete}
                   onCancel={handleModelCancel}
+                  onRetry={handleModelRetry}
                   downloadProgress={getDownloadProgress(downloadedModels[0].id)}
                   downloadSpeed={getDownloadSpeed(downloadedModels[0].id)}
+                  downloadError={getDownloadError(downloadedModels[0].id)}
                   showRecommended={false}
                 />
               )}
@@ -515,8 +565,10 @@ export const ModelsSettings: React.FC = () => {
                         onDownload={handleModelDownload}
                         onDelete={handleModelDelete}
                         onCancel={handleModelCancel}
+                        onRetry={handleModelRetry}
                         downloadProgress={getDownloadProgress(model.id)}
                         downloadSpeed={getDownloadSpeed(model.id)}
+                        downloadError={getDownloadError(model.id)}
                         showRecommended={false}
                       />
                     ))}
@@ -557,8 +609,10 @@ export const ModelsSettings: React.FC = () => {
                   onDownload={handleModelDownload}
                   onDelete={handleModelDelete}
                   onCancel={handleModelCancel}
+                  onRetry={handleModelRetry}
                   downloadProgress={getDownloadProgress(model.id)}
                   downloadSpeed={getDownloadSpeed(model.id)}
+                  downloadError={getDownloadError(model.id)}
                   showRecommended={false}
                 />
               ))}
@@ -579,8 +633,10 @@ export const ModelsSettings: React.FC = () => {
                         onDownload={handleModelDownload}
                         onDelete={handleModelDelete}
                         onCancel={handleModelCancel}
+                        onRetry={handleModelRetry}
                         downloadProgress={getDownloadProgress(model.id)}
                         downloadSpeed={getDownloadSpeed(model.id)}
+                        downloadError={getDownloadError(model.id)}
                         showRecommended={false}
                       />
                     ))}

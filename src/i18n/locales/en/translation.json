@@ -572,6 +572,8 @@
     "modelUnloaded": "Model Unloaded",
     "noModelDownloadRequired": "No Model - Download Required",
     "deleteModel": "Delete {{modelName}}",
+    "downloadFailed": "Download failed",
+    "retry": "Retry",
     "downloadSpeed": "{{speed}} MB/s",
     "cancel": "Cancel",
     "cancelDownload": "Cancel download",

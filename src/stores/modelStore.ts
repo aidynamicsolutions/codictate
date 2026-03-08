@@ -18,6 +18,13 @@ interface DownloadStats {
   speed: number; // MB/s
 }
 
+export interface DownloadFailure {
+  model_id: string;
+  reason: string;
+  message: string;
+  resumable: boolean;
+}
+
 // Using Record instead of Set/Map for Immer compatibility
 interface ModelsStore {
   models: ModelInfo[];
@@ -26,6 +33,7 @@ interface ModelsStore {
   extractingModels: Record<string, true>;
   downloadProgress: Record<string, DownloadProgress>;
   downloadStats: Record<string, DownloadStats>;
+  failedDownloads: Record<string, DownloadFailure>;
   loading: boolean;
   error: string | null;
   hasAnyModels: boolean;
@@ -46,6 +54,7 @@ interface ModelsStore {
   isModelDownloading: (modelId: string) => boolean;
   isModelExtracting: (modelId: string) => boolean;
   getDownloadProgress: (modelId: string) => DownloadProgress | undefined;
+  getDownloadFailure: (modelId: string) => DownloadFailure | undefined;
   setShouldScrollToLanguageModels: (value: boolean) => void;
 
   // Internal setters
@@ -63,6 +72,7 @@ export const useModelStore = create<ModelsStore>()(
     extractingModels: {},
     downloadProgress: {},
     downloadStats: {},
+    failedDownloads: {},
     loading: true,
     error: null,
     hasAnyModels: false,
@@ -170,6 +180,7 @@ export const useModelStore = create<ModelsStore>()(
         set(
           produce((state) => {
             state.downloadingModels[modelId] = true;
+            delete state.failedDownloads[modelId];
             state.downloadProgress[modelId] = {
               model_id: modelId,
               downloaded: 0,
@@ -186,6 +197,8 @@ export const useModelStore = create<ModelsStore>()(
           set(
             produce((state) => {
               delete state.downloadingModels[modelId];
+              delete state.downloadProgress[modelId];
+              delete state.downloadStats[modelId];
             }),
           );
           return false;
@@ -195,6 +208,8 @@ export const useModelStore = create<ModelsStore>()(
         set(
           produce((state) => {
             delete state.downloadingModels[modelId];
+            delete state.downloadProgress[modelId];
+            delete state.downloadStats[modelId];
           }),
         );
         return false;
@@ -211,6 +226,7 @@ export const useModelStore = create<ModelsStore>()(
               delete state.downloadingModels[modelId];
               delete state.downloadProgress[modelId];
               delete state.downloadStats[modelId];
+              delete state.failedDownloads[modelId];
             }),
           );
 
@@ -261,6 +277,10 @@ export const useModelStore = create<ModelsStore>()(
       return get().downloadProgress[modelId];
     },
 
+    getDownloadFailure: (modelId: string) => {
+      return get().failedDownloads[modelId];
+    },
+
     initialize: async () => {
       if (get().initialized) return;
 
@@ -275,6 +295,9 @@ export const useModelStore = create<ModelsStore>()(
         set(
           produce((state) => {
             state.downloadProgress[progress.model_id] = progress;
+            state.downloadingModels[progress.model_id] = true;
+            delete state.failedDownloads[progress.model_id];
+            state.error = null;
           }),
         );
 
@@ -322,9 +345,12 @@ export const useModelStore = create<ModelsStore>()(
             delete state.downloadingModels[modelId];
             delete state.downloadProgress[modelId];
             delete state.downloadStats[modelId];
+            delete state.failedDownloads[modelId];
+            state.error = null;
           }),
         );
         get().loadModels();
+        get().loadCurrentModel();
       });
 
       listen<string>("model-extraction-started", (event) => {
@@ -332,6 +358,8 @@ export const useModelStore = create<ModelsStore>()(
         set(
           produce((state) => {
             state.extractingModels[modelId] = true;
+            delete state.failedDownloads[modelId];
+            state.error = null;
           }),
         );
       });
@@ -341,9 +369,12 @@ export const useModelStore = create<ModelsStore>()(
         set(
           produce((state) => {
             delete state.extractingModels[modelId];
+            delete state.failedDownloads[modelId];
+            state.error = null;
           }),
         );
         get().loadModels();
+        get().loadCurrentModel();
       });
 
       listen<{ model_id: string; error: string }>(
@@ -366,6 +397,20 @@ export const useModelStore = create<ModelsStore>()(
             delete state.downloadingModels[modelId];
             delete state.downloadProgress[modelId];
             delete state.downloadStats[modelId];
+            delete state.failedDownloads[modelId];
+          }),
+        );
+      });
+
+      listen<DownloadFailure>("model-download-failed", (event) => {
+        const failure = event.payload;
+        set(
+          produce((state) => {
+            delete state.downloadingModels[failure.model_id];
+            delete state.downloadProgress[failure.model_id];
+            delete state.downloadStats[failure.model_id];
+            state.failedDownloads[failure.model_id] = failure;
+            state.error = `Failed to download model: ${failure.message}`;
           }),
         );
       });

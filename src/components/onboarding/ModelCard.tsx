@@ -1,11 +1,13 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import {
+  AlertCircle,
   Check,
   Download,
   Globe,
   Languages,
   Loader2,
+  RotateCcw,
   Trash2,
 } from "lucide-react";
 import type { ModelInfo } from "@/bindings";
@@ -35,6 +37,7 @@ const getLanguageDisplayText = (
 export type ModelCardStatus =
   | "downloadable"
   | "downloading"
+  | "download_failed"
   | "extracting"
   | "switching"
   | "active"
@@ -50,8 +53,10 @@ interface ModelCardProps {
   onDownload?: (modelId: string) => void;
   onDelete?: (modelId: string) => void;
   onCancel?: (modelId: string) => void;
+  onRetry?: (modelId: string) => void;
   downloadProgress?: number;
   downloadSpeed?: number; // MB/s
+  downloadError?: string;
   showRecommended?: boolean;
 }
 
@@ -65,14 +70,19 @@ const ModelCard: React.FC<ModelCardProps> = ({
   onDownload,
   onDelete,
   onCancel,
+  onRetry,
   downloadProgress,
   downloadSpeed,
+  downloadError,
   showRecommended = true,
 }) => {
   const { t } = useTranslation();
   const isFeatured = variant === "featured";
   const isClickable =
-    status === "available" || status === "active" || status === "downloadable";
+    status === "available" ||
+    status === "active" ||
+    status === "downloadable" ||
+    status === "download_failed";
 
   // Get translated model name and description
   const displayName = getTranslatedModelName(model, t);
@@ -101,6 +111,8 @@ const ModelCard: React.FC<ModelCardProps> = ({
     if (!isClickable || disabled) return;
     if (status === "downloadable" && onDownload) {
       onDownload(model.id);
+    } else if (status === "download_failed" && onRetry) {
+      onRetry(model.id);
     } else {
       onSelect(model.id);
     }
@@ -279,6 +291,54 @@ const ModelCard: React.FC<ModelCardProps> = ({
           <p className="text-xs text-text/50 mt-1">
             {t("modelSelector.extractingGeneric")}
           </p>
+        </div>
+      )}
+      {status === "download_failed" && (
+        <div className="w-full mt-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-destructive mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-destructive">
+                {t("modelSelector.downloadFailed")}
+              </p>
+              {downloadError && (
+                <p className="text-xs text-destructive/80 truncate" title={downloadError}>
+                  {downloadError}
+                </p>
+              )}
+              <div className="flex items-center gap-2 mt-1">
+                {onRetry && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onRetry(model.id);
+                    }}
+                    className="h-6 px-2 text-xs text-logo-primary hover:text-logo-primary"
+                  >
+                    <RotateCcw className="w-3 h-3 mr-1" />
+                    {t("modelSelector.retry")}
+                  </Button>
+                )}
+                {onCancel && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onCancel(model.id);
+                    }}
+                    className="h-6 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                  >
+                    {t("modelSelector.cancel")}
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

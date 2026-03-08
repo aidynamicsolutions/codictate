@@ -6,6 +6,7 @@ import { commands } from "@/bindings";
 import {
   getTranslatedModelName,
 } from "@/lib/utils/modelTranslation";
+import { useModelStore, type DownloadFailure } from "@/stores/modelStore";
 
 interface DownloadProgress {
   model_id: string;
@@ -30,6 +31,7 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
   className = "",
 }) => {
   const { t } = useTranslation();
+  const modelStore = useModelStore();
   
   const [isVisible, setIsVisible] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -38,6 +40,7 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
   const [modelName, setModelName] = useState<string>("");
   const [hasError, setHasError] = useState(false);
   const [errorModelId, setErrorModelId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string>("");
   const [isRetrying, setIsRetrying] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isComplete, setIsComplete] = useState(false);
@@ -46,6 +49,42 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
   const lastProgressRef = useRef<{ downloaded: number; time: number } | null>(null);
   const speedSamplesRef = useRef<number[]>([]);
   const modelNameRef = useRef<string>("");
+
+  // On mount, snapshot the store so we restore in-flight UI immediately when
+  // onboarding remounts. Live updates come from the event listeners below.
+  useEffect(() => {
+    const downloadingIds = Object.keys(modelStore.downloadingModels);
+    const extractingIds = Object.keys(modelStore.extractingModels);
+    const failedIds = Object.keys(modelStore.failedDownloads);
+    if (downloadingIds.length > 0 || extractingIds.length > 0 || failedIds.length > 0) {
+      setIsVisible(true);
+      if (extractingIds.length > 0) {
+        setIsExtracting(true);
+      }
+      if (failedIds.length > 0) {
+        const failedId = failedIds[0];
+        const failure = modelStore.failedDownloads[failedId];
+        setHasError(true);
+        setErrorModelId(failedId);
+        setErrorMessage(failure?.message ?? "");
+      }
+      // Try to get model name for the first active download
+      const activeId = downloadingIds[0] ?? extractingIds[0] ?? failedIds[0];
+      if (activeId && !modelNameRef.current) {
+        const progress = modelStore.downloadProgress[activeId];
+        if (progress) {
+          setDownloadProgress(progress);
+        }
+        void commands.getModelInfo(activeId).then((result) => {
+          if (result.status === "ok" && result.data) {
+            const name = getTranslatedModelName(result.data, t);
+            modelNameRef.current = name;
+            setModelName(name);
+          }
+        });
+      }
+    }
+  }, [modelStore, t]);
 
   // Listen for download events - use empty dependency array to match ModelSelector.tsx pattern
   useEffect(() => {
@@ -59,6 +98,7 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
         setDownloadProgress(progress);
         setIsVisible(true);
         setHasError(false);
+        setErrorMessage("");
 
         // Get model name if not set (using ref to check)
         if (!modelNameRef.current) {
@@ -109,6 +149,8 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
       () => {
         setIsExtracting(true);
         setIsVisible(true);
+        setHasError(false);
+        setErrorMessage("");
       }
     );
 
@@ -138,7 +180,35 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
       (event) => {
         setHasError(true);
         setErrorModelId(event.payload.model_id);
+        setErrorMessage(event.payload.error);
         setIsRetrying(false);
+      }
+    );
+
+    const downloadFailedUnlisten = listen<DownloadFailure>(
+      "model-download-failed",
+      async (event) => {
+        const failure = event.payload;
+        setHasError(true);
+        setIsVisible(true);
+        setIsExtracting(false);
+        setIsComplete(false);
+        setErrorModelId(failure.model_id);
+        setErrorMessage(failure.message);
+        setIsRetrying(false);
+
+        if (!modelNameRef.current) {
+          try {
+            const result = await commands.getModelInfo(failure.model_id);
+            if (isMounted && result.status === "ok" && result.data) {
+              const name = getTranslatedModelName(result.data, t);
+              modelNameRef.current = name;
+              setModelName(name);
+            }
+          } catch {
+            // Ignore lookup errors for toast-only failures.
+          }
+        }
       }
     );
 
@@ -149,6 +219,7 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
       extractionStartedUnlisten.then((fn) => fn());
       extractionCompletedUnlisten.then((fn) => fn());
       extractionFailedUnlisten.then((fn) => fn());
+      downloadFailedUnlisten.then((fn) => fn());
     };
   }, [t]);
 
@@ -158,6 +229,7 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
     
     setIsRetrying(true);
     setHasError(false);
+    setErrorMessage("");
     
     try {
       const result = await commands.downloadModel(errorModelId);
@@ -177,6 +249,7 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
     setIsVisible(false);
     setDownloadProgress(null);
     setHasError(false);
+    setErrorMessage("");
   };
 
   if (!isVisible) return null;
@@ -256,8 +329,8 @@ export const ModelDownloadProgress: React.FC<ModelDownloadProgressProps> = ({
             {hasError ? (
               // Error state
               <div className="flex items-center justify-between">
-                <span className="text-sm text-destructive">
-                  {t("onboarding.downloadModel.error")}
+                <span className="text-sm text-destructive" title={errorMessage}>
+                  {errorMessage || t("onboarding.downloadModel.error")}
                 </span>
                 <button
                   onClick={handleRetry}

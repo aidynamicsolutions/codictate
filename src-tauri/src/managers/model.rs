@@ -15,6 +15,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tar::Archive;
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::time::timeout;
+
+const DOWNLOAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
+const DOWNLOAD_STALL_TIMEOUT: Duration = Duration::from_secs(30);
+const DOWNLOAD_POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum EngineType {
@@ -53,6 +58,14 @@ pub struct DownloadProgress {
     pub downloaded: u64,
     pub total: u64,
     pub percentage: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+pub struct DownloadFailureEvent {
+    pub model_id: String,
+    pub reason: String,
+    pub message: String,
+    pub resumable: bool,
 }
 
 pub struct ModelManager {
@@ -751,6 +764,31 @@ impl ModelManager {
             flags.insert(model_id.to_string(), cancel_flag.clone());
         }
 
+        let mark_download_failed = |reason: &str, message: String| {
+            let partial_size = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
+
+            {
+                let mut models = self.available_models.lock().unwrap();
+                if let Some(model) = models.get_mut(model_id) {
+                    model.is_downloading = false;
+                    model.partial_size = partial_size;
+                }
+            }
+
+            {
+                let mut flags = self.cancel_flags.lock().unwrap();
+                flags.remove(model_id);
+            }
+
+            let payload = DownloadFailureEvent {
+                model_id: model_id.to_string(),
+                reason: reason.to_string(),
+                message,
+                resumable: partial_size > 0,
+            };
+            let _ = self.app_handle.emit("model-download-failed", &payload);
+        };
+
         // Create HTTP client with range request for resuming
         let client = reqwest::Client::new();
         let mut request = client.get(&url);
@@ -759,7 +797,20 @@ impl ModelManager {
             request = request.header("Range", format!("bytes={}-", resume_from));
         }
 
-        let mut response = request.send().await?;
+        let mut response = match timeout(DOWNLOAD_REQUEST_TIMEOUT, request.send()).await {
+            Ok(Ok(response)) => response,
+            Ok(Err(error)) => {
+                let error_msg = format!("Failed to start download: {}", error);
+                mark_download_failed("network_error", error_msg.clone());
+                return Err(anyhow::anyhow!(error_msg));
+            }
+            Err(_) => {
+                let error_msg =
+                    format!("Download request timed out after {:?}", DOWNLOAD_REQUEST_TIMEOUT);
+                mark_download_failed("network_timeout", error_msg.clone());
+                return Err(anyhow::anyhow!(error_msg));
+            }
+        };
 
         // If we tried to resume but server returned 200 (not 206 Partial Content),
         // the server doesn't support range requests. Delete partial file and restart
@@ -776,24 +827,31 @@ impl ModelManager {
             resume_from = 0;
 
             // Restart download without range header
-            response = client.get(&url).send().await?;
+            response = match timeout(DOWNLOAD_REQUEST_TIMEOUT, client.get(&url).send()).await {
+                Ok(Ok(response)) => response,
+                Ok(Err(error)) => {
+                    let error_msg = format!("Failed to restart download: {}", error);
+                    mark_download_failed("network_error", error_msg.clone());
+                    return Err(anyhow::anyhow!(error_msg));
+                }
+                Err(_) => {
+                    let error_msg = format!(
+                        "Download restart request timed out after {:?}",
+                        DOWNLOAD_REQUEST_TIMEOUT
+                    );
+                    mark_download_failed("network_timeout", error_msg.clone());
+                    return Err(anyhow::anyhow!(error_msg));
+                }
+            };
         }
 
         // Check for success or partial content status
         if !response.status().is_success()
             && response.status() != reqwest::StatusCode::PARTIAL_CONTENT
         {
-            // Mark as not downloading on error
-            {
-                let mut models = self.available_models.lock().unwrap();
-                if let Some(model) = models.get_mut(model_id) {
-                    model.is_downloading = false;
-                }
-            }
-            return Err(anyhow::anyhow!(
-                "Failed to download model: HTTP {}",
-                response.status()
-            ));
+            let error_msg = format!("Failed to download model: HTTP {}", response.status());
+            mark_download_failed("http_error", error_msg.clone());
+            return Err(anyhow::anyhow!(error_msg));
         }
 
         let total_size = if resume_from > 0 {
@@ -834,9 +892,10 @@ impl ModelManager {
         // Throttle progress events to max 10/sec (100ms intervals)
         let mut last_emit = Instant::now();
         let throttle_duration = Duration::from_millis(100);
+        let mut last_chunk_at = Instant::now();
 
         // Download with progress
-        while let Some(chunk) = stream.next().await {
+        loop {
             // Check if download was cancelled
             if cancel_flag.load(Ordering::Relaxed) {
                 // Close the file before returning
@@ -861,18 +920,41 @@ impl ModelManager {
                 return Ok(());
             }
 
-            let chunk = chunk.map_err(|e| {
-                // Mark as not downloading on error
-                {
-                    let mut models = self.available_models.lock().unwrap();
-                    if let Some(model) = models.get_mut(model_id) {
-                        model.is_downloading = false;
+            let next_chunk = match timeout(DOWNLOAD_POLL_INTERVAL, stream.next()).await {
+                Ok(next_chunk) => next_chunk,
+                Err(_) => {
+                    if last_chunk_at.elapsed() >= DOWNLOAD_STALL_TIMEOUT {
+                        let error_msg = format!(
+                            "Download stalled: no data received for {:?}",
+                            DOWNLOAD_STALL_TIMEOUT
+                        );
+                        mark_download_failed("stalled", error_msg.clone());
+                        return Err(anyhow::anyhow!(error_msg));
                     }
+                    continue;
                 }
-                e
-            })?;
+            };
 
-            file.write_all(&chunk)?;
+            let Some(chunk) = next_chunk else {
+                break;
+            };
+
+            let chunk = match chunk {
+                Ok(chunk) => chunk,
+                Err(error) => {
+                    let error_msg = format!("Failed while downloading model: {}", error);
+                    mark_download_failed("network_error", error_msg.clone());
+                    return Err(anyhow::anyhow!(error_msg));
+                }
+            };
+
+            if let Err(error) = file.write_all(&chunk) {
+                let error_msg = format!("Failed to write model chunk: {}", error);
+                mark_download_failed("io_error", error_msg.clone());
+                return Err(anyhow::anyhow!(error_msg));
+            }
+
+            last_chunk_at = Instant::now();
             downloaded += chunk.len() as u64;
 
             let percentage = if total_size > 0 {
@@ -916,19 +998,12 @@ impl ModelManager {
         if total_size > 0 {
             let actual_size = partial_path.metadata()?.len();
             if actual_size != total_size {
-                // Download is incomplete/corrupted - delete partial and return error
-                let _ = fs::remove_file(&partial_path);
-                {
-                    let mut models = self.available_models.lock().unwrap();
-                    if let Some(model) = models.get_mut(model_id) {
-                        model.is_downloading = false;
-                    }
-                }
-                return Err(anyhow::anyhow!(
+                let error_msg = format!(
                     "Download incomplete: expected {} bytes, got {} bytes",
-                    total_size,
-                    actual_size
-                ));
+                    total_size, actual_size
+                );
+                mark_download_failed("network_error", error_msg.clone());
+                return Err(anyhow::anyhow!(error_msg));
             }
         }
 
@@ -950,28 +1025,67 @@ impl ModelManager {
                 .join(format!("{}.extracting", &model_info.filename));
             let final_model_dir = self.models_dir.join(&model_info.filename);
 
-            // Clean up any previous incomplete extraction
-            if temp_extract_dir.exists() {
+            let extraction_result: Result<()> = (|| {
+                // Clean up any previous incomplete extraction
+                if temp_extract_dir.exists() {
+                    let _ = fs::remove_dir_all(&temp_extract_dir);
+                }
+
+                // Create temporary extraction directory
+                fs::create_dir_all(&temp_extract_dir)?;
+
+                // Open the downloaded tar.gz file
+                let tar_gz = File::open(&partial_path)?;
+                let tar = GzDecoder::new(tar_gz);
+                let mut archive = Archive::new(tar);
+
+                // Extract to the temporary directory first
+                archive.unpack(&temp_extract_dir)?;
+
+                // Find the actual extracted directory (archive might have a nested structure)
+                let extracted_dirs: Vec<_> = fs::read_dir(&temp_extract_dir)?
+                    .filter_map(|entry| entry.ok())
+                    .filter(|entry| entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+                    .collect();
+
+                if extracted_dirs.len() == 1 {
+                    // Single directory extracted, move it to the final location
+                    let source_dir = extracted_dirs[0].path();
+                    if final_model_dir.exists() {
+                        fs::remove_dir_all(&final_model_dir)?;
+                    }
+                    fs::rename(&source_dir, &final_model_dir)?;
+                    // Clean up temp directory
+                    let _ = fs::remove_dir_all(&temp_extract_dir);
+                } else {
+                    // Multiple items or no directories, rename the temp directory itself
+                    if final_model_dir.exists() {
+                        fs::remove_dir_all(&final_model_dir)?;
+                    }
+                    fs::rename(&temp_extract_dir, &final_model_dir)?;
+                }
+
+                Ok(())
+            })();
+
+            if let Err(error) = extraction_result {
+                let error_msg = format!("Failed to extract archive: {}", error);
                 let _ = fs::remove_dir_all(&temp_extract_dir);
-            }
-
-            // Create temporary extraction directory
-            fs::create_dir_all(&temp_extract_dir)?;
-
-            // Open the downloaded tar.gz file
-            let tar_gz = File::open(&partial_path)?;
-            let tar = GzDecoder::new(tar_gz);
-            let mut archive = Archive::new(tar);
-
-            // Extract to the temporary directory first
-            archive.unpack(&temp_extract_dir).map_err(|e| {
-                let error_msg = format!("Failed to extract archive: {}", e);
-                // Clean up failed extraction
-                let _ = fs::remove_dir_all(&temp_extract_dir);
-                // Remove from extracting set
                 {
                     let mut extracting = self.extracting_models.lock().unwrap();
                     extracting.remove(model_id);
+                }
+                {
+                    let partial_size = partial_path.metadata().map(|m| m.len()).unwrap_or(0);
+                    let mut models = self.available_models.lock().unwrap();
+                    if let Some(model) = models.get_mut(model_id) {
+                        model.is_downloading = false;
+                        model.partial_size = partial_size;
+                    }
+                }
+                {
+                    let mut flags = self.cancel_flags.lock().unwrap();
+                    flags.remove(model_id);
                 }
                 let _ = self.app_handle.emit(
                     "model-extraction-failed",
@@ -980,30 +1094,16 @@ impl ModelManager {
                         "error": error_msg
                     }),
                 );
-                anyhow::anyhow!(error_msg)
-            })?;
-
-            // Find the actual extracted directory (archive might have a nested structure)
-            let extracted_dirs: Vec<_> = fs::read_dir(&temp_extract_dir)?
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
-                .collect();
-
-            if extracted_dirs.len() == 1 {
-                // Single directory extracted, move it to the final location
-                let source_dir = extracted_dirs[0].path();
-                if final_model_dir.exists() {
-                    fs::remove_dir_all(&final_model_dir)?;
-                }
-                fs::rename(&source_dir, &final_model_dir)?;
-                // Clean up temp directory
-                let _ = fs::remove_dir_all(&temp_extract_dir);
-            } else {
-                // Multiple items or no directories, rename the temp directory itself
-                if final_model_dir.exists() {
-                    fs::remove_dir_all(&final_model_dir)?;
-                }
-                fs::rename(&temp_extract_dir, &final_model_dir)?;
+                let _ = self.app_handle.emit(
+                    "model-download-failed",
+                    &DownloadFailureEvent {
+                        model_id: model_id.to_string(),
+                        reason: "extraction_failed".to_string(),
+                        message: error_msg.clone(),
+                        resumable: partial_path.exists(),
+                    },
+                );
+                return Err(anyhow::anyhow!(error_msg));
             }
 
             info!("Successfully extracted archive for model: {}", model_id);
@@ -1038,7 +1138,17 @@ impl ModelManager {
             flags.remove(model_id);
         }
 
-        // Emit completion event
+        // Auto-select the model if no model is currently selected.
+        // This is critical during onboarding: the user may continue through
+        // setup steps while the model downloads in the background.
+        // Without this, the model finishes downloading but never becomes
+        // active, leaving transcription non-functional.
+        if let Err(e) = self.auto_select_model_if_needed() {
+            warn!("Failed to auto-select model after download: {}", e);
+        }
+
+        // Emit completion event after auto-select so frontend refreshes
+        // observe the latest selected model state.
         let _ = self.app_handle.emit("model-download-complete", model_id);
 
         info!(
