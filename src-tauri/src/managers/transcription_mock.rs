@@ -33,6 +33,18 @@ impl TranscriptionManager {
         false
     }
 
+    pub fn is_model_loading(&self) -> bool {
+        false
+    }
+
+    pub fn is_model_warming(&self) -> bool {
+        false
+    }
+
+    pub fn is_model_warmed(&self) -> bool {
+        false
+    }
+
     pub fn unload_model(&self) -> Result<()> {
         Ok(())
     }
@@ -43,13 +55,23 @@ impl TranscriptionManager {
         Ok(())
     }
 
-    pub fn initiate_model_load(&self) {}
+    pub fn initiate_model_warmup(&self, _trigger: &'static str) {}
+
+    pub fn initiate_model_warmup_for_model(&self, _model_id: String, _trigger: &'static str) {}
+
+    pub fn wait_until_model_ready_for_recording(&self, _model_id: &str) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn is_model_ready_for_recording(&self, _model_id: &str) -> bool {
+        false
+    }
 
     pub fn get_current_model(&self) -> Option<String> {
         None
     }
 
-    pub fn transcribe(&self, _audio: Vec<f32>) -> Result<String> {
-        Ok(String::new())
+    pub fn transcribe(&self, _audio: Vec<f32>) -> Result<(String, usize)> {
+        Ok((String::new(), 0))
     }
 }

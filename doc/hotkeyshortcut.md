@@ -67,12 +67,13 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
  To eliminate audio cutoff (the "first word missing" problem), the system employs several strategies:
 
  1. **Input Topology Caching + Refresh Policy**: `AudioRecordingManager` keeps a short-lived input-device topology cache (10 minute TTL) with dirty/in-flight/throttle guards. Shortcut and window-focus triggers refresh with `IfStaleOrDirty`; selected/clamshell updates force refresh.
- 2. **VAD & Model Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading the ASR model (`initiate_model_load`) at app startup. This eliminates the ~700ms cold start delay for the first recording.
+2. **VAD & Model Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading + decode-warming the ASR model at app startup. Warm-up uses synthetic speech-like audio (not silence-only input) to better exercise first-inference kernels and reduce first-transcription latency.
  3. **On-Demand Pre-arm**: Fn down / shortcut starts can pre-open the stream in the background, then auto-close safely if recording does not commit within the grace window.
  4. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
     - **Cons**: Small initial delay (typically ~100-200ms) before UI appears; start fails after capture-ready timeout (500ms) instead of showing a false recording state.
-    - **Implementation**: `TranscribeAction::start` waits for `try_start_recording()` to return `RecordingStartOutcome::Started(...)` before showing recording UI. If startup is slow, a "Starting microphone..." connecting overlay appears (immediate for known Bluetooth devices, or after a 120ms threshold for slower non-Bluetooth starts).
+    - **Implementation**: `TranscribeAction::start` waits for `try_start_recording()` to return `RecordingStartOutcome::Started(...)` before showing recording UI. If startup is slow, a "Starting microphone..." connecting overlay appears (immediate for known Bluetooth devices, or after a 120ms threshold for slower non-Bluetooth starts). ASR model warm-up continues in the background and does not block the recording bars.
+ 5. **AX Fast Fallback (macOS insertion path)**: Smart-insertion AX context capture now applies a short messaging timeout and degrades to context-unavailable behavior when focus lookup is unresponsive (`kAXErrorCannotComplete`) so delivery does not stall behind long AX waits.
 
 ### Bluetooth Microphone Handling
 

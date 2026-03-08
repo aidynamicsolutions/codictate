@@ -102,6 +102,9 @@ pub async fn set_active_model(
     settings.selected_model = model_id.clone();
     write_settings(&app_handle, settings);
 
+    // Warm first decode in the background so the first real transcription is responsive.
+    transcription_manager.initiate_model_warmup_for_model(model_id, "model_selection");
+
     Ok(())
 }
 

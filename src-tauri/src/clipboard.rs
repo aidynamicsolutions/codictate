@@ -788,7 +788,7 @@ pub fn paste_with_mode(
     // This works around WebView not receiving CGEvent-simulated Cmd+V keystrokes
     let onboarding_override = app_handle
         .try_state::<crate::OnboardingPasteOverride>()
-        .and_then(|state| state.lock().ok().map(|v| *v))
+        .and_then(|state| state.0.lock().ok().map(|v| *v))
         .unwrap_or(false);
 
     // Use Direct paste method if onboarding override is enabled

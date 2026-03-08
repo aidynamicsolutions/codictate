@@ -2276,46 +2276,48 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
-/// Safely hides the overlay only if it is in Recording or Hidden state.
-/// This prevents clobbering a transition to Transcribing, Processing, or Connecting.
-pub fn hide_overlay_if_recording(app_handle: &AppHandle) {
+fn should_hide_overlay_after_aborted_recording_state(state: OverlayState) -> bool {
+    matches!(
+        state,
+        OverlayState::Hidden
+            | OverlayState::Recording
+            | OverlayState::Connecting
+    )
+}
+
+/// Safely hides an overlay left behind by an aborted recording stop before transcription starts.
+/// This only applies to pre-transcription states so we do not clobber active work.
+pub fn hide_overlay_after_aborted_recording(app_handle: &AppHandle) {
     use tracing::{debug, warn};
 
-    debug!("hide_overlay_if_recording: entry");
+    debug!("hide_overlay_after_aborted_recording: entry");
 
-    // Check state - bail if we are Transcribing, Processing, or Connecting
     if let Ok(mut state) = OVERLAY_STATE.lock() {
-        match *state {
-            OverlayState::Transcribing
-            | OverlayState::Processing
-            | OverlayState::Connecting
-            | OverlayState::Cancelling
-            | OverlayState::Correcting => {
-                debug!(
-                    "hide_overlay_if_recording: Ignoring hide because state is {:?}",
-                    *state
-                );
-                return;
-            }
-            _ => {
-                // Proceed to hide
-                *state = OverlayState::Hidden;
-            }
+        if !should_hide_overlay_after_aborted_recording_state(*state) {
+            debug!(
+                "hide_overlay_after_aborted_recording: Ignoring hide because state is {:?}",
+                *state
+            );
+            return;
         }
+
+        *state = OverlayState::Hidden;
     }
 
-    // Reuse the hide logic but with the check above
+    if let Ok(mut shown_at) = LAST_TRANSCRIBING_SHOWN_AT.lock() {
+        *shown_at = None;
+    }
+
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         let emit_result = overlay_window.emit("hide-overlay", ());
         debug!(
-            "hide_overlay_if_recording: emit('hide-overlay') result={:?}",
+            "hide_overlay_after_aborted_recording: emit('hide-overlay') result={:?}",
             emit_result
         );
 
-        // Use pass-through instead of hide.
         set_overlay_cursor_passthrough(app_handle, true);
     } else {
-        warn!("hide_overlay_if_recording: overlay window NOT FOUND!");
+        warn!("hide_overlay_after_aborted_recording: overlay window NOT FOUND!");
     }
 }
 
@@ -2709,6 +2711,32 @@ mod tests {
 
         assert!(is_point_inside_work_area(screen_frame, point_x, point_y));
         assert!(!is_point_inside_work_area(visible_frame, point_x, point_y));
+    }
+
+    #[test]
+    fn aborted_recording_hide_only_applies_to_pre_transcription_states() {
+        assert!(should_hide_overlay_after_aborted_recording_state(
+            OverlayState::Hidden
+        ));
+        assert!(should_hide_overlay_after_aborted_recording_state(
+            OverlayState::Recording
+        ));
+        assert!(should_hide_overlay_after_aborted_recording_state(
+            OverlayState::Connecting
+        ));
+
+        assert!(!should_hide_overlay_after_aborted_recording_state(
+            OverlayState::Transcribing
+        ));
+        assert!(!should_hide_overlay_after_aborted_recording_state(
+            OverlayState::Processing
+        ));
+        assert!(!should_hide_overlay_after_aborted_recording_state(
+            OverlayState::Cancelling
+        ));
+        assert!(!should_hide_overlay_after_aborted_recording_state(
+            OverlayState::Correcting
+        ));
     }
 
     #[cfg(target_os = "macos")]

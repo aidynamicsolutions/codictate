@@ -586,6 +586,43 @@ fn complete_connecting_overlay_phase(phase: &AtomicU8) -> u8 {
     phase.swap(CONNECTING_PHASE_COMPLETED, Ordering::SeqCst)
 }
 
+fn should_hide_aborted_recording_overlay(
+    has_active_recording_session: bool,
+    has_active_transcription_session: bool,
+) -> bool {
+    !has_active_recording_session && !has_active_transcription_session
+}
+
+fn maybe_hide_aborted_recording_overlay(
+    app: &AppHandle,
+    audio_manager: &Arc<AudioRecordingManager>,
+    transcription_manager: &Arc<TranscriptionManager>,
+    reason: &'static str,
+) {
+    let has_active_recording_session = audio_manager.get_current_session_id().is_some();
+    let has_active_transcription_session = transcription_manager.is_any_session_active();
+
+    if should_hide_aborted_recording_overlay(
+        has_active_recording_session,
+        has_active_transcription_session,
+    ) {
+        info!(
+            reason,
+            event_code = "aborted_recording_overlay_hidden",
+            "Force-hiding overlay after aborted recording because no newer session is active"
+        );
+        utils::hide_overlay_after_aborted_recording(app);
+    } else {
+        debug!(
+            reason,
+            has_active_recording_session,
+            has_active_transcription_session,
+            event_code = "aborted_recording_overlay_hide_skipped",
+            "Skipping aborted recording overlay hide because another session is active"
+        );
+    }
+}
+
 fn prearm_source_from_shortcut(shortcut_str: &str) -> RecordingPrearmSource {
     let normalized = shortcut_str.trim();
     if normalized.eq_ignore_ascii_case("fn") || normalized.eq_ignore_ascii_case("fn+space") {
@@ -674,15 +711,14 @@ impl ShortcutAction for TranscribeAction {
             let start_time = Instant::now();
             info!("Recording started for binding: {}", binding_id);
 
-            // Load model in the background
-            let tm = app.state::<Arc<TranscriptionManager>>();
-            tm.initiate_model_load();
-
             change_tray_icon(app, TrayIconState::Recording);
 
             // Get the microphone mode to determine audio feedback timing
             let settings = get_settings(app);
             let is_always_on = settings.always_on_microphone;
+            let selected_model = settings.selected_model.clone();
+            let tm = app.state::<Arc<TranscriptionManager>>();
+            tm.initiate_model_warmup_for_model(selected_model.clone(), "shortcut_start");
             debug!("Microphone mode - always_on: {}", is_always_on);
             info!(
                 binding = binding_id,
@@ -721,15 +757,34 @@ impl ShortcutAction for TranscribeAction {
                             event_code = "capture_ready_ack",
                             "Always-on recording capture-ready"
                         );
-                        // Show overlay only after recording started success
-                        info!("TranscribeAction::start: showing recording overlay (always-on)");
-                        show_recording_overlay(app);
-                        info!(
-                            session = %session_id,
-                            binding = binding_id,
-                            event_code = "overlay_recording_shown",
-                            "Recording overlay shown after capture-ready"
-                        );
+
+                        let still_active = rm
+                            .get_current_session_id()
+                            .as_deref()
+                            .map(|current| current == session_id.as_str())
+                            .unwrap_or(false);
+                        if still_active {
+                            let model_ready_for_recording = selected_model.is_empty()
+                                || tm.is_model_ready_for_recording(&selected_model);
+                            info!("TranscribeAction::start: showing recording overlay (always-on)");
+                            show_recording_overlay(app);
+                            info!(
+                                session = %session_id,
+                                binding = binding_id,
+                                model_ready_for_recording,
+                                model_warming = !selected_model.is_empty()
+                                    && !model_ready_for_recording,
+                                event_code = "overlay_recording_shown",
+                                "Recording overlay shown after safe capture-ready gate"
+                            );
+                        } else {
+                            info!(
+                                session = %session_id,
+                                binding = binding_id,
+                                event_code = "recording_released_before_overlay_shown",
+                                "Recording stopped before the recording overlay could be shown"
+                            );
+                        }
                     }
                     RecordingStartOutcome::Failed(reason) => {
                         let should_cleanup_ui =
@@ -850,15 +905,35 @@ impl ShortcutAction for TranscribeAction {
                             debug!("Bluetooth warmup delay completed");
                         }
 
-                        // Show overlay recording state NOW (with smooth fade-in animation)
-                        info!("TranscribeAction::start: showing recording overlay (on-demand)");
-                        show_recording_overlay(app);
-                        info!(
-                            session = %session_id,
-                            binding = binding_id,
-                            event_code = "overlay_recording_shown",
-                            "Recording overlay shown after capture-ready"
-                        );
+                        let _ = complete_connecting_overlay_phase(&connecting_phase);
+
+                        let still_active = rm
+                            .get_current_session_id()
+                            .as_deref()
+                            .map(|current| current == session_id.as_str())
+                            .unwrap_or(false);
+                        if still_active {
+                            let model_ready_for_recording = selected_model.is_empty()
+                                || tm.is_model_ready_for_recording(&selected_model);
+                            info!("TranscribeAction::start: showing recording overlay (on-demand)");
+                            show_recording_overlay(app);
+                            info!(
+                                session = %session_id,
+                                binding = binding_id,
+                                model_ready_for_recording,
+                                model_warming = !selected_model.is_empty()
+                                    && !model_ready_for_recording,
+                                event_code = "overlay_recording_shown",
+                                "Recording overlay shown after safe capture-ready gate"
+                            );
+                        } else {
+                            info!(
+                                session = %session_id,
+                                binding = binding_id,
+                                event_code = "recording_released_before_overlay_shown",
+                                "Recording stopped before the recording overlay could be shown"
+                            );
+                        }
 
                         // Small delay to ensure microphone stream is active (extra safety)
                         let app_clone = app.clone();
@@ -962,6 +1037,7 @@ impl ShortcutAction for TranscribeAction {
                 let _finish_guard = FinishGuard(ah.clone());
                 let _stop_transition_guard = crate::undo::StopTransitionGuard::new(&ah);
                 let binding_id = binding_id.clone();
+                let selected_model = get_settings(&ah).selected_model;
                 debug!(
                     "Starting async transcription task for binding: {}",
                     binding_id
@@ -969,18 +1045,62 @@ impl ShortcutAction for TranscribeAction {
 
                 let stop_recording_time = Instant::now();
                 if let Some(stopped_recording) = rm.stop_recording(&binding_id) {
-                    // Register this session as active for transcription
-                    tm.set_active_session(session_id_for_task.clone());
-
-                    // Start showing transcribing overlay NOW, after we have confirmed valid samples.
-                    // This protects against "phantom stops" from double-triggers showing the overlay incorrectly.
-                    show_transcribing_overlay(&ah);
-
                     debug!(
                         "Recording stopped and samples retrieved in {:?}, sample count: {}",
                         stop_recording_time.elapsed(),
                         stopped_recording.samples_for_transcription.len()
                     );
+
+                    let released_before_ready = !selected_model.is_empty()
+                        && !tm.is_model_ready_for_recording(&selected_model);
+                    if released_before_ready {
+                        info!(
+                            session = %session_id_for_task,
+                            binding = binding_id,
+                            model = %selected_model,
+                            sample_count = stopped_recording.samples_for_transcription.len(),
+                            event_code = "recording_released_before_ready",
+                            "Recording was released before the combined readiness gate completed"
+                        );
+                    }
+
+                    if stopped_recording.samples_for_transcription.is_empty() {
+                        warn!(
+                            session = %session_id_for_task,
+                            binding = binding_id,
+                            model = %selected_model,
+                            released_before_ready,
+                            event_code = "recording_release_empty_audio",
+                            "Skipping transcribing overlay because recording stop returned no audio"
+                        );
+                        maybe_hide_aborted_recording_overlay(
+                            &ah,
+                            &rm,
+                            &tm,
+                            "empty_audio_after_stop",
+                        );
+                        change_tray_icon(&ah, TrayIconState::Idle);
+                    } else {
+                        // Register this session as active for transcription
+                        tm.set_active_session(session_id_for_task.clone());
+
+                        // Start showing transcribing overlay only after we have confirmed non-empty samples.
+                        show_transcribing_overlay(&ah);
+
+                        if !selected_model.is_empty() {
+                            if let Err(err) =
+                                tm.wait_until_model_ready_for_recording(&selected_model)
+                            {
+                                warn!(
+                                    session = %session_id_for_task,
+                                    binding = binding_id,
+                                    model = %selected_model,
+                                    error = err.to_string(),
+                                    event_code = "recording_model_ready_wait_failed",
+                                    "Model readiness wait during stop failed; continuing with transcription fallback"
+                                );
+                            }
+                        }
 
                     let transcription_time = Instant::now();
                     let samples_for_history = stopped_recording.samples_for_transcription.clone();
@@ -1289,11 +1409,15 @@ impl ShortcutAction for TranscribeAction {
                             change_tray_icon(&ah, TrayIconState::Idle);
                         }
                     }
+                    }
                 } else {
                     debug!("No samples retrieved from recording stop");
-                    // Use SAFE hide. If another thread is actively transcribing, this "failed stop"
-                    // should not interrupt it.
-                    utils::hide_overlay_if_recording(&ah);
+                    maybe_hide_aborted_recording_overlay(
+                        &ah,
+                        &rm,
+                        &tm,
+                        "missing_audio_after_stop",
+                    );
                     change_tray_icon(&ah, TrayIconState::Idle);
                 }
 
@@ -1831,6 +1955,7 @@ mod tests {
     use super::{
         auto_refined_from_post_processed_text, build_undo_paste_capture,
         complete_connecting_overlay_phase,
+        should_hide_aborted_recording_overlay,
         should_cleanup_ui_for_recording_start_failure, try_mark_connecting_overlay_shown,
         maybe_inserted_text_from_paste_result, paste_last_preparation_mode, select_inserted_text_for_refine_replace,
         sanitize_refine_punctuation_artifacts, select_text_for_paste_last, select_text_for_refine_input,
@@ -2028,6 +2153,14 @@ mod tests {
             &result,
             ClipboardHandling::DontModify,
         ));
+    }
+
+    #[test]
+    fn aborted_recording_overlay_hide_requires_no_other_active_sessions() {
+        assert!(should_hide_aborted_recording_overlay(false, false));
+        assert!(!should_hide_aborted_recording_overlay(true, false));
+        assert!(!should_hide_aborted_recording_overlay(false, true));
+        assert!(!should_hide_aborted_recording_overlay(true, true));
     }
 
     #[test]

@@ -231,9 +231,23 @@ pub fn record_upgrade_checkout_result(
 pub fn set_onboarding_paste_override(app: AppHandle, enabled: bool) {
     use crate::OnboardingPasteOverride;
     if let Some(state) = app.try_state::<OnboardingPasteOverride>() {
-        if let Ok(mut override_enabled) = state.lock() {
+        if let Ok(mut override_enabled) = state.0.lock() {
             *override_enabled = enabled;
             tracing::info!("Onboarding paste override set to: {}", enabled);
+        }
+    }
+}
+
+/// Arm or disarm the Learn-step onboarding activation target.
+/// This prevents successful pastes in other apps from being credited to Learn.
+#[specta::specta]
+#[tauri::command]
+pub fn set_onboarding_activation_target(app: AppHandle, enabled: bool) {
+    use crate::OnboardingActivationTarget;
+    if let Some(state) = app.try_state::<OnboardingActivationTarget>() {
+        if let Ok(mut activation_target_enabled) = state.0.lock() {
+            *activation_target_enabled = enabled;
+            tracing::info!("Onboarding activation target set to: {}", enabled);
         }
     }
 }

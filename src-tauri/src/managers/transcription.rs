@@ -1,9 +1,10 @@
 use crate::audio_toolkit::{
     apply_custom_words_with_thresholds, filter_and_count_filler_words, filter_hallucinations,
 };
+use crate::managers::audio::AudioRecordingManager;
 use crate::managers::model::{EngineType, ModelManager};
 use crate::sentry_observability::{capture_handled_error, HandledErrorMeta};
-use crate::settings::{get_settings, ModelUnloadTimeout};
+use crate::settings::{get_settings, AppSettings, ModelUnloadTimeout};
 use crate::user_dictionary;
 use anyhow::Result;
 use serde::Serialize;
@@ -11,8 +12,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
-use std::time::{Duration, SystemTime};
-use tauri::{AppHandle, Emitter};
+use std::time::{Duration, Instant, SystemTime};
+use tauri::{AppHandle, Emitter, Manager};
 use tracing::{debug, error, info, warn};
 use transcribe_rs::{
     engines::{
@@ -50,7 +51,6 @@ enum LoadedEngine {
     GigaAM(GigaAMEngine),
 }
 
-#[derive(Clone)]
 pub struct TranscriptionManager {
     engine: Arc<Mutex<Option<LoadedEngine>>>,
     model_manager: Arc<ModelManager>,
@@ -61,14 +61,217 @@ pub struct TranscriptionManager {
     watcher_handle: Arc<Mutex<Option<thread::JoinHandle<()>>>>,
     is_loading: Arc<Mutex<bool>>,
     loading_condvar: Arc<Condvar>,
+    is_warming: Arc<Mutex<bool>>,
+    warming_condvar: Arc<Condvar>,
+    pending_warm_model_id: Arc<Mutex<Option<String>>>,
+    warmed_model_id: Arc<Mutex<Option<String>>>,
     active_session_id: Arc<Mutex<Option<String>>>,
+    is_primary_instance: bool,
 }
 
-const META_BACKGROUND_MODEL_LOAD_FAILURE: HandledErrorMeta = HandledErrorMeta {
+const META_BACKGROUND_MODEL_WARMUP_FAILURE: HandledErrorMeta = HandledErrorMeta {
     component: "transcription_manager",
-    operation: "background_model_load",
+    operation: "background_model_warmup",
     level: sentry::Level::Error,
 };
+
+const MODEL_READY_WAIT_TIMEOUT: Duration = Duration::from_secs(30);
+const WARMUP_AUDIO_SAMPLE_RATE_HZ: f32 = 16_000.0;
+const WARMUP_AUDIO_PASSES: [usize; 2] = [16_000, 32_000];
+
+fn build_warmup_audio_fixture(sample_count: usize) -> Vec<f32> {
+    let duration = sample_count as f32 / WARMUP_AUDIO_SAMPLE_RATE_HZ;
+    let mut samples = Vec::with_capacity(sample_count);
+
+    for index in 0..sample_count {
+        let time = index as f32 / WARMUP_AUDIO_SAMPLE_RATE_HZ;
+
+        let voiced = (2.0 * std::f32::consts::PI * 170.0 * time).sin() * 0.32
+            + (2.0 * std::f32::consts::PI * 340.0 * time).sin() * 0.18
+            + (2.0 * std::f32::consts::PI * 640.0 * time).sin() * 0.08;
+
+        let syllable_gate = (2.0 * std::f32::consts::PI * 3.0 * time).sin().max(0.0);
+        let syllable_envelope = syllable_gate.powf(0.7);
+
+        let fade_in = (time / 0.12).clamp(0.0, 1.0);
+        let fade_out = ((duration - time) / 0.18).clamp(0.0, 1.0);
+        let macro_envelope = fade_in.min(fade_out);
+
+        let fricative = ((2.0 * std::f32::consts::PI * 1900.0 * time).sin() * 0.02
+            + (2.0 * std::f32::consts::PI * 2500.0 * time).sin() * 0.01)
+            * (2.0 * std::f32::consts::PI * 6.0 * time + 1.2)
+                .sin()
+                .max(0.0);
+
+        let sample = (voiced * syllable_envelope * macro_envelope + fricative).clamp(-0.85, 0.85);
+        samples.push(sample);
+    }
+
+    samples
+}
+
+fn normalized_whisper_language(selected_language: &str) -> Option<String> {
+    if selected_language == "auto" {
+        None
+    } else if matches!(selected_language, "zh-Hans" | "zh-Hant") {
+        Some("zh".to_string())
+    } else {
+        Some(selected_language.to_string())
+    }
+}
+
+fn sense_voice_language_for(selected_language: &str) -> SenseVoiceLanguage {
+    match selected_language {
+        "zh" | "zh-Hans" | "zh-Hant" => SenseVoiceLanguage::Chinese,
+        "en" => SenseVoiceLanguage::English,
+        "ja" => SenseVoiceLanguage::Japanese,
+        "ko" => SenseVoiceLanguage::Korean,
+        "yue" => SenseVoiceLanguage::Cantonese,
+        _ => SenseVoiceLanguage::Auto,
+    }
+}
+
+fn model_ready_wait_exhausted_error() -> anyhow::Error {
+    anyhow::anyhow!(
+        "Model failed to become ready for recording within {}s.",
+        MODEL_READY_WAIT_TIMEOUT.as_secs()
+    )
+}
+
+fn remaining_model_ready_wait(deadline: Instant) -> Result<Duration> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .ok_or_else(model_ready_wait_exhausted_error)
+}
+
+fn transcribe_warmup_pass(
+    loaded_engine: &mut LoadedEngine,
+    settings: &AppSettings,
+    warmup_audio: Vec<f32>,
+) -> Result<()> {
+    match loaded_engine {
+        LoadedEngine::Whisper(whisper_engine) => {
+            let params = WhisperInferenceParams {
+                language: normalized_whisper_language(&settings.selected_language),
+                translate: settings.translate_to_english,
+                ..Default::default()
+            };
+
+            whisper_engine
+                .transcribe_samples(warmup_audio, Some(params))
+                .map(|_| ())
+                .map_err(|e| anyhow::anyhow!("Whisper warm-up inference failed: {}", e))
+        }
+        LoadedEngine::Parakeet(parakeet_engine) => {
+            let params = ParakeetInferenceParams {
+                timestamp_granularity: TimestampGranularity::Segment,
+                ..Default::default()
+            };
+            parakeet_engine
+                .transcribe_samples(warmup_audio, Some(params))
+                .map(|_| ())
+                .map_err(|e| anyhow::anyhow!("Parakeet warm-up inference failed: {}", e))
+        }
+        LoadedEngine::Moonshine(moonshine_engine) => moonshine_engine
+            .transcribe_samples(warmup_audio, None)
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Moonshine warm-up inference failed: {}", e)),
+        LoadedEngine::MoonshineStreaming(streaming_engine) => streaming_engine
+            .transcribe_samples(warmup_audio, None)
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Moonshine streaming warm-up inference failed: {}", e)),
+        LoadedEngine::SenseVoice(sense_voice_engine) => {
+            let params = SenseVoiceInferenceParams {
+                language: sense_voice_language_for(&settings.selected_language),
+                use_itn: true,
+            };
+            sense_voice_engine
+                .transcribe_samples(warmup_audio, Some(params))
+                .map(|_| ())
+                .map_err(|e| anyhow::anyhow!("SenseVoice warm-up inference failed: {}", e))
+        }
+        LoadedEngine::GigaAM(gigaam_engine) => gigaam_engine
+            .transcribe_samples(warmup_audio, None)
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("GigaAM warm-up inference failed: {}", e)),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum IdleUnloadDecision {
+    Unload,
+    SkipModelNotLoaded,
+    SkipNotTimedOut,
+    SkipActiveBinding,
+    SkipActiveSession,
+    SkipModelLoading,
+    SkipModelWarming,
+}
+
+impl IdleUnloadDecision {
+    fn skip_reason(self) -> Option<&'static str> {
+        match self {
+            Self::Unload => None,
+            Self::SkipModelNotLoaded => Some("model_not_loaded"),
+            Self::SkipNotTimedOut => Some("not_timed_out"),
+            Self::SkipActiveBinding => Some("active_binding"),
+            Self::SkipActiveSession => Some("active_session"),
+            Self::SkipModelLoading => Some("model_loading"),
+            Self::SkipModelWarming => Some("model_warming"),
+        }
+    }
+}
+
+fn classify_idle_unload_decision(
+    is_model_loaded: bool,
+    is_timed_out: bool,
+    has_active_binding: bool,
+    has_active_session: bool,
+    is_loading: bool,
+    is_warming: bool,
+) -> IdleUnloadDecision {
+    if !is_model_loaded {
+        IdleUnloadDecision::SkipModelNotLoaded
+    } else if !is_timed_out {
+        IdleUnloadDecision::SkipNotTimedOut
+    } else if has_active_binding {
+        IdleUnloadDecision::SkipActiveBinding
+    } else if has_active_session {
+        IdleUnloadDecision::SkipActiveSession
+    } else if is_loading {
+        IdleUnloadDecision::SkipModelLoading
+    } else if is_warming {
+        IdleUnloadDecision::SkipModelWarming
+    } else {
+        IdleUnloadDecision::Unload
+    }
+}
+
+fn should_attempt_transcription_reload(engine_missing: bool, selected_model_empty: bool) -> bool {
+    engine_missing && !selected_model_empty
+}
+
+impl Clone for TranscriptionManager {
+    fn clone(&self) -> Self {
+        Self {
+            engine: self.engine.clone(),
+            model_manager: self.model_manager.clone(),
+            app_handle: self.app_handle.clone(),
+            current_model_id: self.current_model_id.clone(),
+            last_activity: self.last_activity.clone(),
+            shutdown_signal: self.shutdown_signal.clone(),
+            watcher_handle: self.watcher_handle.clone(),
+            is_loading: self.is_loading.clone(),
+            loading_condvar: self.loading_condvar.clone(),
+            is_warming: self.is_warming.clone(),
+            warming_condvar: self.warming_condvar.clone(),
+            pending_warm_model_id: self.pending_warm_model_id.clone(),
+            warmed_model_id: self.warmed_model_id.clone(),
+            active_session_id: self.active_session_id.clone(),
+            is_primary_instance: false,
+        }
+    }
+}
 
 impl TranscriptionManager {
     pub fn new(app_handle: &AppHandle, model_manager: Arc<ModelManager>) -> Result<Self> {
@@ -87,7 +290,12 @@ impl TranscriptionManager {
             watcher_handle: Arc::new(Mutex::new(None)),
             is_loading: Arc::new(Mutex::new(false)),
             loading_condvar: Arc::new(Condvar::new()),
+            is_warming: Arc::new(Mutex::new(false)),
+            warming_condvar: Arc::new(Condvar::new()),
+            pending_warm_model_id: Arc::new(Mutex::new(None)),
+            warmed_model_id: Arc::new(Mutex::new(None)),
             active_session_id: Arc::new(Mutex::new(None)),
+            is_primary_instance: true,
         };
 
         // Start the idle watcher
@@ -120,7 +328,30 @@ impl TranscriptionManager {
                             .as_millis() as u64;
 
                         if now_ms.saturating_sub(last) > limit_seconds * 1000 {
-                            // idle -> unload
+                            let audio_manager = app_handle_cloned.state::<Arc<AudioRecordingManager>>();
+                            let has_active_binding = audio_manager.get_active_binding_id().is_some();
+                            let decision = classify_idle_unload_decision(
+                                manager_cloned.is_model_loaded(),
+                                true,
+                                has_active_binding,
+                                manager_cloned.is_any_session_active(),
+                                manager_cloned.is_model_loading(),
+                                manager_cloned.is_model_warming(),
+                            );
+
+                            if let Some(reason) = decision.skip_reason() {
+                                debug!(
+                                    reason,
+                                    has_active_binding,
+                                    has_active_session = manager_cloned.is_any_session_active(),
+                                    is_loading = manager_cloned.is_model_loading(),
+                                    is_warming = manager_cloned.is_model_warming(),
+                                    event_code = "model_idle_unload_skipped",
+                                    "Skipping model unload due to active transcription readiness work"
+                                );
+                                continue;
+                            }
+
                             if manager_cloned.is_model_loaded() {
                                 let unload_start = std::time::Instant::now();
                                 debug!("Starting to unload model due to inactivity");
@@ -166,6 +397,68 @@ impl TranscriptionManager {
         engine.is_some()
     }
 
+    pub fn is_model_loading(&self) -> bool {
+        *self.is_loading.lock().unwrap()
+    }
+
+    pub fn is_model_warming(&self) -> bool {
+        *self.is_warming.lock().unwrap()
+    }
+
+    pub fn is_model_warmed(&self) -> bool {
+        let current_model = self.get_current_model();
+        let warmed_model = self.warmed_model_id.lock().unwrap().clone();
+        current_model.is_some()
+            && current_model == warmed_model
+            && self.is_model_loaded()
+    }
+
+    fn touch_activity(&self) {
+        self.last_activity.store(
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+            Ordering::Relaxed,
+        );
+    }
+
+    pub fn is_model_ready_for_recording(&self, model_id: &str) -> bool {
+        self.is_model_warmed_for(model_id)
+    }
+
+    fn is_model_warmed_for(&self, model_id: &str) -> bool {
+        let current_model = self.get_current_model();
+        let warmed_model = self.warmed_model_id.lock().unwrap().clone();
+        current_model.as_deref() == Some(model_id)
+            && warmed_model.as_deref() == Some(model_id)
+            && self.is_model_loaded()
+    }
+
+    fn clear_warm_state(&self) {
+        let mut warmed_model = self.warmed_model_id.lock().unwrap();
+        *warmed_model = None;
+    }
+
+    fn get_model_name(&self, model_id: &str) -> Option<String> {
+        self.model_manager
+            .get_model_info(model_id)
+            .map(|model| model.name.clone())
+    }
+
+    fn set_warming_flag(&self, is_warming: bool) {
+        let mut flag = self.is_warming.lock().unwrap();
+        *flag = is_warming;
+        if !is_warming {
+            self.warming_condvar.notify_all();
+        }
+    }
+
+    fn mark_model_warmed(&self, model_id: &str) {
+        let mut warmed_model = self.warmed_model_id.lock().unwrap();
+        *warmed_model = Some(model_id.to_string());
+    }
+
     pub fn unload_model(&self) -> Result<()> {
         let unload_start = std::time::Instant::now();
         debug!("Starting to unload model");
@@ -188,6 +481,7 @@ impl TranscriptionManager {
             let mut current_model = self.current_model_id.lock().unwrap();
             *current_model = None;
         }
+        self.clear_warm_state();
 
         // Emit unloaded event
         let _ = self.app_handle.emit(
@@ -224,6 +518,8 @@ impl TranscriptionManager {
     pub fn load_model(&self, model_id: &str) -> Result<()> {
         let load_start = std::time::Instant::now();
         debug!("Starting to load model: {}", model_id);
+        self.touch_activity();
+        self.clear_warm_state();
 
         // Emit loading started event
         let _ = self.app_handle.emit(
@@ -402,6 +698,7 @@ impl TranscriptionManager {
         );
 
         let load_duration = load_start.elapsed();
+        self.touch_activity();
         debug!(
             "Successfully loaded transcription model: {} (took {}ms)",
             model_id,
@@ -410,28 +707,337 @@ impl TranscriptionManager {
         Ok(())
     }
 
-    /// Kicks off the model loading in a background thread if it's not already loaded
-    pub fn initiate_model_load(&self) {
+    fn ensure_model_loaded(&self, model_id: &str) -> Result<()> {
+        self.touch_activity();
+        loop {
+            // Wait for any in-flight load operation to complete.
+            {
+                let mut is_loading = self.is_loading.lock().unwrap();
+                while *is_loading {
+                    is_loading = self.loading_condvar.wait(is_loading).unwrap();
+                }
+            }
+
+            let current_model = self.get_current_model();
+            if self.is_model_loaded() && current_model.as_deref() == Some(model_id) {
+                return Ok(());
+            }
+
+            let should_load = {
+                let mut is_loading = self.is_loading.lock().unwrap();
+                if *is_loading {
+                    false
+                } else {
+                    *is_loading = true;
+                    true
+                }
+            };
+
+            if !should_load {
+                continue;
+            }
+
+            let load_result = self.load_model(model_id);
+
+            let mut is_loading = self.is_loading.lock().unwrap();
+            *is_loading = false;
+            self.loading_condvar.notify_all();
+
+            return load_result;
+        }
+    }
+
+    fn warm_loaded_model_inference(&self) -> Result<()> {
+        let settings = get_settings(&self.app_handle);
+
+        let transcribe_result = catch_unwind(AssertUnwindSafe(|| -> Result<()> {
+            let mut engine_guard = self.lock_engine();
+            let loaded_engine = engine_guard
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("Model is not loaded for warm-up inference."))?;
+
+            for sample_count in WARMUP_AUDIO_PASSES {
+                debug!(
+                    sample_count,
+                    event_code = "model_warmup_decode_pass",
+                    "Running warm-up decode pass"
+                );
+                let warmup_audio = build_warmup_audio_fixture(sample_count);
+                transcribe_warmup_pass(loaded_engine, &settings, warmup_audio)?;
+            }
+
+            Ok(())
+        }));
+
+        match transcribe_result {
+            Ok(inner_result) => inner_result,
+            Err(panic_payload) => {
+                let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "unknown panic".to_string()
+                };
+
+                error!(
+                    "Transcription engine panicked during warm-up inference: {}. Model has been unloaded.",
+                    panic_msg
+                );
+
+                {
+                    let mut engine_guard = self.lock_engine();
+                    *engine_guard = None;
+                }
+                {
+                    let mut current_model = self.current_model_id.lock().unwrap();
+                    *current_model = None;
+                }
+                self.clear_warm_state();
+
+                let _ = self.app_handle.emit(
+                    "model-state-changed",
+                    ModelStateEvent {
+                        event_type: "unloaded".to_string(),
+                        model_id: None,
+                        model_name: None,
+                        error: Some(format!("Engine panicked during warm-up: {}", panic_msg)),
+                    },
+                );
+
+                Err(anyhow::anyhow!(
+                    "Transcription engine panicked during warm-up: {}. The model has been unloaded and will reload on next attempt.",
+                    panic_msg
+                ))
+            }
+        }
+    }
+
+    fn wait_for_model_loading(&self) {
         let mut is_loading = self.is_loading.lock().unwrap();
-        if *is_loading || self.is_model_loaded() {
+        while *is_loading {
+            is_loading = self.loading_condvar.wait(is_loading).unwrap();
+        }
+    }
+
+    fn wait_for_model_loading_until(&self, deadline: Instant) -> Result<()> {
+        let mut is_loading = self.is_loading.lock().unwrap();
+        while *is_loading {
+            let remaining = remaining_model_ready_wait(deadline)?;
+            let (guard, wait_result) = self
+                .loading_condvar
+                .wait_timeout(is_loading, remaining)
+                .unwrap();
+            is_loading = guard;
+            if *is_loading && wait_result.timed_out() {
+                return Err(model_ready_wait_exhausted_error());
+            }
+        }
+
+        Ok(())
+    }
+
+    fn wait_for_model_warming(&self) {
+        let mut is_warming = self.is_warming.lock().unwrap();
+        while *is_warming {
+            is_warming = self.warming_condvar.wait(is_warming).unwrap();
+        }
+    }
+
+    fn wait_for_model_warming_until(&self, deadline: Instant) -> Result<()> {
+        let mut is_warming = self.is_warming.lock().unwrap();
+        while *is_warming {
+            let remaining = remaining_model_ready_wait(deadline)?;
+            let (guard, wait_result) = self
+                .warming_condvar
+                .wait_timeout(is_warming, remaining)
+                .unwrap();
+            is_warming = guard;
+            if *is_warming && wait_result.timed_out() {
+                return Err(model_ready_wait_exhausted_error());
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn initiate_model_warmup(&self, trigger: &'static str) {
+        let settings = get_settings(&self.app_handle);
+        if settings.selected_model.is_empty() {
+            return;
+        }
+        self.initiate_model_warmup_for_model(settings.selected_model, trigger);
+    }
+
+    pub fn initiate_model_warmup_for_model(&self, model_id: String, trigger: &'static str) {
+        if model_id.is_empty() {
+            return;
+        }
+        if self.is_model_warmed_for(&model_id) {
             return;
         }
 
-        *is_loading = true;
+        self.touch_activity();
+        let mut is_warming = self.is_warming.lock().unwrap();
+        if *is_warming {
+            // Keep the lock ordering explicit: callers that need both guards must acquire
+            // `is_warming` before `pending_warm_model_id` so future changes do not introduce
+            // a lock cycle around the warm-up handoff state.
+            let mut pending_model = self.pending_warm_model_id.lock().unwrap();
+            *pending_model = Some(model_id);
+            return;
+        }
+        *is_warming = true;
+        drop(is_warming);
+
         let self_clone = self.clone();
         thread::spawn(move || {
-            let settings = get_settings(&self_clone.app_handle);
-            if let Err(e) = self_clone.load_model(&settings.selected_model) {
-                error!("Failed to load model: {}", e);
-                capture_handled_error(
-                    &META_BACKGROUND_MODEL_LOAD_FAILURE,
-                    e.as_ref() as &(dyn std::error::Error + 'static),
+            let model_name = self_clone.get_model_name(&model_id);
+            let warmup_started_at = std::time::Instant::now();
+
+            info!(
+                model = %model_id,
+                trigger = trigger,
+                event_code = "model_warmup_requested",
+                "Starting transcription model warm-up"
+            );
+            self_clone.touch_activity();
+
+            let warmup_result = (|| -> Result<()> {
+                self_clone.ensure_model_loaded(&model_id)?;
+
+                if self_clone.is_model_warmed_for(&model_id) {
+                    info!(
+                        model = %model_id,
+                        trigger = trigger,
+                        event_code = "model_warmup_skipped_already_warmed",
+                        "Skipping warm-up because model is already warmed"
+                    );
+                    return Ok(());
+                }
+
+                let _ = self_clone.app_handle.emit(
+                    "model-state-changed",
+                    ModelStateEvent {
+                        event_type: "warming_started".to_string(),
+                        model_id: Some(model_id.clone()),
+                        model_name: model_name.clone(),
+                        error: None,
+                    },
                 );
+
+                self_clone.warm_loaded_model_inference()?;
+                self_clone.mark_model_warmed(&model_id);
+                self_clone.touch_activity();
+
+                let _ = self_clone.app_handle.emit(
+                    "model-state-changed",
+                    ModelStateEvent {
+                        event_type: "warming_completed".to_string(),
+                        model_id: Some(model_id.clone()),
+                        model_name: model_name.clone(),
+                        error: None,
+                    },
+                );
+
+                Ok(())
+            })();
+
+            match warmup_result {
+                Ok(()) => {
+                    info!(
+                        model = %model_id,
+                        trigger = trigger,
+                        elapsed_ms = warmup_started_at.elapsed().as_millis(),
+                        event_code = "model_warmup_completed",
+                        "Transcription model warm-up completed"
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        model = %model_id,
+                        trigger = trigger,
+                        elapsed_ms = warmup_started_at.elapsed().as_millis(),
+                        event_code = "model_warmup_failed",
+                        "Transcription model warm-up failed: {}",
+                        e
+                    );
+
+                    let _ = self_clone.app_handle.emit(
+                        "model-state-changed",
+                        ModelStateEvent {
+                            event_type: "warming_failed".to_string(),
+                            model_id: Some(model_id.clone()),
+                            model_name: model_name.clone(),
+                            error: Some(e.to_string()),
+                        },
+                    );
+
+                    capture_handled_error(
+                        &META_BACKGROUND_MODEL_WARMUP_FAILURE,
+                        e.as_ref() as &(dyn std::error::Error + 'static),
+                    );
+                }
             }
-            let mut is_loading = self_clone.is_loading.lock().unwrap();
-            *is_loading = false;
-            self_clone.loading_condvar.notify_all();
+
+            self_clone.set_warming_flag(false);
+
+            let pending_model_id = self_clone.pending_warm_model_id.lock().unwrap().take();
+            if let Some(pending_model_id) = pending_model_id {
+                self_clone.initiate_model_warmup_for_model(pending_model_id, "pending_followup");
+            }
         });
+    }
+
+    pub fn wait_until_model_ready_for_recording(&self, model_id: &str) -> Result<()> {
+        if model_id.is_empty() {
+            return Ok(());
+        }
+
+        self.touch_activity();
+        let deadline = Instant::now() + MODEL_READY_WAIT_TIMEOUT;
+        let mut requested_warmup = false;
+
+        loop {
+            remaining_model_ready_wait(deadline)?;
+
+            if self.is_model_warmed_for(model_id) {
+                return Ok(());
+            }
+
+            self.wait_for_model_loading_until(deadline)?;
+            if self.is_model_warmed_for(model_id) {
+                return Ok(());
+            }
+
+            if self.is_model_warming() {
+                self.wait_for_model_warming_until(deadline)?;
+                continue;
+            }
+
+            if requested_warmup {
+                break;
+            }
+
+            self.initiate_model_warmup_for_model(model_id.to_string(), "recording_wait");
+            requested_warmup = true;
+        }
+
+        if self.is_model_warmed_for(model_id) {
+            return Ok(());
+        }
+
+        if self.is_model_loaded() && self.get_current_model().as_deref() == Some(model_id) {
+            return Err(anyhow::anyhow!(
+                "Model is loaded but not warmed for recording."
+            ));
+        }
+
+        if remaining_model_ready_wait(deadline).is_err() {
+            return Err(model_ready_wait_exhausted_error());
+        }
+
+        Err(anyhow::anyhow!("Model failed to become ready for recording."))
     }
 
     pub fn get_current_model(&self) -> Option<String> {
@@ -465,14 +1071,7 @@ impl TranscriptionManager {
     }
 
     pub fn transcribe(&self, audio: Vec<f32>) -> Result<(String, usize)> {
-        // Update last activity timestamp
-        self.last_activity.store(
-            SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
-            Ordering::Relaxed,
-        );
+        self.touch_activity();
 
         let st = std::time::Instant::now();
 
@@ -488,6 +1087,18 @@ impl TranscriptionManager {
         let sum_squares: f32 = audio.iter().map(|s| s * s).sum();
         let rms = (sum_squares / audio.len() as f32).sqrt();
         let db_fs = 20.0 * rms.log10();
+        let active_model = self.get_current_model();
+        let warmed_before_transcription = active_model
+            .as_deref()
+            .map(|model_id| self.is_model_warmed_for(model_id))
+            .unwrap_or(false);
+
+        info!(
+            model = ?active_model,
+            warmed_before_transcription,
+            event_code = "transcription_start_state",
+            "Transcription state at start"
+        );
 
         info!(
             "Starting transcription: {} samples, {:.4} RMS ({:.2} dBFS)",
@@ -499,14 +1110,28 @@ impl TranscriptionManager {
         // Check if model is loaded, if not try to load it
         {
             // If the model is loading, wait for it to complete.
-            let mut is_loading = self.is_loading.lock().unwrap();
-            while *is_loading {
-                is_loading = self.loading_condvar.wait(is_loading).unwrap();
-            }
+            self.wait_for_model_loading();
+            self.wait_for_model_warming();
 
             let engine_guard = self.lock_engine();
             if engine_guard.is_none() {
-                return Err(anyhow::anyhow!("Model is not loaded for transcription."));
+                drop(engine_guard);
+                let selected_model = get_settings(&self.app_handle).selected_model;
+                if !should_attempt_transcription_reload(true, selected_model.is_empty()) {
+                    return Err(anyhow::anyhow!("Model is not loaded for transcription."));
+                }
+
+                warn!(
+                    model = %selected_model,
+                    event_code = "transcription_model_reload_attempt",
+                    "Model missing at transcription start, attempting one reload"
+                );
+                self.ensure_model_loaded(&selected_model)?;
+
+                let engine_guard = self.lock_engine();
+                if engine_guard.is_none() {
+                    return Err(anyhow::anyhow!("Model is not loaded for transcription."));
+                }
             }
         }
 
@@ -538,21 +1163,10 @@ impl TranscriptionManager {
                 || -> Result<transcribe_rs::TranscriptionResult> {
                     match &mut engine {
                         LoadedEngine::Whisper(whisper_engine) => {
-                            let whisper_language = if settings.selected_language == "auto" {
-                                None
-                            } else {
-                                let normalized = if settings.selected_language == "zh-Hans"
-                                    || settings.selected_language == "zh-Hant"
-                                {
-                                    "zh".to_string()
-                                } else {
-                                    settings.selected_language.clone()
-                                };
-                                Some(normalized)
-                            };
-
                             let params = WhisperInferenceParams {
-                                language: whisper_language,
+                                language: normalized_whisper_language(
+                                    &settings.selected_language,
+                                ),
                                 translate: settings.translate_to_english,
                                 ..Default::default()
                             };
@@ -581,16 +1195,10 @@ impl TranscriptionManager {
                                 anyhow::anyhow!("Moonshine streaming transcription failed: {}", e)
                             }),
                         LoadedEngine::SenseVoice(sense_voice_engine) => {
-                            let language = match settings.selected_language.as_str() {
-                                "zh" | "zh-Hans" | "zh-Hant" => SenseVoiceLanguage::Chinese,
-                                "en" => SenseVoiceLanguage::English,
-                                "ja" => SenseVoiceLanguage::Japanese,
-                                "ko" => SenseVoiceLanguage::Korean,
-                                "yue" => SenseVoiceLanguage::Cantonese,
-                                _ => SenseVoiceLanguage::Auto,
-                            };
                             let params = SenseVoiceInferenceParams {
-                                language,
+                                language: sense_voice_language_for(
+                                    &settings.selected_language,
+                                ),
                                 use_itn: true,
                             };
                             sense_voice_engine
@@ -657,6 +1265,10 @@ impl TranscriptionManager {
 
         // Log raw result before any processing
         info!("Raw transcription output: '{}'", result.text);
+
+        if let Some(model_id) = self.get_current_model() {
+            self.mark_model_warmed(&model_id);
+        }
 
         let dictionary_entries = user_dictionary::get_dictionary_snapshot(&self.app_handle);
 
@@ -728,6 +1340,10 @@ impl TranscriptionManager {
 
 impl Drop for TranscriptionManager {
     fn drop(&mut self) {
+        if !self.is_primary_instance {
+            return;
+        }
+
         debug!("Shutting down TranscriptionManager");
 
         // Signal the watcher thread to shutdown
@@ -741,5 +1357,73 @@ impl Drop for TranscriptionManager {
                 debug!("Idle watcher thread joined successfully");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        classify_idle_unload_decision, normalized_whisper_language, sense_voice_language_for,
+        should_attempt_transcription_reload, IdleUnloadDecision,
+    };
+    use transcribe_rs::engines::sense_voice::Language as SenseVoiceLanguage;
+
+    #[test]
+    fn idle_unload_allows_stale_loaded_idle_model() {
+        assert_eq!(
+            classify_idle_unload_decision(true, true, false, false, false, false),
+            IdleUnloadDecision::Unload
+        );
+    }
+
+    #[test]
+    fn idle_unload_blocks_active_recording_binding() {
+        assert_eq!(
+            classify_idle_unload_decision(true, true, true, false, false, false),
+            IdleUnloadDecision::SkipActiveBinding
+        );
+    }
+
+    #[test]
+    fn idle_unload_blocks_active_transcription_session() {
+        assert_eq!(
+            classify_idle_unload_decision(true, true, false, true, false, false),
+            IdleUnloadDecision::SkipActiveSession
+        );
+    }
+
+    #[test]
+    fn idle_unload_blocks_loading_or_warming_model() {
+        assert_eq!(
+            classify_idle_unload_decision(true, true, false, false, true, false),
+            IdleUnloadDecision::SkipModelLoading
+        );
+        assert_eq!(
+            classify_idle_unload_decision(true, true, false, false, false, true),
+            IdleUnloadDecision::SkipModelWarming
+        );
+    }
+
+    #[test]
+    fn transcription_reload_attempt_requires_non_empty_selected_model() {
+        assert!(should_attempt_transcription_reload(true, false));
+        assert!(!should_attempt_transcription_reload(true, true));
+        assert!(!should_attempt_transcription_reload(false, false));
+    }
+
+    #[test]
+    fn whisper_language_normalizes_chinese_variants() {
+        assert_eq!(normalized_whisper_language("auto"), None);
+        assert_eq!(normalized_whisper_language("en"), Some("en".to_string()));
+        assert_eq!(normalized_whisper_language("zh-Hans"), Some("zh".to_string()));
+        assert_eq!(normalized_whisper_language("zh-Hant"), Some("zh".to_string()));
+    }
+
+    #[test]
+    fn sense_voice_language_mapping_is_shared() {
+        assert_eq!(sense_voice_language_for("zh-Hans"), SenseVoiceLanguage::Chinese);
+        assert_eq!(sense_voice_language_for("zh-Hant"), SenseVoiceLanguage::Chinese);
+        assert_eq!(sense_voice_language_for("yue"), SenseVoiceLanguage::Cantonese);
+        assert_eq!(sense_voice_language_for("auto"), SenseVoiceLanguage::Auto);
     }
 }

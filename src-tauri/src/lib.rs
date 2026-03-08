@@ -85,7 +85,11 @@ type ManagedToggleState = Mutex<ShortcutToggleStates>;
 /// Global state to override paste method during onboarding.
 /// When true, forces Direct paste method to work around WebView not receiving
 /// CGEvent-simulated Cmd+V keystrokes from the same process.
-pub type OnboardingPasteOverride = Mutex<bool>;
+pub struct OnboardingPasteOverride(pub Mutex<bool>);
+
+/// Tracks whether the Learn-step mock chat input is currently the intended
+/// onboarding activation target.
+pub struct OnboardingActivationTarget(pub Mutex<bool>);
 
 // Global atomic to store the file log level filter
 // We use u8 to store the log::LevelFilter as a number
@@ -840,20 +844,20 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         let _ = autostart_manager.disable();
     }
 
-    // Coordinate startup model preload so we do at most one boot-time attempt.
-    let startup_model_preload_started = Arc::new(AtomicBool::new(false));
+    // Coordinate startup model warm-up so we do at most one boot-time attempt.
+    let startup_model_warmup_started = Arc::new(AtomicBool::new(false));
 
     // Listen for early overlay readiness from the frontend.
     // This only guarantees show/hide visibility listeners are attached.
     // Keep this path lightweight to preserve first overlay paint performance.
     let transcription_manager_for_overlay_ready = transcription_manager.clone();
-    let startup_model_preload_started_for_overlay = startup_model_preload_started.clone();
+    let startup_model_warmup_started_for_overlay = startup_model_warmup_started.clone();
     app_handle.listen("overlay-ready", move |_event| {
         overlay::mark_overlay_listener_ready();
-        // Start model preload after overlay is ready so startup UI is not CPU-contended.
+        // Start model warm-up after overlay is ready so startup UI is not CPU-contended.
         // Guarded to avoid duplicate startup attempts with the fallback path.
-        if !startup_model_preload_started_for_overlay.swap(true, Ordering::SeqCst) {
-            transcription_manager_for_overlay_ready.initiate_model_load();
+        if !startup_model_warmup_started_for_overlay.swap(true, Ordering::SeqCst) {
+            transcription_manager_for_overlay_ready.initiate_model_warmup("startup_overlay_ready");
         }
         tracing::debug!("Received overlay-ready event from frontend (visibility-ready)");
     });
@@ -865,13 +869,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         tracing::debug!("Received overlay-fully-ready event from frontend");
     });
 
-    // Safety fallback: if overlay-ready never arrives (unexpected), still preload after idle.
+    // Safety fallback: if overlay-ready never arrives (unexpected), still warm model after idle.
     let transcription_manager_for_fallback = transcription_manager.clone();
-    let startup_model_preload_started_for_fallback = startup_model_preload_started.clone();
+    let startup_model_warmup_started_for_fallback = startup_model_warmup_started.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(3));
-        if !startup_model_preload_started_for_fallback.swap(true, Ordering::SeqCst) {
-            transcription_manager_for_fallback.initiate_model_load();
+        if !startup_model_warmup_started_for_fallback.swap(true, Ordering::SeqCst) {
+            transcription_manager_for_fallback.initiate_model_warmup("startup_fallback");
         }
     });
 }
@@ -940,7 +944,9 @@ pub fn run(cli_args: CliArgs) {
         shortcut::change_show_tray_icon_setting,
         shortcut::change_show_unload_model_in_tray_setting,
         user_profile::get_user_profile_command,
+        user_profile::mark_onboarding_started_command,
         user_profile::update_user_profile_setting,
+        user_profile::record_onboarding_activation_command,
         trigger_update_check,
         commands::cancel_operation,
         commands::backup::create_backup,
@@ -968,6 +974,7 @@ pub fn run(cli_args: CliArgs) {
         commands::record_upgrade_prompt_shown,
         commands::record_upgrade_prompt_action,
         commands::record_upgrade_checkout_result,
+        commands::set_onboarding_activation_target,
         commands::set_onboarding_paste_override,
         commands::initialize_enigo,
         commands::initialize_shortcuts,
@@ -1000,6 +1007,7 @@ pub fn run(cli_args: CliArgs) {
         commands::audio::stop_mic_preview,
         commands::transcription::set_model_unload_timeout,
         commands::transcription::get_model_load_status,
+        commands::transcription::warm_up_transcription_model,
         commands::transcription::unload_model_manually,
         commands::history::get_history_entries,
         commands::history::toggle_history_entry_saved,
@@ -1083,7 +1091,9 @@ pub fn run(cli_args: CliArgs) {
         shortcut::change_auto_submit_setting,
         shortcut::change_auto_submit_key_setting,
         user_profile::get_user_profile_command,
+        user_profile::mark_onboarding_started_command,
         user_profile::update_user_profile_setting,
+        user_profile::record_onboarding_activation_command,
         trigger_update_check,
         commands::cancel_operation,
         commands::backup::create_backup,
@@ -1111,6 +1121,7 @@ pub fn run(cli_args: CliArgs) {
         commands::record_upgrade_prompt_shown,
         commands::record_upgrade_prompt_action,
         commands::record_upgrade_checkout_result,
+        commands::set_onboarding_activation_target,
         commands::set_onboarding_paste_override,
         commands::initialize_enigo,
         commands::models::get_available_models,
@@ -1142,6 +1153,7 @@ pub fn run(cli_args: CliArgs) {
         commands::audio::stop_mic_preview,
         commands::transcription::set_model_unload_timeout,
         commands::transcription::get_model_load_status,
+        commands::transcription::warm_up_transcription_model,
         commands::transcription::unload_model_manually,
         commands::history::get_history_entries,
         commands::history::toggle_history_entry_saved,
@@ -1226,7 +1238,8 @@ pub fn run(cli_args: CliArgs) {
         ))
         .plugin(tauri_plugin_dialog::init())
         .manage(Mutex::new(ShortcutToggleStates::default()))
-        .manage(Mutex::new(false) as OnboardingPasteOverride)
+        .manage(OnboardingPasteOverride(Mutex::new(false)))
+        .manage(OnboardingActivationTarget(Mutex::new(false)))
         .manage(undo::UndoManager::default())
         .manage(backup_restore::BackupRestoreRuntime::default())
         .manage(cli_args.clone())
@@ -1411,6 +1424,7 @@ pub fn run(cli_args: CliArgs) {
                         analytics::BackendAnalyticsEvent::AppExited,
                         None,
                     );
+                    user_profile::track_onboarding_abandonment_if_needed(app);
                 }
                 // Handle app exit to properly shutdown sidecar processes
                 tauri::RunEvent::Exit => {

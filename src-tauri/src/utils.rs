@@ -125,7 +125,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
 
     // Show cancelling state on overlay IMMEDIATELY to prevent race conditions
     // where other threads (e.g. action.stop) might try to hide the overlay.
-    // By setting state to Cancelling now, we block hide_overlay_if_recording from working.
+    // By setting state to Cancelling now, we block hide_overlay_after_aborted_recording from working.
     crate::overlay::show_cancelling_overlay(app);
 
     // Unregister the cancel shortcut asynchronously
