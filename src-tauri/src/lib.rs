@@ -1424,7 +1424,6 @@ pub fn run(cli_args: CliArgs) {
                         analytics::BackendAnalyticsEvent::AppExited,
                         None,
                     );
-                    user_profile::track_onboarding_abandonment_if_needed(app);
                 }
                 // Handle app exit to properly shutdown sidecar processes
                 tauri::RunEvent::Exit => {

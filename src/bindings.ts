@@ -357,6 +357,14 @@ async getUserProfileCommand() : Promise<Result<UserProfile, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async markOnboardingStartedCommand() : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("mark_onboarding_started_command") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 /**
  * Update a specific field in the user profile.
  * The value is a JSON-encoded string.
@@ -364,6 +372,14 @@ async getUserProfileCommand() : Promise<Result<UserProfile, string>> {
 async updateUserProfileSetting(key: string, value: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("update_user_profile_setting", { key, value }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async recordOnboardingActivationCommand(surface: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("record_onboarding_activation_command", { surface }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -577,6 +593,13 @@ async recordUpgradeCheckoutResult(result: string, source: string) : Promise<Resu
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Arm or disarm the Learn-step onboarding activation target.
+ * This prevents successful pastes in other apps from being credited to Learn.
+ */
+async setOnboardingActivationTarget(enabled: boolean) : Promise<void> {
+    await TAURI_INVOKE("set_onboarding_activation_target", { enabled });
 },
 /**
  * Set the onboarding paste override.
@@ -820,6 +843,14 @@ async setModelUnloadTimeout(timeout: ModelUnloadTimeout) : Promise<void> {
 async getModelLoadStatus() : Promise<Result<ModelLoadStatus, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_model_load_status") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async warmUpTranscriptionModel(modelId: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("warm_up_transcription_model", { modelId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1250,7 +1281,7 @@ export type MlxModelStatus =
  */
 "load_failed"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; is_custom: boolean }
-export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
+export type ModelLoadStatus = { is_loaded: boolean; is_loading: boolean; is_warmed: boolean; is_warming: boolean; current_model: string | null }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_5"
 export type OverlayClientRect = { x: number; y: number; width: number; height: number }
 export type OverlayInteractionRegionsPayload = { overlayVisible: boolean; messageLaneRect: OverlayClientRect | null; actionRects?: OverlayClientRect[] }
@@ -1287,6 +1318,18 @@ onboarding_step?: number;
  * Whether onboarding has been completed
  */
 onboarding_completed?: boolean; 
+/**
+ * Whether the user has completed a real activation by successfully dictating outside setup prompts.
+ */
+onboarding_activation_completed?: boolean; 
+/**
+ * Whether the onboarding UI has been shown at least once.
+ */
+onboarding_started?: boolean; 
+/**
+ * Whether the user exited onboarding UI and is completing activation from the home screen.
+ */
+onboarding_home_guidance_active?: boolean; 
 /**
  * How the user heard about the app (single source stored as array for compat)
  */

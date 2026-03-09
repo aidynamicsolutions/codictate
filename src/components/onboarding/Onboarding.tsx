@@ -1,4 +1,14 @@
-import React, { useState, useEffect } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { listen } from "@tauri-apps/api/event";
+import { commands } from "@/bindings";
+import { useModelStore } from "@/stores/modelStore";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import WelcomeStep from "./WelcomeStep";
 import AttributionStep from "./AttributionStep";
@@ -13,59 +23,329 @@ import LanguageSelectStep from "./LanguageSelectStep";
 import LearnStep from "./LearnStep";
 import SuccessStep from "./SuccessStep";
 import ReferralStep from "./ReferralStep";
-import type { OnboardingStep } from "./OnboardingProgress";
-import { trackUiAnalyticsEvent } from "@/utils/analytics";
+import {
+  ALL_ONBOARDING_STEPS,
+  type OnboardingStep,
+} from "./flow";
+import { recordOnboardingActivationAttempt } from "./onboardingRuntime";
+import { logError } from "@/utils/logging";
 
 interface OnboardingProps {
   onComplete: () => void;
 }
 
-const STEP_ORDER: OnboardingStep[] = [
-  "welcome",
-  "attribution",
-  "tellUsAboutYou",
-  "typingUseCases",
-  "permissions",
-  "downloadModel",
-  "microphoneCheck",
-  "hotkeySetup",
-  "languageSelect",
-  "learn",
-  "success",
-  "referral",
-];
+interface ModelStateEvent {
+  event_type: string;
+  model_id?: string;
+  error?: string;
+}
 
 const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
-  const { profile, updateProfile } = useUserProfile();
+  const { profile, isLoading, refreshProfile, updateProfile } = useUserProfile();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("welcome");
-  const [userName, setUserName] = useState<string>("");
-  // Attribution state
-  const [referralSource, setReferralSource] = useState<string>("");
-  const [referralDetail, setReferralDetail] = useState<string>("");
-  const [referralOtherText, setReferralOtherText] = useState<string>("");
-  // Work profile state
-  const [workRole, setWorkRole] = useState<string>("");
-  const [professionalLevel, setProfessionalLevel] = useState<string>("");
-  const [workRoleOther, setWorkRoleOther] = useState<string>("");
-  // Typing use cases state
-  const [typingUseCases, setTypingUseCases] = useState<string[]>([]);
-  const [typingUseCasesOther, setTypingUseCasesOther] = useState<string>("");
+  const modelStore = useModelStore();
+  const selectModel = modelStore.selectModel;
+  const currentModelId = modelStore.currentModel;
+  const [onboardingTargetModelId, setOnboardingTargetModelId] = useState("");
+  const trackedModelId = onboardingTargetModelId || currentModelId;
+  const trackedModelInfo = trackedModelId
+    ? modelStore.getModelInfo(trackedModelId)
+    : undefined;
+  const isTrackedModelDownloaded = trackedModelInfo?.is_downloaded ?? false;
+  const isTrackedModelDownloading = trackedModelId
+    ? modelStore.isModelDownloading(trackedModelId)
+    : false;
+  const isTrackedModelExtracting = trackedModelId
+    ? modelStore.isModelExtracting(trackedModelId)
+    : false;
+  const isTrackedModelSelected =
+    Boolean(trackedModelId) && currentModelId === trackedModelId;
+  const [backendModelLoaded, setBackendModelLoaded] = useState(false);
+  const [backendModelLoading, setBackendModelLoading] = useState(false);
+  const [backendModelWarmed, setBackendModelWarmed] = useState(false);
+  const [backendModelWarming, setBackendModelWarming] = useState(false);
+  const [isSelectingTargetModel, setIsSelectingTargetModel] = useState(false);
 
-  // Initialize state from profile on mount
+  // Learn-step activation should only proceed once first decode has been warmed.
+  const modelReady = useMemo(() => {
+    if (!trackedModelId) return false;
+    if (!isTrackedModelDownloaded) return false;
+    if (isTrackedModelDownloading) return false;
+    if (isTrackedModelExtracting) return false;
+    if (!isTrackedModelSelected) return false;
+    return backendModelLoaded && backendModelWarmed;
+  }, [
+    backendModelLoaded,
+    backendModelWarmed,
+    isTrackedModelDownloaded,
+    isTrackedModelDownloading,
+    isTrackedModelExtracting,
+    isTrackedModelSelected,
+    trackedModelId,
+  ]);
+  const [userName, setUserName] = useState("");
+  const [learnActivated, setLearnActivated] = useState(false);
+  const [referralSource, setReferralSource] = useState("");
+  const [referralDetail, setReferralDetail] = useState("");
+  const [referralOtherText, setReferralOtherText] = useState("");
+  const [workRole, setWorkRole] = useState("");
+  const [professionalLevel, setProfessionalLevel] = useState("");
+  const [workRoleOther, setWorkRoleOther] = useState("");
+  const [typingUseCases, setTypingUseCases] = useState<string[]>([]);
+  const [typingUseCasesOther, setTypingUseCasesOther] = useState("");
+  const activationRecordedRef = useRef(false);
+  const warmupAttemptRef = useRef<{
+    modelId: string;
+    step: OnboardingStep;
+  } | null>(null);
+  // After the first hydration, step navigation is component-owned.
+  // Backend profile refreshes (e.g. user-profile-updated events) must NOT
+  // rewrite currentStep — doing so would rewind the user mid-flow.
+  const hydratedRef = useRef(false);
+
+  const handleOnboardingActionError = (action: string, error: unknown) => {
+    logError(
+      `event=onboarding_action_failed action=${action} error=${error}`,
+      "fe-onboarding",
+    );
+    void refreshProfile();
+  };
+
+  const runOnboardingAction = async (
+    action: string,
+    callback: () => Promise<void>,
+  ) => {
+    try {
+      await callback();
+    } catch (error) {
+      handleOnboardingActionError(action, error);
+    }
+  };
+
   useEffect(() => {
-    if (profile) {
-      // Resume from saved step
+    if (!trackedModelId) {
+      setBackendModelLoaded(false);
+      setBackendModelLoading(false);
+      setBackendModelWarmed(false);
+      setBackendModelWarming(false);
+      return;
+    }
+
+    let ignore = false;
+    let unlisten: (() => void) | undefined;
+
+    const syncModelLoadStatus = async () => {
+      try {
+        const result = await commands.getModelLoadStatus();
+        if (ignore || result.status !== "ok") {
+          return;
+        }
+
+        const isTrackedModel = result.data.current_model === trackedModelId;
+        const isTrackedModelLoaded = result.data.is_loaded && isTrackedModel;
+        const isTrackedModelWarmed = result.data.is_warmed && isTrackedModel;
+
+        setBackendModelLoaded(isTrackedModelLoaded);
+        setBackendModelLoading(result.data.is_loading && !isTrackedModelLoaded);
+        setBackendModelWarmed(isTrackedModelWarmed);
+        setBackendModelWarming(result.data.is_warming && !isTrackedModelWarmed);
+      } catch (error) {
+        if (!ignore) {
+          logError(
+            `event=onboarding_model_load_status_check_failed model=${trackedModelId} error=${error}`,
+            "fe-onboarding",
+          );
+        }
+      }
+    };
+
+    const setup = async () => {
+      await syncModelLoadStatus();
+      unlisten = await listen<ModelStateEvent>("model-state-changed", (event) => {
+        if (ignore) {
+          return;
+        }
+
+        const { event_type, model_id } = event.payload;
+        if (model_id && model_id !== trackedModelId) {
+          return;
+        }
+
+        switch (event_type) {
+          case "loading_started":
+            setBackendModelLoaded(false);
+            setBackendModelLoading(true);
+            setBackendModelWarmed(false);
+            setBackendModelWarming(false);
+            break;
+          case "loading_completed":
+            setBackendModelLoaded(true);
+            setBackendModelLoading(false);
+            break;
+          case "warming_started":
+            setBackendModelWarming(true);
+            break;
+          case "warming_completed":
+            setBackendModelLoaded(true);
+            setBackendModelWarmed(true);
+            setBackendModelWarming(false);
+            break;
+          case "warming_failed":
+            setBackendModelWarming(false);
+            break;
+          case "loading_failed":
+          case "unloaded":
+            setBackendModelLoaded(false);
+            setBackendModelLoading(false);
+            setBackendModelWarmed(false);
+            setBackendModelWarming(false);
+            break;
+        }
+      });
+    };
+
+    void setup();
+
+    return () => {
+      ignore = true;
+      unlisten?.();
+    };
+  }, [trackedModelId]);
+
+  useEffect(() => {
+    if (
+      !onboardingTargetModelId ||
+      !isTrackedModelDownloaded ||
+      isTrackedModelDownloading ||
+      isTrackedModelExtracting ||
+      isTrackedModelSelected ||
+      isSelectingTargetModel
+    ) {
+      return;
+    }
+
+    let ignore = false;
+    setIsSelectingTargetModel(true);
+    void selectModel(onboardingTargetModelId)
+      .then((ok) => {
+        if (!ok && !ignore) {
+          logError(
+            `event=onboarding_target_model_select_failed model=${onboardingTargetModelId}`,
+            "fe-onboarding",
+          );
+        }
+      })
+      .catch((error) => {
+        if (!ignore) {
+          logError(
+            `event=onboarding_target_model_select_failed model=${onboardingTargetModelId} error=${error}`,
+            "fe-onboarding",
+          );
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setIsSelectingTargetModel(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    isSelectingTargetModel,
+    isTrackedModelDownloaded,
+    isTrackedModelDownloading,
+    isTrackedModelExtracting,
+    isTrackedModelSelected,
+    onboardingTargetModelId,
+    selectModel,
+  ]);
+
+  useEffect(() => {
+    const isEligiblePrewarmStep =
+      currentStep === "microphoneCheck" ||
+      currentStep === "hotkeySetup" ||
+      currentStep === "languageSelect" ||
+      currentStep === "learn";
+
+    if (
+      !isEligiblePrewarmStep ||
+      !trackedModelId ||
+      !isTrackedModelDownloaded ||
+      isTrackedModelDownloading ||
+      isTrackedModelExtracting ||
+      !isTrackedModelSelected ||
+      backendModelWarmed ||
+      backendModelWarming
+    ) {
+      return;
+    }
+
+    const hasAttemptedWarmupForCurrentStep =
+      warmupAttemptRef.current?.modelId === trackedModelId &&
+      warmupAttemptRef.current?.step === currentStep;
+    if (hasAttemptedWarmupForCurrentStep) {
+      return;
+    }
+
+    warmupAttemptRef.current = {
+      modelId: trackedModelId,
+      step: currentStep,
+    };
+    void commands.warmUpTranscriptionModel(trackedModelId).catch((error) => {
+      // Allow retry on the next state transition if this warmup attempt fails.
+      warmupAttemptRef.current = null;
+      logError(
+        `event=onboarding_model_warmup_failed step=${currentStep} model=${trackedModelId} error=${error}`,
+        "fe-onboarding",
+      );
+    });
+  }, [
+    backendModelLoaded,
+    backendModelLoading,
+    backendModelWarmed,
+    backendModelWarming,
+    currentStep,
+    isTrackedModelDownloaded,
+    isTrackedModelDownloading,
+    isTrackedModelExtracting,
+    isTrackedModelSelected,
+    trackedModelId,
+  ]);
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    // Derive step position from the persisted profile only on first hydration.
+    // After that, step transitions are local — stale profile refreshes must
+    // never overwrite in-progress navigation.
+    if (profile && !hydratedRef.current) {
+      hydratedRef.current = true;
+
       const savedStep = profile.onboarding_step ?? 0;
-      if (savedStep > 0 && savedStep <= STEP_ORDER.length) {
-        setCurrentStep(STEP_ORDER[savedStep - 1] || "welcome");
+      if (
+        profile.onboarding_home_guidance_active &&
+        !profile.onboarding_completed
+      ) {
+        setCurrentStep("success");
+      } else if (savedStep > 0 && savedStep <= ALL_ONBOARDING_STEPS.length) {
+        setCurrentStep(ALL_ONBOARDING_STEPS[savedStep - 1] || "welcome");
       }
 
-      // Restore saved data
+      activationRecordedRef.current =
+        profile.onboarding_activation_completed ?? false;
+      setLearnActivated(profile.onboarding_activation_completed ?? false);
+    }
+
+    // Non-navigation fields are safe to sync on every profile change.
+    if (profile) {
       if (profile.user_name) {
         setUserName(profile.user_name);
       }
-      // Handle both old array format and new single-choice format
-      if (profile.referral_sources && profile.referral_sources.length > 0) {
+      if (profile.referral_sources?.length) {
         setReferralSource(profile.referral_sources[0]);
       }
       if (profile.referral_details) {
@@ -75,282 +355,342 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
           setReferralDetail(details[firstSource][0]);
         }
       }
-      // Work profile
       if (profile.work_role) {
         setWorkRole(profile.work_role);
       }
       if (profile.professional_level) {
         setProfessionalLevel(profile.professional_level);
       }
-      // Typing use cases
-      if (profile.typing_use_cases && profile.typing_use_cases.length > 0) {
+      if (profile.work_role_other) {
+        setWorkRoleOther(profile.work_role_other);
+      }
+      if (profile.typing_use_cases?.length) {
         setTypingUseCases(profile.typing_use_cases);
       }
       if (profile.typing_use_cases_other) {
         setTypingUseCasesOther(profile.typing_use_cases_other);
       }
     }
-  }, [profile]);
+
+  }, [isLoading, profile]);
+
+  useLayoutEffect(() => {
+    if (isLoading || profile?.onboarding_started) {
+      return;
+    }
+
+    void commands
+      .markOnboardingStartedCommand()
+      .then((result) => {
+        if (result.status === "error") {
+          logError(
+            `event=onboarding_start_mark_failed error=${result.error}`,
+            "fe-onboarding",
+          );
+          return;
+        }
+
+        if (result.data) {
+          void refreshProfile();
+        }
+      })
+      .catch((error) => {
+        logError(
+          `event=onboarding_start_mark_failed error=${error}`,
+          "fe-onboarding",
+        );
+      });
+  }, [isLoading, profile?.onboarding_started, refreshProfile]);
 
   const saveProgress = async (step: OnboardingStep) => {
-    const stepIndex = STEP_ORDER.indexOf(step) + 1;
+    const stepIndex = ALL_ONBOARDING_STEPS.indexOf(step) + 1;
     await updateProfile("onboarding_step", stepIndex);
   };
 
-  const goToNextStep = async () => {
-    const currentIndex = STEP_ORDER.indexOf(currentStep);
-    if (currentIndex < STEP_ORDER.length - 1) {
-      const nextStep = STEP_ORDER[currentIndex + 1];
-      setCurrentStep(nextStep);
+  const completeStepAndGoToNextStep = async (step: OnboardingStep) => {
+    const currentIndex = ALL_ONBOARDING_STEPS.indexOf(step);
+    if (currentIndex < ALL_ONBOARDING_STEPS.length - 1) {
+      const nextStep = ALL_ONBOARDING_STEPS[currentIndex + 1];
       await saveProgress(nextStep);
+      setCurrentStep(nextStep);
     }
   };
 
   const goToPreviousStep = async () => {
-    const currentIndex = STEP_ORDER.indexOf(currentStep);
-    if (currentIndex > 0) {
-      const prevStep = STEP_ORDER[currentIndex - 1];
-      setCurrentStep(prevStep);
-      await saveProgress(prevStep);
+    try {
+      const currentIndex = ALL_ONBOARDING_STEPS.indexOf(currentStep);
+      if (currentIndex > 0) {
+        const previousStep = ALL_ONBOARDING_STEPS[currentIndex - 1];
+        await saveProgress(previousStep);
+        setCurrentStep(previousStep);
+      }
+    } catch (error) {
+      handleOnboardingActionError("go_to_previous_step", error);
     }
   };
 
+  const recordOnboardingActivation = async (
+    surface: "learn_mock_chat" | "post_onboarding",
+  ) => {
+    await recordOnboardingActivationAttempt({
+      activationRecorded: activationRecordedRef.current,
+      surface,
+      recordActivation: (activationSurface) =>
+        commands.recordOnboardingActivationCommand(activationSurface),
+      setLearnActivated,
+      markActivationRecorded: () => {
+        activationRecordedRef.current = true;
+      },
+      trackLearnCompleted: async () => {},
+      logError: (message) => {
+        logError(message, "fe-onboarding");
+      },
+    });
+  };
+
   const handleWelcomeContinue = async (name: string) => {
-    setUserName(name);
-    await updateProfile("user_name", name || null);
-    await goToNextStep();
+    await runOnboardingAction("welcome_continue", async () => {
+      setUserName(name);
+      await updateProfile("user_name", name || null);
+      await completeStepAndGoToNextStep("welcome");
+    });
   };
 
   const handleAboutYouContinue = async (
     source: string,
     detail?: string,
-    otherText?: string
+    otherText?: string,
   ) => {
-    setReferralSource(source);
-    setReferralDetail(detail || "");
-    setReferralOtherText(otherText || "");
+    await runOnboardingAction("attribution_continue", async () => {
+      setReferralSource(source);
+      setReferralDetail(detail || "");
+      setReferralOtherText(otherText || "");
 
-    // Store as arrays for backward compatibility with profile schema
-    await updateProfile("referral_sources", source ? [source] : []);
-    if (detail) {
-      await updateProfile("referral_details", { [source]: [detail] });
-    } else if (otherText) {
-      await updateProfile("referral_details", { [source]: [otherText] });
-    } else {
-      await updateProfile("referral_details", {});
-    }
-    await goToNextStep();
+      await updateProfile("referral_sources", source ? [source] : []);
+      if (detail) {
+        await updateProfile("referral_details", { [source]: [detail] });
+      } else if (otherText) {
+        await updateProfile("referral_details", { [source]: [otherText] });
+      } else {
+        await updateProfile("referral_details", {});
+      }
+
+      await completeStepAndGoToNextStep("attribution");
+    });
   };
 
   const handleTellUsAboutYouContinue = async (
     role: string,
     level?: string,
-    otherText?: string
+    otherText?: string,
   ) => {
-    setWorkRole(role);
-    setProfessionalLevel(level || "");
-    setWorkRoleOther(otherText || "");
+    await runOnboardingAction("tell_us_about_you_continue", async () => {
+      setWorkRole(role);
+      setProfessionalLevel(level || "");
+      setWorkRoleOther(otherText || "");
 
-    await updateProfile("work_role", role || null);
-    await updateProfile("professional_level", level || null);
-    await updateProfile("work_role_other", otherText || null);
-    await goToNextStep();
+      await updateProfile("work_role", role || null);
+      await updateProfile("professional_level", level || null);
+      await updateProfile("work_role_other", otherText || null);
+
+      await completeStepAndGoToNextStep("tellUsAboutYou");
+    });
   };
 
   const handleTypingUseCasesContinue = async (
     useCases: string[],
-    otherText?: string
+    otherText?: string,
   ) => {
-    setTypingUseCases(useCases);
-    setTypingUseCasesOther(otherText || "");
+    await runOnboardingAction("typing_use_cases_continue", async () => {
+      setTypingUseCases(useCases);
+      setTypingUseCasesOther(otherText || "");
 
-    await updateProfile("typing_use_cases", useCases);
-    await updateProfile("typing_use_cases_other", otherText || null);
-    await goToNextStep();
+      await updateProfile("typing_use_cases", useCases);
+      await updateProfile("typing_use_cases_other", otherText || null);
+
+      await completeStepAndGoToNextStep("typingUseCases");
+    });
   };
 
   const handlePermissionsContinue = async () => {
-    await goToNextStep();
-  };
-
-  const handlePermissionsBack = async () => {
-    await goToPreviousStep();
+    await runOnboardingAction("permissions_continue", async () => {
+      await completeStepAndGoToNextStep("permissions");
+    });
   };
 
   const handleDownloadModelContinue = async () => {
-    await goToNextStep();
+    await runOnboardingAction("download_model_continue", async () => {
+      await completeStepAndGoToNextStep("downloadModel");
+    });
   };
 
-  const handleDownloadModelBack = async () => {
-    await goToPreviousStep();
-  };
+  const handleRecommendedModelResolved = useCallback((modelId: string) => {
+    setOnboardingTargetModelId((previous) =>
+      previous === modelId ? previous : modelId,
+    );
+  }, []);
 
   const handleMicrophoneCheckContinue = async () => {
-    await goToNextStep();
-  };
-
-  const handleMicrophoneCheckBack = async () => {
-    await goToPreviousStep();
+    await runOnboardingAction("microphone_check_continue", async () => {
+      await completeStepAndGoToNextStep("microphoneCheck");
+    });
   };
 
   const handleHotkeySetupContinue = async () => {
-    await goToNextStep();
-  };
-
-  const handleHotkeySetupBack = async () => {
-    await goToPreviousStep();
+    await runOnboardingAction("hotkey_setup_continue", async () => {
+      await completeStepAndGoToNextStep("hotkeySetup");
+    });
   };
 
   const handleLanguageSelectContinue = async () => {
-    await goToNextStep();
-  };
-
-  const handleLanguageSelectBack = async () => {
-    await goToPreviousStep();
+    await runOnboardingAction("language_select_continue", async () => {
+      await completeStepAndGoToNextStep("languageSelect");
+    });
   };
 
   const handleLearnContinue = async () => {
-    await goToNextStep();
+    await runOnboardingAction("learn_continue", async () => {
+      await saveProgress("success");
+      setCurrentStep("success");
+    });
   };
 
-  const handleLearnBack = async () => {
-    await goToPreviousStep();
+  const handleLearnSkip = async () => {
+    await runOnboardingAction("learn_skip", async () => {
+      await saveProgress("success");
+      setCurrentStep("success");
+    });
   };
 
   const handleSuccessComplete = async () => {
-    await goToNextStep();
-  };
-
-  const handleSuccessBack = async () => {
-    await goToPreviousStep();
+    await runOnboardingAction("success_continue", async () => {
+      await completeStepAndGoToNextStep("success");
+    });
   };
 
   const handleReferralComplete = async () => {
-    await updateProfile("onboarding_completed", true);
-    await updateProfile("onboarding_step", STEP_ORDER.length + 1);
-    await trackUiAnalyticsEvent("onboarding_completed", {
-      source: "onboarding_flow",
+    await runOnboardingAction("referral_complete", async () => {
+      await updateProfile("onboarding_completed", true);
+      await updateProfile("onboarding_home_guidance_active", false);
+      await updateProfile("onboarding_step", ALL_ONBOARDING_STEPS.length + 1);
+      onComplete();
     });
-    onComplete();
   };
 
-  const handleReferralBack = async () => {
-    await goToPreviousStep();
-  };
-
-  const handleAttributionBack = async () => {
-    await goToPreviousStep();
-  };
-
-  const handleTellUsAboutYouBack = async () => {
-    await goToPreviousStep();
-  };
-
-  const handleTypingUseCasesBack = async () => {
-    await goToPreviousStep();
-  };
-
-  // Render step with persistent download progress indicator
   const renderStep = () => {
     switch (currentStep) {
-    case "welcome":
-      return (
-        <WelcomeStep onContinue={handleWelcomeContinue} initialName={userName} />
-      );
-    case "attribution":
-      return (
-        <AttributionStep
-          userName={userName}
-          onContinue={handleAboutYouContinue}
-          onBack={handleAttributionBack}
-          initialSource={referralSource}
-          initialDetail={referralDetail}
-          initialOtherText={referralOtherText}
-        />
-      );
-    case "tellUsAboutYou":
-      return (
-        <TellUsAboutYouStep
-          onContinue={handleTellUsAboutYouContinue}
-          onBack={handleTellUsAboutYouBack}
-          initialWorkRole={workRole}
-          initialProfessionalLevel={professionalLevel}
-        />
-      );
-    case "typingUseCases":
-      return (
-        <TypingUseCasesStep
-          onContinue={handleTypingUseCasesContinue}
-          onBack={handleTypingUseCasesBack}
-          initialUseCases={typingUseCases}
-          initialOtherText={typingUseCasesOther}
-        />
-      );
-    case "permissions":
-      return <PermissionsStep onContinue={handlePermissionsContinue} onBack={handlePermissionsBack} />;
-    case "downloadModel":
-      return (
-        <ModelDownloadStep
-          onContinue={handleDownloadModelContinue}
-          onBack={handleDownloadModelBack}
-        />
-      );
-    case "microphoneCheck":
-      return (
-        <MicrophoneCheckStep
-          onContinue={handleMicrophoneCheckContinue}
-          onBack={handleMicrophoneCheckBack}
-        />
-      );
-    case "hotkeySetup":
-      return (
-        <HotkeySetupStep
-          onContinue={handleHotkeySetupContinue}
-          onBack={handleHotkeySetupBack}
-        />
-      );
-    case "languageSelect":
-      return (
-        <LanguageSelectStep
-          onContinue={handleLanguageSelectContinue}
-          onBack={handleLanguageSelectBack}
-        />
-      );
-    case "learn":
-      return (
-        <LearnStep
-          onComplete={handleLearnContinue}
-          onBack={handleLearnBack}
-          onSkip={handleLearnContinue}
-          userName={userName}
-        />
-      );
-    case "success":
-      return (
-        <SuccessStep
-          onComplete={handleSuccessComplete}
-          onBack={handleSuccessBack}
-        />
-      );
-    case "referral":
-      return (
-        <ReferralStep
-          onComplete={handleReferralComplete}
-          onBack={handleReferralBack}
-          userName={userName}
-        />
-      );
-    default:
-      return (
-        <WelcomeStep onContinue={handleWelcomeContinue} initialName={userName} />
-      );
+      case "welcome":
+        return (
+          <WelcomeStep
+            onContinue={handleWelcomeContinue}
+            initialName={userName}
+          />
+        );
+      case "attribution":
+        return (
+          <AttributionStep
+            userName={userName}
+            onContinue={handleAboutYouContinue}
+            onBack={goToPreviousStep}
+            initialSource={referralSource}
+            initialDetail={referralDetail}
+            initialOtherText={referralOtherText}
+          />
+        );
+      case "tellUsAboutYou":
+        return (
+          <TellUsAboutYouStep
+            onContinue={handleTellUsAboutYouContinue}
+            onBack={goToPreviousStep}
+            initialWorkRole={workRole}
+            initialProfessionalLevel={professionalLevel}
+          />
+        );
+      case "typingUseCases":
+        return (
+          <TypingUseCasesStep
+            onContinue={handleTypingUseCasesContinue}
+            onBack={goToPreviousStep}
+            initialUseCases={typingUseCases}
+            initialOtherText={typingUseCasesOther}
+          />
+        );
+      case "permissions":
+        return (
+          <PermissionsStep
+            onContinue={handlePermissionsContinue}
+            onBack={goToPreviousStep}
+          />
+        );
+      case "downloadModel":
+        return (
+          <ModelDownloadStep
+            onContinue={handleDownloadModelContinue}
+            onBack={goToPreviousStep}
+            onRecommendedModelResolved={handleRecommendedModelResolved}
+          />
+        );
+      case "microphoneCheck":
+        return (
+          <MicrophoneCheckStep
+            onContinue={handleMicrophoneCheckContinue}
+            onBack={goToPreviousStep}
+          />
+        );
+      case "hotkeySetup":
+        return (
+          <HotkeySetupStep
+            onContinue={handleHotkeySetupContinue}
+            onBack={goToPreviousStep}
+          />
+        );
+      case "languageSelect":
+        return (
+          <LanguageSelectStep
+            onContinue={handleLanguageSelectContinue}
+            onBack={goToPreviousStep}
+          />
+        );
+      case "learn":
+        return (
+          <LearnStep
+            activationReached={learnActivated}
+            onActivationReached={() => void recordOnboardingActivation("learn_mock_chat")}
+            onComplete={handleLearnContinue}
+            onBack={goToPreviousStep}
+            onSkip={handleLearnSkip}
+            userName={userName}
+            modelReady={modelReady}
+          />
+        );
+      case "success":
+        return (
+          <SuccessStep
+            onComplete={handleSuccessComplete}
+            onBack={goToPreviousStep}
+          />
+        );
+      case "referral":
+        return (
+          <ReferralStep
+            onComplete={handleReferralComplete}
+            onBack={goToPreviousStep}
+            userName={userName}
+          />
+        );
+      default:
+        return (
+          <WelcomeStep
+            onContinue={handleWelcomeContinue}
+            initialName={userName}
+          />
+        );
     }
   };
 
   return (
     <>
       {renderStep()}
-      {/* Persistent download progress indicator - visible during and after download step */}
       {currentStep !== "downloadModel" && <ModelDownloadProgress />}
     </>
   );

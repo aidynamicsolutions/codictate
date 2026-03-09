@@ -22,10 +22,21 @@
     "download": "Tải xuống",
     "downloading": "Đang tải xuống...",
     "progress": {
-      "welcome": "Chào mừng",
-      "permissions": "Quyền truy cập",
-      "setup": "Cài đặt",
-      "learn": "Học cách sử dụng"
+      "stepCounter": "Buoc {{current}} tren {{total}}",
+      "steps": {
+        "welcome": "Chao mung",
+        "attribution": "Nguon gioi thieu",
+        "tell_us_about_you": "Ve ban",
+        "typing_use_cases": "Tinh huong su dung",
+        "permissions": "Quyen truy cap",
+        "download_model": "Tai mo hinh",
+        "microphone_check": "Micro",
+        "hotkey_setup": "Phim tat",
+        "language_select": "Ngon ngu",
+        "learn": "Hoc cach su dung",
+        "success": "Thanh cong",
+        "referral": "Gioi thieu"
+      }
     },
     "welcome": {
       "title": "Tên bạn là gì?",

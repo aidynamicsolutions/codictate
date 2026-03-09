@@ -22,10 +22,21 @@
     "download": "Pobierz",
     "downloading": "Pobieranie...",
     "progress": {
-      "welcome": "Witaj",
-      "permissions": "Uprawnienia",
-      "setup": "Konfiguracja",
-      "learn": "Naucz się"
+      "stepCounter": "Krok {{current}} z {{total}}",
+      "steps": {
+        "welcome": "Witaj",
+        "attribution": "Zrodlo",
+        "tell_us_about_you": "O tobie",
+        "typing_use_cases": "Zastosowania",
+        "permissions": "Uprawnienia",
+        "download_model": "Pobierz model",
+        "microphone_check": "Mikrofon",
+        "hotkey_setup": "Skrot",
+        "language_select": "Jezyk",
+        "learn": "Naucz sie",
+        "success": "Sukces",
+        "referral": "Polecenia"
+      }
     },
     "welcome": {
       "title": "Jak masz na imię?",

@@ -22,10 +22,21 @@
     "download": "Herunterladen",
     "downloading": "Wird heruntergeladen...",
     "progress": {
-      "welcome": "Willkommen",
-      "permissions": "Berechtigungen",
-      "setup": "Einrichtung",
-      "learn": "Lernen"
+      "stepCounter": "Schritt {{current}} von {{total}}",
+      "steps": {
+        "welcome": "Willkommen",
+        "attribution": "Herkunft",
+        "tell_us_about_you": "Uber dich",
+        "typing_use_cases": "Anwendungsfalle",
+        "permissions": "Berechtigungen",
+        "download_model": "Modell herunterladen",
+        "microphone_check": "Mikrofon",
+        "hotkey_setup": "Tastenkurzel",
+        "language_select": "Sprache",
+        "learn": "Lernen",
+        "success": "Erfolg",
+        "referral": "Empfehlung"
+      }
     },
     "welcome": {
       "title": "Wie heißt du?",

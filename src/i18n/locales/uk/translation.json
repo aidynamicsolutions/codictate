@@ -21,10 +21,21 @@
     "download": "Завантажити",
     "downloading": "Завантаження...",
     "progress": {
-      "welcome": "Ласкаво просимо",
-      "permissions": "Дозволи",
-      "setup": "Налаштування",
-      "learn": "Навчання"
+      "stepCounter": "Крок {{current}} з {{total}}",
+      "steps": {
+        "welcome": "Ласкаво просимо",
+        "attribution": "Джерело",
+        "tell_us_about_you": "Про вас",
+        "typing_use_cases": "Сценарії",
+        "permissions": "Дозволи",
+        "download_model": "Завантаження моделі",
+        "microphone_check": "Мікрофон",
+        "hotkey_setup": "Гарячі клавіші",
+        "language_select": "Мова",
+        "learn": "Навчання",
+        "success": "Успіх",
+        "referral": "Реферали"
+      }
     },
     "welcome": {
       "title": "Як вас звати?",

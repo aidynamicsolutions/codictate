@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::collections::HashMap;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 use tauri_plugin_store::StoreExt;
 use tracing::debug;
 
 pub const USER_STORE_PATH: &str = "user_store.json";
+pub const USER_PROFILE_UPDATED_EVENT: &str = "user-profile-updated";
 
 /// User profile data - separate from app settings.
 /// This stores onboarding and user identity information.
@@ -22,6 +23,18 @@ pub struct UserProfile {
     /// Whether onboarding has been completed
     #[serde(default)]
     pub onboarding_completed: bool,
+
+    /// Whether the user has completed a real activation by successfully dictating outside setup prompts.
+    #[serde(default)]
+    pub onboarding_activation_completed: bool,
+
+    /// Whether the onboarding UI has been shown at least once.
+    #[serde(default)]
+    pub onboarding_started: bool,
+
+    /// Whether the user exited onboarding UI and is completing activation from the home screen.
+    #[serde(default)]
+    pub onboarding_home_guidance_active: bool,
 
     /// How the user heard about the app (single source stored as array for compat)
     #[serde(default)]
@@ -97,6 +110,15 @@ fn apply_profile_update(
         "onboarding_completed" => {
             profile.onboarding_completed = parsed.as_bool().unwrap_or(false);
         }
+        "onboarding_activation_completed" => {
+            profile.onboarding_activation_completed = parsed.as_bool().unwrap_or(false);
+        }
+        "onboarding_started" => {
+            profile.onboarding_started = parsed.as_bool().unwrap_or(false);
+        }
+        "onboarding_home_guidance_active" => {
+            profile.onboarding_home_guidance_active = parsed.as_bool().unwrap_or(false);
+        }
         "referral_sources" => {
             profile.referral_sources = serde_json::from_value(parsed).unwrap_or_default();
         }
@@ -151,6 +173,52 @@ pub fn write_user_profile<R: tauri::Runtime>(app: &AppHandle<R>, profile: UserPr
     store.set("profile", serde_json::to_value(&profile).unwrap());
 }
 
+fn emit_user_profile_updated<R: tauri::Runtime>(app: &AppHandle<R>) {
+    let _ = app.emit(USER_PROFILE_UPDATED_EVENT, ());
+}
+
+fn parse_onboarding_activation_surface(surface: &str) -> Result<&'static str, String> {
+    match surface.trim() {
+        "learn_mock_chat" => Ok("learn_mock_chat"),
+        "post_onboarding" => Ok("post_onboarding"),
+        other => Err(format!("unsupported onboarding activation surface '{other}'")),
+    }
+}
+
+pub fn record_onboarding_activation(app: &AppHandle, surface: &str) -> Result<bool, String> {
+    let surface_value = parse_onboarding_activation_surface(surface)?;
+
+    crate::backup_restore::with_write_permit(app, || {
+        let mut profile = get_user_profile(app);
+        if profile.onboarding_activation_completed {
+            return Ok(false);
+        }
+
+        profile.onboarding_activation_completed = true;
+        profile.onboarding_home_guidance_active = false;
+        write_user_profile(app, profile);
+        emit_user_profile_updated(app);
+        debug!("onboarding activation recorded for surface={}", surface_value);
+
+        Ok(true)
+    })
+}
+
+pub fn mark_onboarding_started(app: &AppHandle) -> Result<bool, String> {
+    crate::backup_restore::with_write_permit(app, || {
+        let mut profile = get_user_profile(app);
+        if profile.onboarding_started {
+            return Ok(false);
+        }
+
+        profile.onboarding_started = true;
+        write_user_profile(app, profile);
+        emit_user_profile_updated(app);
+
+        Ok(true)
+    })
+}
+
 // ============================================================================
 // Tauri Commands
 // ============================================================================
@@ -171,6 +239,21 @@ pub fn update_user_profile_setting(
     value: String,
 ) -> Result<(), String> {
     update_user_profile_setting_inner(&app, key, value)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn record_onboarding_activation_command(
+    app: AppHandle,
+    surface: String,
+) -> Result<bool, String> {
+    record_onboarding_activation(&app, &surface)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn mark_onboarding_started_command(app: AppHandle) -> Result<bool, String> {
+    mark_onboarding_started(&app)
 }
 
 pub(crate) fn update_user_profile_setting_inner<R: tauri::Runtime>(
@@ -218,6 +301,30 @@ mod tests {
             .expect("parse profile value");
         apply_profile_update(&mut profile, "user_name", parsed).expect("apply profile update");
         assert_eq!(profile.user_name.as_deref(), Some("Ari"));
+    }
+
+    #[test]
+    fn apply_profile_update_supports_home_guidance_flag() {
+        let mut profile = UserProfile::default();
+        apply_profile_update(&mut profile, "onboarding_home_guidance_active", json!(true))
+            .expect("apply home guidance flag");
+        assert!(profile.onboarding_home_guidance_active);
+    }
+
+    #[test]
+    fn apply_profile_update_supports_onboarding_started_flag() {
+        let mut profile = UserProfile::default();
+        apply_profile_update(&mut profile, "onboarding_started", json!(true))
+            .expect("apply onboarding started flag");
+        assert!(profile.onboarding_started);
+    }
+
+    #[test]
+    fn apply_profile_update_supports_onboarding_activation_flag() {
+        let mut profile = UserProfile::default();
+        apply_profile_update(&mut profile, "onboarding_activation_completed", json!(true))
+            .expect("apply onboarding activation flag");
+        assert!(profile.onboarding_activation_completed);
     }
 
     #[test]

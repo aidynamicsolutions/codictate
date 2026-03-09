@@ -22,10 +22,21 @@
     "download": "Скачать",
     "downloading": "Загрузка...",
     "progress": {
-      "welcome": "Добро пожаловать",
-      "permissions": "Разрешения",
-      "setup": "Настройка",
-      "learn": "Обучение"
+      "stepCounter": "Шаг {{current}} из {{total}}",
+      "steps": {
+        "welcome": "Добро пожаловать",
+        "attribution": "Источник",
+        "tell_us_about_you": "О вас",
+        "typing_use_cases": "Сценарии",
+        "permissions": "Разрешения",
+        "download_model": "Загрузка модели",
+        "microphone_check": "Микрофон",
+        "hotkey_setup": "Сочетание клавиш",
+        "language_select": "Язык",
+        "learn": "Обучение",
+        "success": "Успех",
+        "referral": "Рефералы"
+      }
     },
     "welcome": {
       "title": "Как вас зовут?",

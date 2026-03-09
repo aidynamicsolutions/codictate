@@ -81,7 +81,7 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
 
   return (
     <OnboardingLayout
-      currentStep="learn"
+      currentStep="success"
       leftContent={
         <div className="flex flex-col h-full">
           {/* Back button */}
@@ -96,19 +96,25 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
           <div className="flex flex-col gap-6 my-auto">
             {/* Badge */}
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wide bg-foreground text-background w-fit">
-              {t("onboarding.success.badge")}
+              {t("onboarding.success.badge", "Setup complete")}
             </span>
 
             {/* Title and description */}
             <div className="flex flex-col gap-2">
               <h1 className="text-3xl font-semibold tracking-tight text-foreground lg:text-4xl">
-                {t("onboarding.success.title")}
+                {t("onboarding.success.title", "You're ready to start dictating")}
               </h1>
               <p className="text-muted-foreground">
-                {t("onboarding.success.description")}
+                {t(
+                  "onboarding.success.description",
+                  "Your setup is finished. Use Codictate anywhere whenever you're ready.",
+                )}
               </p>
               <p className="text-muted-foreground text-sm">
-                {t("onboarding.success.noCard")}
+                {t(
+                  "onboarding.success.noCard",
+                  "Your 2-week Pro trial is active. No credit card required.",
+                )}
               </p>
             </div>
 
@@ -155,4 +161,3 @@ export const SuccessStep: React.FC<SuccessStepProps> = ({
 };
 
 export default SuccessStep;
-

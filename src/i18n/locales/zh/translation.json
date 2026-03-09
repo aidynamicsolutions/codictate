@@ -22,10 +22,21 @@
     "download": "下载",
     "downloading": "下载中...",
     "progress": {
-      "welcome": "欢迎",
-      "permissions": "权限",
-      "setup": "设置",
-      "learn": "学习"
+      "stepCounter": "第 {{current}} 步，共 {{total}} 步",
+      "steps": {
+        "welcome": "欢迎",
+        "attribution": "来源",
+        "tell_us_about_you": "关于你",
+        "typing_use_cases": "使用场景",
+        "permissions": "权限",
+        "download_model": "下载模型",
+        "microphone_check": "麦克风",
+        "hotkey_setup": "快捷键",
+        "language_select": "语言",
+        "learn": "学习",
+        "success": "完成",
+        "referral": "推荐"
+      }
     },
     "welcome": {
       "title": "您叫什么名字？",

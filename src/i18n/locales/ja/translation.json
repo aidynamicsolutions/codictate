@@ -22,10 +22,21 @@
     "download": "ダウンロード",
     "downloading": "ダウンロード中...",
     "progress": {
-      "welcome": "ようこそ",
-      "permissions": "許可",
-      "setup": "セットアップ",
-      "learn": "学ぶ"
+      "stepCounter": "{{total}}のうち{{current}}",
+      "steps": {
+        "welcome": "ようこそ",
+        "attribution": "きっかけ",
+        "tell_us_about_you": "あなたについて",
+        "typing_use_cases": "利用用途",
+        "permissions": "許可",
+        "download_model": "モデルをダウンロード",
+        "microphone_check": "マイク",
+        "hotkey_setup": "ショートカット",
+        "language_select": "言語",
+        "learn": "学ぶ",
+        "success": "完了",
+        "referral": "紹介"
+      }
     },
     "welcome": {
       "title": "お名前は何ですか？",

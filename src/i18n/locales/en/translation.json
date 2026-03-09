@@ -213,10 +213,21 @@
     "downloading": "Downloading...",
     "downloadFailed": "Download failed. Please try again.",
     "progress": {
-      "welcome": "Welcome",
-      "permissions": "Permissions",
-      "setup": "Set Up",
-      "learn": "Learn"
+      "stepCounter": "Step {{current}} of {{total}}",
+      "steps": {
+        "welcome": "Welcome",
+        "attribution": "Attribution",
+        "tell_us_about_you": "About You",
+        "typing_use_cases": "Use Cases",
+        "permissions": "Permissions",
+        "download_model": "Download Model",
+        "microphone_check": "Microphone",
+        "hotkey_setup": "Hotkey",
+        "language_select": "Language",
+        "learn": "Learn",
+        "success": "Success",
+        "referral": "Referral"
+      }
     },
     "welcome": {
       "title": "What's your name?",
@@ -415,6 +426,10 @@
       "back": "Back",
       "skip": "Skip",
       "complete": "Continue",
+      "activationPending": "Complete one practice dictation to unlock Continue.",
+      "activationReady": "Nice. You've completed your first practice dictation.",
+      "modelLoading": "Preparing your model...",
+      "modelLoadingSubtitle": "This only takes a moment and helps your first dictation feel instant.",
       "slackTitle": "Slack",
       "botName": "Alex",
       "you": "You",
@@ -436,10 +451,10 @@
       ]
     },
     "success": {
-      "badge": "2 WEEK FREE TRIAL",
-      "title": "You've unlocked Codictate Pro 🎉",
-      "description": "Enjoy 2 weeks of unlimited access on us",
-      "noCard": "No credit card required",
+      "badge": "SETUP COMPLETE",
+      "title": "You're ready to start dictating",
+      "description": "Your setup is finished. Use Codictate anywhere whenever you're ready.",
+      "noCard": "Your 2-week Pro trial is active. No credit card required.",
       "features": {
         "unlimited": "Unlimited transcriptions",
         "collaboration": "Works anywhere you type",

@@ -22,10 +22,21 @@
     "download": "Télécharger",
     "downloading": "Téléchargement...",
     "progress": {
-      "welcome": "Bienvenue",
-      "permissions": "Permissions",
-      "setup": "Configuration",
-      "learn": "Apprendre"
+      "stepCounter": "Etape {{current}} sur {{total}}",
+      "steps": {
+        "welcome": "Bienvenue",
+        "attribution": "Origine",
+        "tell_us_about_you": "A propos de vous",
+        "typing_use_cases": "Cas d'usage",
+        "permissions": "Permissions",
+        "download_model": "Telecharger le modele",
+        "microphone_check": "Microphone",
+        "hotkey_setup": "Raccourci",
+        "language_select": "Langue",
+        "learn": "Apprendre",
+        "success": "Succes",
+        "referral": "Parrainage"
+      }
     },
     "welcome": {
       "title": "Quel est votre nom ?",

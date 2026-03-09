@@ -45,8 +45,13 @@ const renderSettingsContent = (
 function App() {
   const { i18n, t } = useTranslation();
   const [showOnboarding, setShowOnboarding] = useState<boolean | null>(null);
+  const [pendingOnboardingActivation, setPendingOnboardingActivation] =
+    useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [showUpgradeBanner, setShowUpgradeBanner] = useState(false);
+  const showOnboardingRef = useRef<boolean | null>(showOnboarding);
+  const pendingOnboardingActivationRef = useRef(pendingOnboardingActivation);
+  const showUpgradeBannerRef = useRef(showUpgradeBanner);
   const upgradePromptShownRecordedRef = useRef(false);
   const direction = getLanguageDirection(i18n.language);
   const [currentSection, setCurrentSection] = useState<SidebarSection>("home");
@@ -100,7 +105,7 @@ function App() {
 
   // Check onboarding status on mount and initialize shortcuts if complete
   useEffect(() => {
-    checkOnboardingStatus();
+    void checkOnboardingStatus();
   }, []);
 
   useEffect(() => {
@@ -110,6 +115,18 @@ function App() {
 
     void consumePendingUpgradePromptOpenRequest("main_app_ready");
   }, [showOnboarding]);
+
+  useEffect(() => {
+    showOnboardingRef.current = showOnboarding;
+  }, [showOnboarding]);
+
+  useEffect(() => {
+    pendingOnboardingActivationRef.current = pendingOnboardingActivation;
+  }, [pendingOnboardingActivation]);
+
+  useEffect(() => {
+    showUpgradeBannerRef.current = showUpgradeBanner;
+  }, [showUpgradeBanner]);
 
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
@@ -173,10 +190,10 @@ function App() {
       if (!payload?.eligible) {
         return;
       }
-      if (showOnboarding !== false) {
+      if (showOnboardingRef.current !== false) {
         return;
       }
-      if (showUpgradeBanner) {
+      if (showUpgradeBannerRef.current) {
         return;
       }
       setShowUpgradeBanner(true);
@@ -184,7 +201,7 @@ function App() {
   );
 
   useTauriEvent("upgrade-prompt-open-requested", () => {
-    if (showOnboarding !== false) {
+    if (showOnboardingRef.current !== false) {
       return;
     }
     void consumePendingUpgradePromptOpenRequest("upgrade_prompt_open_requested_event");
@@ -196,6 +213,21 @@ function App() {
 
   useTauriEvent("user-profile-updated", () => {
     void useUserProfileStore.getState().refreshProfile();
+    // Avoid forcing an active onboarding session to close mid-flow (e.g. Learn activation).
+    if (showOnboardingRef.current !== true) {
+      void checkOnboardingStatus();
+    }
+  });
+
+  useTauriEvent<string>("transcription-inserted", (event) => {
+    if (
+      showOnboardingRef.current !== false ||
+      !pendingOnboardingActivationRef.current
+    ) {
+      return;
+    }
+
+    void recordOnboardingActivationInBackground(event.payload);
   });
 
   useTauriEvent<UndoMainToastPayload>("undo-main-toast", (event) => {
@@ -284,14 +316,19 @@ function App() {
 
   const checkOnboardingStatus = async () => {
     try {
-      // Check if onboarding was completed from user profile (separate from app settings)
       const profileResult = await commands.getUserProfileCommand();
       if (profileResult.status === "ok") {
         const userProfile = profileResult.data;
+        setPendingOnboardingActivation(
+          Boolean(
+            userProfile.onboarding_completed &&
+              !userProfile.onboarding_activation_completed,
+          ),
+        );
+
         if (userProfile.onboarding_completed) {
           void initializeInputAndShortcuts("onboarding_completed_check");
 
-          // Refresh devices
           useSettingsStore.getState().refreshAudioDevices();
           useSettingsStore.getState().refreshOutputDevices();
 
@@ -299,10 +336,12 @@ function App() {
           return;
         }
       }
-      // If not completed, show onboarding
+
+      setPendingOnboardingActivation(false);
       setShowOnboarding(true);
     } catch (error) {
       logError(`Failed to check onboarding status: ${error}`, "App");
+      setPendingOnboardingActivation(false);
       setShowOnboarding(true);
     }
   };
@@ -367,9 +406,34 @@ function App() {
     }
   };
 
+  const recordOnboardingActivationInBackground = async (
+    _sourceAction?: string,
+  ) => {
+    try {
+      const result = await commands.recordOnboardingActivationCommand(
+        "post_onboarding",
+      );
+      if (result.status === "error") {
+        logError(
+          `event=onboarding_activation_record_failed surface=post_onboarding error=${result.error}`,
+          "App",
+        );
+        return;
+      }
+
+      if (result.data) {
+        setPendingOnboardingActivation(false);
+      }
+    } catch (error) {
+      logError(
+        `event=onboarding_activation_record_failed surface=post_onboarding error=${error}`,
+        "App",
+      );
+    }
+  };
+
   const handleOnboardingComplete = () => {
     void initializeInputAndShortcuts("onboarding_completion_transition");
-    // Transition to main app - onboarding is complete
     setShowOnboarding(false);
   };
 

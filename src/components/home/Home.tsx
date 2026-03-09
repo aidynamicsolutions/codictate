@@ -66,9 +66,15 @@ export default function Home({
       loadData();
     });
 
+    const unlistenProfile = listen("user-profile-updated", () => {
+      logInfo("[Home] Received user-profile-updated event, reloading data...", "fe-home");
+      loadData();
+    });
+
     return () => {
       unlistenHistory.then((unlisten) => unlisten());
       unlistenFocus.then((unlisten) => unlisten());
+      unlistenProfile.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -80,8 +86,10 @@ export default function Home({
         `[Home] Profile result: ${JSON.stringify(profileResult)}`,
         "fe-home",
       );
-      if (profileResult.status === "ok" && profileResult.data.user_name) {
-        setUsername(profileResult.data.user_name);
+      if (profileResult.status === "ok") {
+        if (profileResult.data.user_name) {
+          setUsername(profileResult.data.user_name);
+        }
       }
 
       logInfo("[Home] Fetching home stats...", "fe-home");

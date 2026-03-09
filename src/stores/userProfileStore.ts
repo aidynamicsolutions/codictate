@@ -87,6 +87,7 @@ export const useUserProfileStore = create<UserProfileStore>()(
           if (profile) {
             set({ profile: { ...profile, [key]: originalValue } });
           }
+          throw new Error(String(result.error));
         }
       } catch (error) {
         console.error(`Failed to update profile ${updateKey}:`, error);
@@ -94,6 +95,7 @@ export const useUserProfileStore = create<UserProfileStore>()(
         if (profile) {
           set({ profile: { ...profile, [key]: originalValue } });
         }
+        throw error;
       } finally {
         setUpdating(updateKey, false);
       }

@@ -21,10 +21,21 @@
     "download": "Baixar",
     "downloading": "Baixando...",
     "progress": {
-      "welcome": "Bem-vindo",
-      "permissions": "Permissões",
-      "setup": "Configuração",
-      "learn": "Aprender"
+      "stepCounter": "Etapa {{current}} de {{total}}",
+      "steps": {
+        "welcome": "Bem-vindo",
+        "attribution": "Origem",
+        "tell_us_about_you": "Sobre voce",
+        "typing_use_cases": "Casos de uso",
+        "permissions": "Permissoes",
+        "download_model": "Baixar modelo",
+        "microphone_check": "Microfone",
+        "hotkey_setup": "Atalho",
+        "language_select": "Idioma",
+        "learn": "Aprender",
+        "success": "Sucesso",
+        "referral": "Indicacoes"
+      }
     },
     "welcome": {
       "title": "Qual é o seu nome?",

@@ -36,11 +36,13 @@ interface DownloadStats {
 interface ModelDownloadStepProps {
   onContinue: () => void;
   onBack?: () => void;
+  onRecommendedModelResolved?: (modelId: string) => void;
 }
 
 export const ModelDownloadStep: React.FC<ModelDownloadStepProps> = ({
   onContinue,
   onBack,
+  onRecommendedModelResolved,
 }) => {
   const { t } = useTranslation();
   
@@ -69,6 +71,7 @@ export const ModelDownloadStep: React.FC<ModelDownloadStepProps> = ({
           return;
         }
         const modelId = recommendedResult.data;
+        onRecommendedModelResolved?.(modelId);
 
         // Get model info
         const modelInfoResult = await commands.getModelInfo(modelId);
@@ -88,7 +91,7 @@ export const ModelDownloadStep: React.FC<ModelDownloadStepProps> = ({
     };
 
     fetchRecommendedModel();
-  }, []);
+  }, [onRecommendedModelResolved]);
 
   // Listen to download events
   // Listen to download events - use refs to avoid stale closures (same pattern as ModelSelector.tsx)

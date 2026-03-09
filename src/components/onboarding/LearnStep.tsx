@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Send, Slack } from "lucide-react";
+import { ArrowLeft, Send, Slack, Loader2 } from "lucide-react";
+import { listen } from "@tauri-apps/api/event";
 import { Button } from "@/components/shared/ui/button";
-import { commands } from "@/bindings";
+import { commands, type OverlayPosition } from "@/bindings";
 import OnboardingLayout from "./OnboardingLayout";
 
 interface LearnStepProps {
+  activationReached: boolean;
+  onActivationReached: () => void;
   onComplete: () => void;
   onBack?: () => void;
   onSkip?: () => void;
   userName?: string;
+  modelReady?: boolean;
 }
 
 interface ChatMessage {
@@ -90,10 +94,13 @@ const ChatMessageBubble: React.FC<{
 
 
 export const LearnStep: React.FC<LearnStepProps> = ({
+  activationReached,
+  onActivationReached,
   onComplete,
   onBack,
   onSkip,
   userName = "",
+  modelReady = true,
 }) => {
   const { t } = useTranslation();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -123,11 +130,75 @@ export const LearnStep: React.FC<LearnStepProps> = ({
   // Enable Direct paste override for onboarding
   // This works around WebView not receiving CGEvent-simulated Cmd+V keystrokes
   useEffect(() => {
-    commands.setOnboardingPasteOverride(true);
+    void commands.setOnboardingPasteOverride(true);
     return () => {
-      commands.setOnboardingPasteOverride(false);
+      void commands.setOnboardingActivationTarget(false);
+      void commands.setOnboardingPasteOverride(false);
     };
   }, []);
+
+  // Ensure the recording overlay is visible during onboarding learn step.
+  // If users previously disabled the overlay globally, temporarily force it on.
+  useEffect(() => {
+    let isUnmounted = false;
+    let shouldRestore = false;
+    let restorePosition: OverlayPosition = "none";
+
+    const ensureOverlayVisible = async () => {
+      const settingsResult = await commands.getAppSettings();
+      if (isUnmounted || settingsResult.status !== "ok") {
+        return;
+      }
+
+      const originalOverlayPosition = settingsResult.data.overlay_position;
+      if (originalOverlayPosition !== "none") {
+        return;
+      }
+
+      restorePosition = originalOverlayPosition;
+      const setResult = await commands.changeOverlayPositionSetting("bottom");
+      if (setResult.status !== "ok") {
+        return;
+      }
+
+      shouldRestore = true;
+      if (isUnmounted) {
+        void commands.changeOverlayPositionSetting(restorePosition);
+      }
+    };
+
+    void ensureOverlayVisible();
+
+    return () => {
+      isUnmounted = true;
+      if (!shouldRestore) {
+        return;
+      }
+
+      void commands.changeOverlayPositionSetting(restorePosition);
+    };
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    let unlisten: (() => void) | undefined;
+
+    const setup = async () => {
+      unlisten = await listen<string>("onboarding-transcription-success", () => {
+        if (ignore || activationReached) {
+          return;
+        }
+        onActivationReached();
+      });
+    };
+
+    void setup();
+
+    return () => {
+      ignore = true;
+      unlisten?.();
+    };
+  }, [activationReached, onActivationReached]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -187,6 +258,14 @@ export const LearnStep: React.FC<LearnStepProps> = ({
     setInputValue(e.target.value);
   };
 
+  const handleInputFocus = () => {
+    void commands.setOnboardingActivationTarget(true);
+  };
+
+  const handleInputBlur = () => {
+    void commands.setOnboardingActivationTarget(false);
+  };
+
   // Handle Enter key to submit
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" && inputValue.trim()) {
@@ -233,11 +312,27 @@ export const LearnStep: React.FC<LearnStepProps> = ({
               </span>{" "}
               {t("onboarding.learn.subtitleEnd")}
             </p>
+            <p className="text-sm text-muted-foreground">
+              {!modelReady
+                ? t(
+                    "onboarding.learn.modelLoading",
+                    "Preparing your model...",
+                  )
+                : activationReached
+                  ? t(
+                      "onboarding.learn.activationReady",
+                      "Nice. You've completed your first practice dictation.",
+                    )
+                  : t(
+                      "onboarding.learn.activationPending",
+                      "Complete one practice dictation to unlock Continue.",
+                    )}
+            </p>
           </div>
 
           {/* Buttons at bottom */}
           <div className="flex items-center gap-3 mt-auto">
-            <Button onClick={onComplete} size="lg">
+            <Button onClick={onComplete} disabled={!activationReached} size="lg">
               {t("onboarding.learn.complete")}
             </Button>
             <button
@@ -253,7 +348,22 @@ export const LearnStep: React.FC<LearnStepProps> = ({
       rightContent={
         <div className="flex items-center justify-center h-full w-full px-8">
           {/* Slack Chat Card */}
-          <div className="bg-white rounded-xl shadow-lg overflow-hidden w-full min-w-[520px]">
+          <div className="bg-white rounded-xl shadow-lg overflow-hidden w-full min-w-[520px] relative">
+            {/* Model loading overlay */}
+            {!modelReady && (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-white/90 backdrop-blur-sm rounded-xl">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+                <p className="text-sm font-medium text-foreground">
+                  {t("onboarding.learn.modelLoading", "Preparing your model...")}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 max-w-[280px] text-center">
+                  {t(
+                    "onboarding.learn.modelLoadingSubtitle",
+                    "This only takes a moment and helps your first dictation feel instant.",
+                  )}
+                </p>
+              </div>
+            )}
             {/* Slack Header */}
             <div className="bg-[#4A154B] text-white px-4 py-3 flex items-center gap-2">
               <Slack className="w-5 h-5" />
@@ -295,6 +405,8 @@ export const LearnStep: React.FC<LearnStepProps> = ({
                   type="text"
                   value={inputValue}
                   onChange={handleInputChange}
+                  onFocus={handleInputFocus}
+                  onBlur={handleInputBlur}
                   onKeyDown={handleKeyDown}
                   placeholder={t("onboarding.learn.inputPlaceholder")}
                   className="flex-1 bg-transparent text-sm text-gray-700 placeholder-gray-400 outline-none"

@@ -643,6 +643,19 @@ fn cache_refresh_reason_from_prearm_source(source: RecordingPrearmSource) -> Inp
     }
 }
 
+fn emit_transcription_delivery_events(app: &AppHandle, source_action: &str) {
+    let _ = app.emit("transcription-inserted", source_action.to_string());
+
+    let activation_target_enabled = app
+        .try_state::<crate::OnboardingActivationTarget>()
+        .and_then(|state| state.0.lock().ok().map(|enabled| *enabled))
+        .unwrap_or(false);
+
+    if activation_target_enabled {
+        let _ = app.emit("onboarding-transcription-success", source_action.to_string());
+    }
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         if !crate::backup_restore::ensure_transcription_start_allowed(app) {
@@ -1377,6 +1390,10 @@ impl ShortcutAction for TranscribeAction {
                                         &paste_result,
                                         clipboard_handling,
                                     ) {
+                                        emit_transcription_delivery_events(
+                                            &app_for_paste_task,
+                                            source_action,
+                                        );
                                         growth::record_feature_success(
                                             &app_for_paste_task,
                                             feature,
