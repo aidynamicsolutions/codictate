@@ -1206,9 +1206,9 @@ pub fn capture_context(app_handle: &tauri::AppHandle) -> Result<CapturedContext,
 ///
 /// Strategy:
 /// 1. Try to re-select the original text via AX API (robust against cursor movement)
-/// 2. Stage replacement text on the general pasteboard
+/// 2. Write replacement text to the general clipboard
 /// 3. Simulate Cmd+V to paste
-/// 4. Restore the original clipboard only after AppKit no longer needs the staged item
+/// 4. Best-effort restore the original clipboard after a short delay
 pub fn replace_text_in_app(
     app_handle: &tauri::AppHandle,
     original: &str,
@@ -1233,27 +1233,43 @@ pub fn replace_text_in_app(
         clip.read_text().ok()
     };
 
-    // 2. Stage the replacement and paste it into the current selection.
+    let restore_delay_ms = crate::settings::get_settings(app_handle)
+        .paste_restore_delay_ms
+        .max(400);
+
+    // 2. Write the replacement and paste it into the current selection.
     let enigo_state = app_handle
         .try_state::<crate::input::EnigoState>()
         .ok_or("EnigoState not available")?;
     {
         let mut guard = enigo_state.0.lock().unwrap();
         if let Some(ref mut enigo) = *guard {
-            match crate::macos_transient_clipboard::stage_transient_text(
-                replacement,
-                clipboard_backup.as_deref(),
-            ) {
-                Ok(()) => {
-                    std::thread::sleep(std::time::Duration::from_millis(50));
-                    crate::input::send_paste_ctrl_v(enigo)?;
-                }
-                Err(err) => {
-                    warn!(
-                        error = %err,
-                        "Transient clipboard staging failed for text replacement; falling back to direct typing"
-                    );
-                    crate::input::paste_text_direct(enigo, replacement)?;
+            if let Err(err) = app_handle.clipboard().write_text(replacement.to_string()) {
+                warn!(
+                    error = %err,
+                    "Clipboard write failed for text replacement; falling back to direct typing"
+                );
+                crate::input::paste_text_direct(enigo, replacement)?;
+            } else {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                crate::input::send_paste_ctrl_v(enigo)?;
+                std::thread::sleep(std::time::Duration::from_millis(restore_delay_ms));
+
+                if let Some(backup_text) = clipboard_backup.as_deref() {
+                    if let Err(err) = app_handle.clipboard().write_text(backup_text.to_string()) {
+                        warn!(
+                            error = %err,
+                            backup_chars = backup_text.chars().count(),
+                            "Clipboard restore failed after text replacement"
+                        );
+                    } else {
+                        debug!(
+                            backup_chars = backup_text.chars().count(),
+                            "Clipboard restored after text replacement"
+                        );
+                    }
+                } else {
+                    debug!("Clipboard backup unavailable after text replacement; skipping restore");
                 }
             }
         } else {

@@ -142,8 +142,17 @@ App Launch
  ┌──────────────┐                        │ Deep-link to │
  │ Permission   │                        │ System Prefs │
  │ UI appears   │                        └──────────────┘
- └──────────────┘
+└──────────────┘
 ```
+
+## Paste Delivery Notes
+
+- macOS transcript paste currently uses two insertion strategies:
+  - `Direct`: simulates typing through system input APIs.
+  - `Clipboard (Cmd+V)`: writes the transcript to the clipboard, sends `Cmd+V`, then performs a delayed best-effort clipboard restore.
+- `Don't Modify Clipboard` on macOS is best-effort, not a strict guarantee. The app attempts to restore the previous clipboard after paste, but the clipboard may remain changed briefly or permanently if the target app consumes paste slowly or clipboard ownership changes during the restore window.
+- The current macOS clipboard path intentionally uses a short delayed restore instead of a transient/promise-based pasteboard owner bridge. The owner-based approach was removed because it introduced timing-sensitive paste failures in real apps.
+- The restore delay is intentionally long enough to reduce stale-paste races, but still short enough to avoid noticeably bad UX. This is a compatibility tradeoff, not a hard correctness guarantee.
 
 ## Key Learnings
 
@@ -163,3 +172,4 @@ App Launch
 - **Accessibility-first priority**: Microphone UI only renders when accessibility is already granted
 - **No hotkey focus theft**: Permission failures from transcription hotkeys notify the user without bringing the app window to front
 - **Reopen-driven recovery**: On macOS, app reopen events (dock/notification click) are used to surface the main UI when hidden
+- **Clipboard restore is best-effort**: macOS `Cmd+V` paste currently relies on delayed clipboard restore rather than a stricter transient-owner design because the latter proved less reliable in real target apps

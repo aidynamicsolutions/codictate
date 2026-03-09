@@ -19,8 +19,6 @@ mod helpers;
 mod i18n;
 mod input;
 mod llm_client;
-#[cfg(target_os = "macos")]
-mod macos_transient_clipboard;
 mod managers;
 mod menu;
 mod notification;

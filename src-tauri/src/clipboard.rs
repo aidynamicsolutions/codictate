@@ -1,6 +1,4 @@
 use crate::input::{self, EnigoState};
-#[cfg(target_os = "macos")]
-use crate::macos_transient_clipboard;
 #[cfg(target_os = "linux")]
 use crate::settings::TypingTool;
 use crate::settings::{get_settings, AutoSubmitKey, ClipboardHandling, PasteMethod};
@@ -19,6 +17,8 @@ const CLIPBOARD_RESTORE_VERIFY_ATTEMPTS: usize = 6;
 const CLIPBOARD_RESTORE_VERIFY_INTERVAL_MS: u64 = 40;
 const CLIPBOARD_RESTORE_DELAYED_RETRY_ATTEMPTS: usize = 2;
 const CLIPBOARD_RESTORE_DELAYED_RETRY_INTERVAL_MS: u64 = 120;
+#[cfg(target_os = "macos")]
+const MACOS_DONT_MODIFY_MIN_RESTORE_DELAY_MS: u64 = 400;
 
 fn read_clipboard_backup(app_handle: &AppHandle) -> Result<String, String> {
     app_handle
@@ -732,23 +732,22 @@ fn send_return_key(enigo: &mut Enigo, key_type: AutoSubmitKey) -> Result<(), Str
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-fn paste_via_transient_clipboard(
-    enigo: &mut Enigo,
-    text: &str,
-    backup_text: &str,
-    paste_method: &PasteMethod,
-    paste_delay_ms: u64,
-) -> Result<(), String> {
-    macos_transient_clipboard::stage_transient_text(text, Some(backup_text))?;
-    debug!(
-        text_chars = text.chars().count(),
-        backup_chars = backup_text.chars().count(),
-        "Staged transient macOS clipboard item"
-    );
+fn effective_paste_restore_delay_ms(
+    clipboard_handling: ClipboardHandling,
+    paste_method: PasteMethod,
+    configured_delay_ms: u64,
+) -> u64 {
+    #[cfg(target_os = "macos")]
+    if clipboard_handling == ClipboardHandling::DontModify
+        && matches!(
+            paste_method,
+            PasteMethod::CtrlV | PasteMethod::CtrlShiftV | PasteMethod::ShiftInsert
+        )
+    {
+        return configured_delay_ms.max(MACOS_DONT_MODIFY_MIN_RESTORE_DELAY_MS);
+    }
 
-    std::thread::sleep(Duration::from_millis(paste_delay_ms));
-    send_paste_shortcut(enigo, paste_method)
+    configured_delay_ms
 }
 
 fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool {
@@ -826,6 +825,11 @@ pub fn paste_with_mode(
 
     let paste_delay_ms = settings.paste_delay_ms;
     let paste_restore_delay_ms = settings.paste_restore_delay_ms;
+    let effective_paste_restore_delay_ms = effective_paste_restore_delay_ms(
+        settings.clipboard_handling,
+        paste_method,
+        paste_restore_delay_ms,
+    );
 
     let insertion_context = if settings.append_trailing_space {
         crate::accessibility::capture_insertion_context(&app_handle)
@@ -844,7 +848,8 @@ pub fn paste_with_mode(
         paste_method = ?paste_method,
         clipboard_handling = ?settings.clipboard_handling,
         paste_delay_ms,
-        paste_restore_delay_ms,
+        configured_paste_restore_delay_ms = paste_restore_delay_ms,
+        effective_paste_restore_delay_ms,
         preparation_mode = ?preparation_mode,
         "Resolved paste settings"
     );
@@ -892,43 +897,15 @@ pub fn paste_with_mode(
                             "Captured clipboard backup before paste"
                         );
 
-                        #[cfg(target_os = "macos")]
-                        {
-                            match paste_via_transient_clipboard(
-                                enigo,
-                                &prepared_text,
-                                &backup_text,
-                                &paste_method,
-                                paste_delay_ms,
-                            ) {
-                                Ok(()) => {}
-                                Err(err) => {
-                                    warn!(
-                                        error = %err,
-                                        "Transient clipboard staging failed; falling back to direct paste for this transcription"
-                                    );
-                                    paste_direct(
-                                        enigo,
-                                        &prepared_text,
-                                        #[cfg(target_os = "linux")]
-                                        settings.typing_tool,
-                                    )?;
-                                }
-                            }
-                        }
-
-                        #[cfg(not(target_os = "macos"))]
-                        {
-                            paste_via_clipboard(
-                                enigo,
-                                &prepared_text,
-                                &app_handle,
-                                &paste_method,
-                                paste_delay_ms,
-                                paste_restore_delay_ms,
-                                Some(&backup_text),
-                            )?;
-                        }
+                        paste_via_clipboard(
+                            enigo,
+                            &prepared_text,
+                            &app_handle,
+                            &paste_method,
+                            paste_delay_ms,
+                            effective_paste_restore_delay_ms,
+                            Some(&backup_text),
+                        )?;
                     }
                     Err(err) => {
                         warn!(
@@ -950,7 +927,7 @@ pub fn paste_with_mode(
                     &app_handle,
                     &paste_method,
                     paste_delay_ms,
-                    paste_restore_delay_ms,
+                    effective_paste_restore_delay_ms,
                     None,
                 )?;
             }
