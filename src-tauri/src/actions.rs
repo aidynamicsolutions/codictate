@@ -700,7 +700,7 @@ impl ShortcutAction for TranscribeAction {
             let is_always_on = settings.always_on_microphone;
             let selected_model = settings.selected_model.clone();
             let tm = app.state::<Arc<TranscriptionManager>>();
-            tm.initiate_model_warmup_for_model(selected_model.clone(), "shortcut_start");
+            tm.initiate_model_load_for_model(selected_model.clone());
             debug!("Microphone mode - always_on: {}", is_always_on);
             info!(
                 binding = binding_id,
@@ -754,7 +754,7 @@ impl ShortcutAction for TranscribeAction {
                                 session = %session_id,
                                 binding = binding_id,
                                 model_ready_for_recording,
-                                model_warming = !selected_model.is_empty()
+                                model_loading = !selected_model.is_empty()
                                     && !model_ready_for_recording,
                                 event_code = "overlay_recording_shown",
                                 "Recording overlay shown after safe capture-ready gate"
@@ -907,7 +907,7 @@ impl ShortcutAction for TranscribeAction {
                                 session = %session_id,
                                 binding = binding_id,
                                 model_ready_for_recording,
-                                model_warming = !selected_model.is_empty()
+                                model_loading = !selected_model.is_empty()
                                     && !model_ready_for_recording,
                                 event_code = "overlay_recording_shown",
                                 "Recording overlay shown after safe capture-ready gate"

@@ -1184,11 +1184,11 @@ auto_refine_enabled?: boolean; mute_while_recording?: boolean; append_trailing_s
 /**
  * When true, removes filler words (um, uh, hmm, etc.) from transcriptions.
  */
-enable_filler_word_filter?: boolean;
+enable_filler_word_filter?: boolean; 
 /**
  * Additional user-specified filler words appended to the language defaults.
  */
-extra_filler_words?: string[];
+extra_filler_words?: string[]; 
 /**
  * When true, collapses repeated/stuttered words caused by ASR hallucinations.
  */

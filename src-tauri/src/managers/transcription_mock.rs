@@ -37,14 +37,6 @@ impl TranscriptionManager {
         false
     }
 
-    pub fn is_model_warming(&self) -> bool {
-        false
-    }
-
-    pub fn is_model_warmed(&self) -> bool {
-        false
-    }
-
     pub fn unload_model(&self) -> Result<()> {
         Ok(())
     }
@@ -55,9 +47,9 @@ impl TranscriptionManager {
         Ok(())
     }
 
-    pub fn initiate_model_warmup(&self, _trigger: &'static str) {}
+    pub fn initiate_model_load(&self) {}
 
-    pub fn initiate_model_warmup_for_model(&self, _model_id: String, _trigger: &'static str) {}
+    pub fn initiate_model_load_for_model(&self, _model_id: String) {}
 
     pub fn wait_until_model_ready_for_recording(&self, _model_id: &str) -> Result<()> {
         Ok(())

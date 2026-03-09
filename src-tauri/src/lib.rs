@@ -839,20 +839,20 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         let _ = autostart_manager.disable();
     }
 
-    // Coordinate startup model warm-up so we do at most one boot-time attempt.
-    let startup_model_warmup_started = Arc::new(AtomicBool::new(false));
+    // Coordinate startup model preload so we do at most one boot-time attempt.
+    let startup_model_preload_started = Arc::new(AtomicBool::new(false));
 
     // Listen for early overlay readiness from the frontend.
     // This only guarantees show/hide visibility listeners are attached.
     // Keep this path lightweight to preserve first overlay paint performance.
     let transcription_manager_for_overlay_ready = transcription_manager.clone();
-    let startup_model_warmup_started_for_overlay = startup_model_warmup_started.clone();
+    let startup_model_preload_started_for_overlay = startup_model_preload_started.clone();
     app_handle.listen("overlay-ready", move |_event| {
         overlay::mark_overlay_listener_ready();
-        // Start model warm-up after overlay is ready so startup UI is not CPU-contended.
+        // Start model preload after overlay is ready so startup UI is not CPU-contended.
         // Guarded to avoid duplicate startup attempts with the fallback path.
-        if !startup_model_warmup_started_for_overlay.swap(true, Ordering::SeqCst) {
-            transcription_manager_for_overlay_ready.initiate_model_warmup("startup_overlay_ready");
+        if !startup_model_preload_started_for_overlay.swap(true, Ordering::SeqCst) {
+            transcription_manager_for_overlay_ready.initiate_model_load();
         }
         tracing::debug!("Received overlay-ready event from frontend (visibility-ready)");
     });
@@ -864,13 +864,13 @@ fn initialize_core_logic(app_handle: &AppHandle) {
         tracing::debug!("Received overlay-fully-ready event from frontend");
     });
 
-    // Safety fallback: if overlay-ready never arrives (unexpected), still warm model after idle.
+    // Safety fallback: if overlay-ready never arrives (unexpected), still preload after idle.
     let transcription_manager_for_fallback = transcription_manager.clone();
-    let startup_model_warmup_started_for_fallback = startup_model_warmup_started.clone();
+    let startup_model_preload_started_for_fallback = startup_model_preload_started.clone();
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(3));
-        if !startup_model_warmup_started_for_fallback.swap(true, Ordering::SeqCst) {
-            transcription_manager_for_fallback.initiate_model_warmup("startup_fallback");
+        if !startup_model_preload_started_for_fallback.swap(true, Ordering::SeqCst) {
+            transcription_manager_for_fallback.initiate_model_load();
         }
     });
 }

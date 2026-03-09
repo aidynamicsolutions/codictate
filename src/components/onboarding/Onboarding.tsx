@@ -62,21 +62,21 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     Boolean(trackedModelId) && currentModelId === trackedModelId;
   const [backendModelLoaded, setBackendModelLoaded] = useState(false);
   const [backendModelLoading, setBackendModelLoading] = useState(false);
-  const [backendModelWarmed, setBackendModelWarmed] = useState(false);
-  const [backendModelWarming, setBackendModelWarming] = useState(false);
+  const [backendModelReady, setBackendModelReady] = useState(false);
+  const [backendModelPreparing, setBackendModelPreparing] = useState(false);
   const [isSelectingTargetModel, setIsSelectingTargetModel] = useState(false);
 
-  // Learn-step activation should only proceed once first decode has been warmed.
+  // Learn-step activation should only proceed once the selected model is ready.
   const modelReady = useMemo(() => {
     if (!trackedModelId) return false;
     if (!isTrackedModelDownloaded) return false;
     if (isTrackedModelDownloading) return false;
     if (isTrackedModelExtracting) return false;
     if (!isTrackedModelSelected) return false;
-    return backendModelLoaded && backendModelWarmed;
+    return backendModelLoaded && backendModelReady;
   }, [
     backendModelLoaded,
-    backendModelWarmed,
+    backendModelReady,
     isTrackedModelDownloaded,
     isTrackedModelDownloading,
     isTrackedModelExtracting,
@@ -94,7 +94,7 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   const [typingUseCases, setTypingUseCases] = useState<string[]>([]);
   const [typingUseCasesOther, setTypingUseCasesOther] = useState("");
   const activationRecordedRef = useRef(false);
-  const warmupAttemptRef = useRef<{
+  const preloadAttemptRef = useRef<{
     modelId: string;
     step: OnboardingStep;
   } | null>(null);
@@ -126,8 +126,8 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
     if (!trackedModelId) {
       setBackendModelLoaded(false);
       setBackendModelLoading(false);
-      setBackendModelWarmed(false);
-      setBackendModelWarming(false);
+      setBackendModelReady(false);
+      setBackendModelPreparing(false);
       return;
     }
 
@@ -143,12 +143,12 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
 
         const isTrackedModel = result.data.current_model === trackedModelId;
         const isTrackedModelLoaded = result.data.is_loaded && isTrackedModel;
-        const isTrackedModelWarmed = result.data.is_warmed && isTrackedModel;
+        const isTrackedModelReady = result.data.is_warmed && isTrackedModel;
 
         setBackendModelLoaded(isTrackedModelLoaded);
         setBackendModelLoading(result.data.is_loading && !isTrackedModelLoaded);
-        setBackendModelWarmed(isTrackedModelWarmed);
-        setBackendModelWarming(result.data.is_warming && !isTrackedModelWarmed);
+        setBackendModelReady(isTrackedModelReady);
+        setBackendModelPreparing(result.data.is_warming && !isTrackedModelReady);
       } catch (error) {
         if (!ignore) {
           logError(
@@ -175,30 +175,21 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
           case "loading_started":
             setBackendModelLoaded(false);
             setBackendModelLoading(true);
-            setBackendModelWarmed(false);
-            setBackendModelWarming(false);
+            setBackendModelReady(false);
+            setBackendModelPreparing(false);
             break;
           case "loading_completed":
             setBackendModelLoaded(true);
             setBackendModelLoading(false);
-            break;
-          case "warming_started":
-            setBackendModelWarming(true);
-            break;
-          case "warming_completed":
-            setBackendModelLoaded(true);
-            setBackendModelWarmed(true);
-            setBackendModelWarming(false);
-            break;
-          case "warming_failed":
-            setBackendModelWarming(false);
+            setBackendModelReady(true);
+            setBackendModelPreparing(false);
             break;
           case "loading_failed":
           case "unloaded":
             setBackendModelLoaded(false);
             setBackendModelLoading(false);
-            setBackendModelWarmed(false);
-            setBackendModelWarming(false);
+            setBackendModelReady(false);
+            setBackendModelPreparing(false);
             break;
         }
       });
@@ -263,49 +254,49 @@ const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
   ]);
 
   useEffect(() => {
-    const isEligiblePrewarmStep =
+    const isEligiblePreloadStep =
       currentStep === "microphoneCheck" ||
       currentStep === "hotkeySetup" ||
       currentStep === "languageSelect" ||
       currentStep === "learn";
 
     if (
-      !isEligiblePrewarmStep ||
+      !isEligiblePreloadStep ||
       !trackedModelId ||
       !isTrackedModelDownloaded ||
       isTrackedModelDownloading ||
       isTrackedModelExtracting ||
       !isTrackedModelSelected ||
-      backendModelWarmed ||
-      backendModelWarming
+      backendModelReady ||
+      backendModelPreparing
     ) {
       return;
     }
 
-    const hasAttemptedWarmupForCurrentStep =
-      warmupAttemptRef.current?.modelId === trackedModelId &&
-      warmupAttemptRef.current?.step === currentStep;
-    if (hasAttemptedWarmupForCurrentStep) {
+    const hasAttemptedPreloadForCurrentStep =
+      preloadAttemptRef.current?.modelId === trackedModelId &&
+      preloadAttemptRef.current?.step === currentStep;
+    if (hasAttemptedPreloadForCurrentStep) {
       return;
     }
 
-    warmupAttemptRef.current = {
+    preloadAttemptRef.current = {
       modelId: trackedModelId,
       step: currentStep,
     };
     void commands.warmUpTranscriptionModel(trackedModelId).catch((error) => {
-      // Allow retry on the next state transition if this warmup attempt fails.
-      warmupAttemptRef.current = null;
+      // Allow retry on the next state transition if this preload attempt fails.
+      preloadAttemptRef.current = null;
       logError(
-        `event=onboarding_model_warmup_failed step=${currentStep} model=${trackedModelId} error=${error}`,
+        `event=onboarding_model_preload_failed step=${currentStep} model=${trackedModelId} error=${error}`,
         "fe-onboarding",
       );
     });
   }, [
     backendModelLoaded,
     backendModelLoading,
-    backendModelWarmed,
-    backendModelWarming,
+    backendModelReady,
+    backendModelPreparing,
     currentStep,
     isTrackedModelDownloaded,
     isTrackedModelDownloading,

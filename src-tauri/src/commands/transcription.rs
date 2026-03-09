@@ -27,11 +27,14 @@ pub fn set_model_unload_timeout(app: AppHandle, timeout: ModelUnloadTimeout) {
 pub fn get_model_load_status(
     transcription_manager: State<'_, Arc<TranscriptionManager>>,
 ) -> Result<ModelLoadStatus, String> {
+    let is_loaded = transcription_manager.is_model_loaded();
+    let is_loading = transcription_manager.is_model_loading();
+
     Ok(ModelLoadStatus {
-        is_loaded: transcription_manager.is_model_loaded(),
-        is_loading: transcription_manager.is_model_loading(),
-        is_warmed: transcription_manager.is_model_warmed(),
-        is_warming: transcription_manager.is_model_warming(),
+        is_loaded,
+        is_loading,
+        is_warmed: is_loaded && !is_loading,
+        is_warming: false,
         current_model: transcription_manager.get_current_model(),
     })
 }
@@ -44,10 +47,10 @@ pub fn warm_up_transcription_model(
 ) -> Result<(), String> {
     match model_id {
         Some(id) if !id.is_empty() => {
-            transcription_manager.initiate_model_warmup_for_model(id, "frontend_onboarding");
+            transcription_manager.initiate_model_load_for_model(id);
         }
         _ => {
-            transcription_manager.initiate_model_warmup("frontend_onboarding");
+            transcription_manager.initiate_model_load();
         }
     }
     Ok(())
