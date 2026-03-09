@@ -29,12 +29,4 @@ char *get_audio_device_transport_type(const char *device_name);
 /// Free a string returned by get_audio_device_transport_type
 void free_transport_type_string(char *ptr);
 
-/// Start listening for default-input/topology changes.
-/// Returns: 0 = started, 1 = already started, -1 = failed
-int32_t start_input_route_change_monitor(void);
-
-/// Read monotonic input-route change generation detected by the monitor.
-/// The value increments for each relevant CoreAudio topology/default-input event.
-uint64_t get_input_route_change_generation(void);
-
 #endif /* audio_device_info_bridge_h */

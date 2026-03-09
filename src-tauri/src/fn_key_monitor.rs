@@ -13,10 +13,7 @@
 //! - Hands-free (fn+space): Press combo to toggle recording on/off
 
 use crate::actions::ACTION_MAP;
-use crate::managers::audio::{
-    AudioRecordingManager, InputDeviceCacheRefreshPolicy, InputDeviceCacheRefreshReason,
-    RecordingPrearmSource,
-};
+use crate::managers::audio::AudioRecordingManager;
 use crate::shortcut;
 use crate::ManagedToggleState;
 use core_foundation::runloop::{kCFRunLoopCommonModes, CFRunLoop};
@@ -580,15 +577,6 @@ fn handle_fn_pressed(app: &AppHandle) {
             }
         }
 
-        if !crate::backup_restore::ensure_transcription_start_allowed(app) {
-            info!(
-                press_id = press_id,
-                event_code = "fn_ptt_start_blocked_maintenance",
-                "Skipping Fn push-to-talk start because backup/restore maintenance mode is active"
-            );
-            return;
-        }
-
         // All checks passed - start push-to-talk recording
         info!("handle_fn_pressed: Starting push-to-talk recording (press_id={})", press_id);
         PTT_STARTED.store(true, Ordering::SeqCst);
@@ -600,14 +588,6 @@ fn handle_fn_pressed(app: &AppHandle) {
             if let Ok(mut states) = toggle_state_manager.lock() {
                 states.active_toggles.insert("transcribe_handsfree".to_string(), false);
             };
-        }
-
-        if let Some(rm) = app.try_state::<Arc<AudioRecordingManager>>() {
-            rm.refresh_input_device_cache_async(
-                InputDeviceCacheRefreshPolicy::IfStaleOrDirty,
-                InputDeviceCacheRefreshReason::FnKeyDown,
-            );
-            rm.kickoff_on_demand_prearm(RecordingPrearmSource::FnKeyDown);
         }
         
         if let Some(action) = ACTION_MAP.get("transcribe") {

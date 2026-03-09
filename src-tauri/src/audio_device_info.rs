@@ -3,12 +3,7 @@
 //! On macOS, this uses CoreAudio's `kAudioDevicePropertyTransportType` for reliable detection.
 //! On other platforms, it falls back to name pattern matching.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::debug;
-#[cfg(target_os = "macos")]
-use tracing::warn;
-
-static INPUT_ROUTE_MONITOR_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 #[cfg(target_os = "macos")]
 mod ffi {
@@ -20,8 +15,6 @@ mod ffi {
         pub fn is_audio_device_builtin(device_name: *const c_char) -> c_int;
         pub fn is_audio_device_virtual(device_name: *const c_char) -> c_int;
         pub fn is_audio_device_continuity_camera(device_name: *const c_char) -> c_int;
-        pub fn start_input_route_change_monitor() -> c_int;
-        pub fn get_input_route_change_generation() -> u64;
     }
 
     /// Check if a device is Bluetooth using CoreAudio on macOS.
@@ -71,20 +64,6 @@ mod ffi {
             _ => None,
         }
     }
-
-    pub fn start_route_monitor() -> Result<(), String> {
-        let result = unsafe { start_input_route_change_monitor() };
-        match result {
-            0 | 1 => Ok(()),
-            other => Err(format!(
-                "start_input_route_change_monitor failed with status {other}"
-            )),
-        }
-    }
-
-    pub fn route_change_generation() -> u64 {
-        unsafe { get_input_route_change_generation() }
-    }
 }
 
 /// Common Bluetooth device name patterns for fallback detection.
@@ -120,59 +99,6 @@ fn is_bluetooth_by_name(device_name: &str) -> bool {
         }
     }
     false
-}
-
-/// Start native input route monitoring when supported.
-///
-/// On macOS this installs CoreAudio listeners for:
-/// - default input device changes
-/// - device topology changes
-pub fn start_input_route_change_monitor() {
-    #[cfg(target_os = "macos")]
-    {
-        match ffi::start_route_monitor() {
-            Ok(()) => {
-                INPUT_ROUTE_MONITOR_ACTIVE.store(true, Ordering::SeqCst);
-                debug!("Input route change monitor active");
-            }
-            Err(err) => {
-                INPUT_ROUTE_MONITOR_ACTIVE.store(false, Ordering::SeqCst);
-                warn!(
-                    error = err,
-                    "Failed to start input route change monitor; default-input starts will fall back to fresh enumeration"
-                );
-            }
-        }
-    }
-}
-
-/// Returns true when native input route monitoring is active.
-pub fn is_input_route_change_monitor_active() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        return INPUT_ROUTE_MONITOR_ACTIVE.load(Ordering::SeqCst);
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        false
-    }
-}
-
-/// Read monotonic route-change generation observed by the native monitor.
-pub fn input_route_change_generation() -> u64 {
-    #[cfg(target_os = "macos")]
-    {
-        if !is_input_route_change_monitor_active() {
-            return 0;
-        }
-        return ffi::route_change_generation();
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        0
-    }
 }
 
 /// Check if an audio device is a Bluetooth device.

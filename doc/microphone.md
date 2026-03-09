@@ -45,36 +45,6 @@ This also applies in `start_microphone_stream()` as a safety net: if `get_effect
 
 **Bluetooth Pre-warm:** `prewarm_bluetooth_mic()` only triggers the A2DP→HFP profile switch at startup if the user has **explicitly** selected a Bluetooth device. When "Default" is selected, no pre-warm occurs since the app will use a built-in mic instead.
 
-## Input Topology Cache and Route Safety
-
-`AudioRecordingManager` keeps a cached input-device topology snapshot to reduce cold-start latency:
-
-1. Cache TTL is 10 minutes.
-2. Cache entries can be marked `dirty` when microphone-related settings change.
-3. Async refresh uses throttling and in-flight guards to avoid duplicate scans.
-4. `Force` refresh requests bypass throttle when no refresh is active.
-5. If a `Force` refresh arrives while a refresh is in-flight, it is queued (`pending_force_refresh`) and a follow-up enumeration runs immediately after the current cycle finishes.
-
-On macOS, native CoreAudio listeners track default-input/topology changes. The route monitor exposes a **monotonic generation** value (not consume/reset semantics), and the manager stores the highest generation already applied after successful fresh enumeration. Starts force fresh enumeration when:
-
-1. The active selection is effectively `default` and route monitoring is unavailable.
-2. The route-change generation has advanced beyond the last applied generation.
-
-This prevents one concurrent start from clearing route-change signals needed by another concurrent pre-arm/start path.
-
-Pre-arm stream opens are ownership-gated twice using `prearm_owner_token`: once before device enumeration begins, and once again under `stream_start_lock` immediately before `rec.open(...)`. This prevents stale pre-arm workers from reopening the microphone after cancellation/supersession races.
-
-For cache policy and explicit-selection safety, the active selection is clamshell-aware:
-
-1. If clamshell mode is active and `clamshell_microphone` is configured, that device is treated as the active selection.
-2. Otherwise, `selected_microphone` is used.
-
-This avoids default-route safety rules incorrectly applying when a clamshell-specific explicit microphone is configured.
-
-## Startup Prewarm Persistence Guard
-
-Startup Bluetooth prewarm may open a fallback input stream when an explicit device is unavailable, but this warmup context **must not** persist fallback auto-switch settings. Persistence and `audio-device-auto-switched` notifications remain limited to user-triggered start contexts.
-
 ## Clamshell Mode
 
 When a MacBook lid is closed but running with an external display, the built-in mic is muffled.

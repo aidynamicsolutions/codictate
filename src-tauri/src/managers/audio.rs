@@ -1,5 +1,5 @@
 use crate::audio_toolkit::audio::{
-    list_input_devices, AudioRecorder, CpalDeviceInfo, RecorderStartError, RecorderStartWait,
+    list_input_devices, AudioRecorder, RecorderStartError, RecorderStartWait,
 };
 use crate::audio_toolkit::vad::SmoothedVad;
 use crate::audio_toolkit::SileroVad;
@@ -162,90 +162,6 @@ pub enum RecordingState {
 pub enum MicrophoneMode {
     AlwaysOn,
     OnDemand,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InputDeviceCacheRefreshPolicy {
-    IfStaleOrDirty,
-    Force,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InputDeviceCacheRefreshReason {
-    StartupPrime,
-    FnKeyDown,
-    ShortcutTrigger,
-    MainWindowFocus,
-    SystemRouteChanged,
-    SelectedMicrophoneChanged,
-    ClamshellMicrophoneChanged,
-    SelectedDeviceUpdate,
-}
-
-impl InputDeviceCacheRefreshReason {
-    fn as_str(self) -> &'static str {
-        match self {
-            InputDeviceCacheRefreshReason::StartupPrime => "startup_prime",
-            InputDeviceCacheRefreshReason::FnKeyDown => "fn_key_down",
-            InputDeviceCacheRefreshReason::ShortcutTrigger => "shortcut_trigger",
-            InputDeviceCacheRefreshReason::MainWindowFocus => "main_window_focus",
-            InputDeviceCacheRefreshReason::SystemRouteChanged => "system_route_changed",
-            InputDeviceCacheRefreshReason::SelectedMicrophoneChanged => "selected_microphone_changed",
-            InputDeviceCacheRefreshReason::ClamshellMicrophoneChanged => {
-                "clamshell_microphone_changed"
-            }
-            InputDeviceCacheRefreshReason::SelectedDeviceUpdate => "selected_device_update",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RecordingPrearmSource {
-    FnKeyDown,
-    ShortcutStart,
-    SignalStart,
-}
-
-impl RecordingPrearmSource {
-    fn as_str(self) -> &'static str {
-        match self {
-            RecordingPrearmSource::FnKeyDown => "fn_key_down",
-            RecordingPrearmSource::ShortcutStart => "shortcut_start",
-            RecordingPrearmSource::SignalStart => "signal_start",
-        }
-    }
-}
-
-#[derive(Clone)]
-struct InputDeviceCacheEntry {
-    cached_at: Instant,
-    devices: Vec<CpalDeviceInfo>,
-    dirty: bool,
-}
-
-#[derive(Clone, Default)]
-struct InputDeviceCacheState {
-    entry: Option<InputDeviceCacheEntry>,
-    refresh_inflight: bool,
-    pending_force_refresh: bool,
-    last_refresh_requested_at: Option<Instant>,
-}
-
-#[derive(Clone)]
-enum InputDeviceCacheLookup {
-    Hit { age: Duration, devices: Vec<CpalDeviceInfo> },
-    Stale { age: Duration },
-    Dirty { age: Duration },
-    Empty,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum InputDeviceCacheRefreshDecision {
-    Run,
-    QueueForceWhileInFlight,
-    SkipClean,
-    SkipThrottle,
-    SkipInFlight,
 }
 
 #[derive(Clone, Debug)]
@@ -411,20 +327,6 @@ pub enum RecordingStartOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StreamStartOutcome {
-    AlreadyOpen,
-    OpenedNow { stream_epoch: u64 },
-    CancelledBeforeOpen,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum StreamOpenContext {
-    UserTriggered,
-    StartupPrewarm,
-    Prearm { owner_token: u64 },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StartFailureCleanupAction {
     ClearPreparingAndCloseStream,
     CloseStream,
@@ -477,219 +379,6 @@ fn should_stop_stream_for_start_cleanup(
             StartFailureCleanupAction::ClearPreparingAndCloseStream
                 | StartFailureCleanupAction::CloseStream
         )
-}
-
-fn should_auto_close_owned_warm_stream(
-    mode: &MicrophoneMode,
-    state: &RecordingState,
-    is_recording: bool,
-    is_open: bool,
-    opened_by_owner: bool,
-    opened_stream_epoch: Option<u64>,
-    active_stream_epoch: u64,
-) -> bool {
-    matches!(mode, MicrophoneMode::OnDemand)
-        && matches!(state, RecordingState::Idle)
-        && !is_recording
-        && is_open
-        && opened_by_owner
-        && matches!(
-            opened_stream_epoch,
-            Some(epoch) if epoch != 0 && epoch == active_stream_epoch
-        )
-}
-
-fn should_auto_close_prearm_stream(
-    mode: &MicrophoneMode,
-    state: &RecordingState,
-    is_recording: bool,
-    is_open: bool,
-    opened_by_prearm: bool,
-    opened_stream_epoch: Option<u64>,
-    active_stream_epoch: u64,
-) -> bool {
-    should_auto_close_owned_warm_stream(
-        mode,
-        state,
-        is_recording,
-        is_open,
-        opened_by_prearm,
-        opened_stream_epoch,
-        active_stream_epoch,
-    )
-}
-
-fn should_auto_close_prewarm_stream(
-    mode: &MicrophoneMode,
-    state: &RecordingState,
-    is_recording: bool,
-    is_open: bool,
-    opened_by_prewarm: bool,
-    opened_stream_epoch: Option<u64>,
-    active_stream_epoch: u64,
-) -> bool {
-    should_auto_close_owned_warm_stream(
-        mode,
-        state,
-        is_recording,
-        is_open,
-        opened_by_prewarm,
-        opened_stream_epoch,
-        active_stream_epoch,
-    )
-}
-
-fn classify_cache_lookup(
-    entry: Option<&InputDeviceCacheEntry>,
-    now: Instant,
-    ttl: Duration,
-) -> InputDeviceCacheLookup {
-    let Some(entry) = entry else {
-        return InputDeviceCacheLookup::Empty;
-    };
-
-    let age = now.duration_since(entry.cached_at);
-    if entry.dirty {
-        return InputDeviceCacheLookup::Dirty { age };
-    }
-    if age > ttl {
-        return InputDeviceCacheLookup::Stale { age };
-    }
-
-    InputDeviceCacheLookup::Hit {
-        age,
-        devices: entry.devices.clone(),
-    }
-}
-
-fn classify_cache_refresh_decision(
-    policy: InputDeviceCacheRefreshPolicy,
-    entry: Option<&InputDeviceCacheEntry>,
-    refresh_inflight: bool,
-    last_refresh_requested_at: Option<Instant>,
-    now: Instant,
-    ttl: Duration,
-    throttle: Duration,
-) -> InputDeviceCacheRefreshDecision {
-    if refresh_inflight {
-        return match policy {
-            InputDeviceCacheRefreshPolicy::Force => {
-                InputDeviceCacheRefreshDecision::QueueForceWhileInFlight
-            }
-            InputDeviceCacheRefreshPolicy::IfStaleOrDirty => {
-                InputDeviceCacheRefreshDecision::SkipInFlight
-            }
-        };
-    }
-
-    match policy {
-        InputDeviceCacheRefreshPolicy::Force => InputDeviceCacheRefreshDecision::Run,
-        InputDeviceCacheRefreshPolicy::IfStaleOrDirty => {
-            if let Some(last_requested_at) = last_refresh_requested_at {
-                if now.duration_since(last_requested_at) < throttle {
-                    return InputDeviceCacheRefreshDecision::SkipThrottle;
-                }
-            }
-
-            match classify_cache_lookup(entry, now, ttl) {
-                InputDeviceCacheLookup::Hit { .. } => InputDeviceCacheRefreshDecision::SkipClean,
-                InputDeviceCacheLookup::Stale { .. }
-                | InputDeviceCacheLookup::Dirty { .. }
-                | InputDeviceCacheLookup::Empty => InputDeviceCacheRefreshDecision::Run,
-            }
-        }
-    }
-}
-
-fn has_unapplied_route_change_generation(
-    route_change_generation: u64,
-    last_applied_generation: u64,
-) -> bool {
-    route_change_generation > last_applied_generation
-}
-
-fn should_force_fresh_enumeration_for_start(
-    active_selected_microphone: Option<&str>,
-    monitor_active: bool,
-    has_unapplied_route_change: bool,
-    default_route_no_monitor_force_refresh_enabled: bool,
-) -> bool {
-    if has_unapplied_route_change {
-        return true;
-    }
-
-    let uses_system_default = !is_explicit_microphone_selection(active_selected_microphone);
-
-    uses_system_default && !monitor_active && default_route_no_monitor_force_refresh_enabled
-}
-
-fn merge_applied_route_change_generation(
-    last_applied_generation: u64,
-    route_change_generation: u64,
-) -> u64 {
-    last_applied_generation.max(route_change_generation)
-}
-
-fn should_persist_fallback_selection(
-    context: StreamOpenContext,
-    used_cached_devices: bool,
-) -> bool {
-    matches!(context, StreamOpenContext::UserTriggered) && !used_cached_devices
-}
-
-fn is_prearm_owner_active(active_prearm_owner_token: u64, owner_token: u64) -> bool {
-    owner_token != 0 && active_prearm_owner_token == owner_token
-}
-
-fn prearm_open_allowed_for_context(
-    context: StreamOpenContext,
-    active_prearm_owner_token: u64,
-) -> bool {
-    match context {
-        StreamOpenContext::Prearm { owner_token } => {
-            is_prearm_owner_active(active_prearm_owner_token, owner_token)
-        }
-        StreamOpenContext::UserTriggered | StreamOpenContext::StartupPrewarm => true,
-    }
-}
-
-fn classify_prearm_open_guard_outcome(
-    context: StreamOpenContext,
-    active_prearm_owner_token: u64,
-) -> Option<StreamStartOutcome> {
-    if prearm_open_allowed_for_context(context, active_prearm_owner_token) {
-        None
-    } else {
-        Some(StreamStartOutcome::CancelledBeforeOpen)
-    }
-}
-
-fn is_explicit_microphone_selection(selection: Option<&str>) -> bool {
-    selection.is_some_and(|name| !name.eq_ignore_ascii_case("default"))
-}
-
-fn active_selection_for_cache_policy<'a>(
-    selected_microphone: Option<&'a str>,
-    clamshell_microphone: Option<&'a str>,
-    clamshell_selection_active: bool,
-) -> Option<&'a str> {
-    if clamshell_selection_active {
-        return clamshell_microphone;
-    }
-
-    selected_microphone
-}
-
-fn classify_refresh_followup(cache: &mut InputDeviceCacheState, completed_at: Instant) -> bool {
-    if cache.pending_force_refresh {
-        cache.pending_force_refresh = false;
-        cache.refresh_inflight = true;
-        cache.last_refresh_requested_at = Some(completed_at);
-        return true;
-    }
-
-    cache.refresh_inflight = false;
-    false
 }
 
 fn map_recorder_start_error(
@@ -851,20 +540,9 @@ pub struct AudioRecordingManager {
     
     /// The name of the device currently opened in the stream (for logging)
     current_device_name: Arc<Mutex<Option<String>>>,
-    /// Cached input device topology used to reduce startup enumeration overhead.
-    device_cache: Arc<Mutex<InputDeviceCacheState>>,
-    /// Serialize stream open/close operations to avoid redundant concurrent startup work.
-    stream_start_lock: Arc<Mutex<()>>,
-    /// Active stream epoch for ownership checks across async pre-arm/prewarm workers.
-    active_stream_epoch: Arc<AtomicU64>,
-    /// Monotonic stream epoch allocator to avoid ABA ownership collisions.
-    next_stream_epoch: Arc<AtomicU64>,
-    /// Highest route-change generation applied after a successful fresh enumeration.
-    last_applied_route_change_generation: Arc<AtomicU64>,
-    /// Tracks which on-demand pre-arm worker currently owns pre-arm lifecycle.
-    prearm_owner_token: Arc<AtomicU64>,
-    /// Monotonic token allocator for pre-arm ownership.
-    next_prearm_owner_token: Arc<AtomicU64>,
+    /// Short-lived cache for input device enumeration to speed first trigger after startup.
+    device_cache:
+        Arc<Mutex<Option<(Instant, Vec<crate::audio_toolkit::audio::CpalDeviceInfo>)>>>,
     next_prepare_token: Arc<AtomicU64>,
 }
 
@@ -892,19 +570,13 @@ impl AudioRecordingManager {
             recording_start_time: Arc::new(Mutex::new(None)),
             timer_stop_tx: Arc::new(Mutex::new(None)),
             current_device_name: Arc::new(Mutex::new(None)),
-            device_cache: Arc::new(Mutex::new(InputDeviceCacheState::default())),
-            stream_start_lock: Arc::new(Mutex::new(())),
-            active_stream_epoch: Arc::new(AtomicU64::new(0)),
-            next_stream_epoch: Arc::new(AtomicU64::new(1)),
-            last_applied_route_change_generation: Arc::new(AtomicU64::new(0)),
-            prearm_owner_token: Arc::new(AtomicU64::new(0)),
-            next_prearm_owner_token: Arc::new(AtomicU64::new(1)),
+            device_cache: Arc::new(Mutex::new(None)),
             next_prepare_token: Arc::new(AtomicU64::new(1)),
         };
 
         // Always-on?  Open immediately.
         if matches!(mode, MicrophoneMode::AlwaysOn) {
-            let _ = manager.start_microphone_stream()?;
+            manager.start_microphone_stream()?;
         }
 
         Ok(manager)
@@ -912,428 +584,42 @@ impl AudioRecordingManager {
 
     /* ---------- helper methods --------------------------------------------- */
 
-    const DEVICE_CACHE_TTL: Duration = Duration::from_secs(60 * 10);
-    const DEVICE_CACHE_REFRESH_THROTTLE: Duration = Duration::from_secs(2);
-    const PREARM_GRACE_TIMEOUT: Duration = Duration::from_millis(900);
-    const BLUETOOTH_PREWARM_GRACE_TIMEOUT: Duration = Duration::from_millis(500);
+    const DEVICE_CACHE_TTL: Duration = Duration::from_secs(5);
 
-    fn update_device_cache(&self, devices: Vec<CpalDeviceInfo>) {
-        let mut cache = self.device_cache.lock().unwrap();
-        cache.entry = Some(InputDeviceCacheEntry {
-            cached_at: Instant::now(),
-            devices,
-            dirty: false,
-        });
+    fn update_device_cache(&self, devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>) {
+        *self.device_cache.lock().unwrap() = Some((Instant::now(), devices));
     }
 
-    fn inspect_input_device_cache(&self, now: Instant) -> InputDeviceCacheLookup {
+    fn get_fresh_device_cache(
+        &self,
+    ) -> Option<(Duration, Vec<crate::audio_toolkit::audio::CpalDeviceInfo>)> {
         let cache = self.device_cache.lock().unwrap();
-        classify_cache_lookup(cache.entry.as_ref(), now, Self::DEVICE_CACHE_TTL)
-    }
-
-    fn is_clamshell_selection_active(settings: &AppSettings) -> bool {
-        if settings.clamshell_microphone.is_none() {
-            return false;
+        let (cached_at, devices) = cache.as_ref()?;
+        let age = cached_at.elapsed();
+        if age > Self::DEVICE_CACHE_TTL {
+            return None;
         }
-
-        match clamshell::is_clamshell() {
-            Ok(is_clamshell) => is_clamshell,
-            Err(_) => false,
-        }
-    }
-
-    fn active_selected_microphone_for_cache_policy<'a>(
-        settings: &'a AppSettings,
-    ) -> (bool, Option<&'a str>) {
-        let clamshell_selection_active = Self::is_clamshell_selection_active(settings);
-        let active_selection = active_selection_for_cache_policy(
-            settings.selected_microphone.as_deref(),
-            settings.clamshell_microphone.as_deref(),
-            clamshell_selection_active,
-        );
-        (clamshell_selection_active, active_selection)
-    }
-
-    fn note_route_change_generation_applied(&self, route_change_generation: u64) {
-        if route_change_generation == 0 {
-            return;
-        }
-
-        let mut observed = self
-            .last_applied_route_change_generation
-            .load(Ordering::SeqCst);
-        loop {
-            let merged = merge_applied_route_change_generation(observed, route_change_generation);
-            if merged == observed {
-                return;
-            }
-            match self.last_applied_route_change_generation.compare_exchange(
-                observed,
-                merged,
-                Ordering::SeqCst,
-                Ordering::SeqCst,
-            ) {
-                Ok(_) => return,
-                Err(current) => observed = current,
-            }
-        }
-    }
-
-    fn try_claim_prearm_owner(
-        &self,
-        source: RecordingPrearmSource,
-        prearm_token: u64,
-    ) -> bool {
-        match self.prearm_owner_token.compare_exchange(
-            0,
-            prearm_token,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        ) {
-            Ok(_) => true,
-            Err(active_token) => {
-                debug!(
-                    source = source.as_str(),
-                    requested_token = prearm_token,
-                    active_token = active_token,
-                    event_code = "prearm_skipped",
-                    reason = "inflight",
-                    "Pre-arm skipped because another pre-arm is already in-flight"
-                );
-                false
-            }
-        }
-    }
-
-    fn release_prearm_owner(
-        &self,
-        source: RecordingPrearmSource,
-        prearm_token: u64,
-        reason: &'static str,
-    ) {
-        match self.prearm_owner_token.compare_exchange(
-            prearm_token,
-            0,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        ) {
-            Ok(_) => {
-                debug!(
-                    source = source.as_str(),
-                    prearm_token = prearm_token,
-                    reason = reason,
-                    event_code = "prearm_owner_released",
-                    "Released pre-arm owner token"
-                );
-            }
-            Err(active_token) => {
-                debug!(
-                    source = source.as_str(),
-                    prearm_token = prearm_token,
-                    active_token = active_token,
-                    reason = reason,
-                    event_code = "prearm_owner_release_skipped",
-                    "Skipped pre-arm owner release because token ownership moved"
-                );
-            }
-        }
-    }
-
-    fn is_prearm_owner_active(&self, owner_token: u64) -> bool {
-        is_prearm_owner_active(
-            self.prearm_owner_token.load(Ordering::SeqCst),
-            owner_token,
-        )
-    }
-
-    fn prearm_open_allowed(&self, context: StreamOpenContext) -> bool {
-        match context {
-            StreamOpenContext::Prearm { owner_token } => self.is_prearm_owner_active(owner_token),
-            StreamOpenContext::UserTriggered | StreamOpenContext::StartupPrewarm => true,
-        }
-    }
-
-    fn classify_prearm_open_guard_outcome(
-        &self,
-        context: StreamOpenContext,
-    ) -> Option<StreamStartOutcome> {
-        let active_prearm_owner_token = self.prearm_owner_token.load(Ordering::SeqCst);
-        classify_prearm_open_guard_outcome(context, active_prearm_owner_token)
-    }
-
-    pub fn mark_input_device_cache_dirty(&self, reason: InputDeviceCacheRefreshReason) {
-        let mut cache = self.device_cache.lock().unwrap();
-        if let Some(entry) = cache.entry.as_mut() {
-            if !entry.dirty {
-                info!(
-                    reason = reason.as_str(),
-                    age_ms = entry.cached_at.elapsed().as_millis(),
-                    event_code = "cache_dirty",
-                    "Marked input device cache as dirty"
-                );
-            }
-            entry.dirty = true;
-        }
-    }
-
-    pub fn refresh_input_device_cache_async(
-        &self,
-        policy: InputDeviceCacheRefreshPolicy,
-        reason: InputDeviceCacheRefreshReason,
-    ) {
-        let now = Instant::now();
-        let decision = {
-            let mut cache = self.device_cache.lock().unwrap();
-            let decision = classify_cache_refresh_decision(
-                policy,
-                cache.entry.as_ref(),
-                cache.refresh_inflight,
-                cache.last_refresh_requested_at,
-                now,
-                Self::DEVICE_CACHE_TTL,
-                Self::DEVICE_CACHE_REFRESH_THROTTLE,
-            );
-            match decision {
-                InputDeviceCacheRefreshDecision::Run => {
-                    cache.refresh_inflight = true;
-                    cache.last_refresh_requested_at = Some(now);
-                }
-                InputDeviceCacheRefreshDecision::QueueForceWhileInFlight => {
-                    cache.pending_force_refresh = true;
-                }
-                InputDeviceCacheRefreshDecision::SkipClean
-                | InputDeviceCacheRefreshDecision::SkipThrottle
-                | InputDeviceCacheRefreshDecision::SkipInFlight => {}
-            }
-            decision
-        };
-
-        match decision {
-            InputDeviceCacheRefreshDecision::Run => {
-                let manager = self.clone();
-                std::thread::spawn(move || {
-                    loop {
-                        let refresh_started_at = Instant::now();
-                        info!(
-                            reason = reason.as_str(),
-                            policy = format!("{policy:?}"),
-                            event_code = "cache_refresh_started",
-                            "Refreshing input device cache"
-                        );
-
-                        let refresh_result = list_input_devices();
-                        let refresh_completed_at = Instant::now();
-                        let mut cache = manager.device_cache.lock().unwrap();
-
-                        match refresh_result {
-                            Ok(devices) => {
-                                let device_count = devices.len();
-                                cache.entry = Some(InputDeviceCacheEntry {
-                                    cached_at: refresh_completed_at,
-                                    devices,
-                                    dirty: false,
-                                });
-                                info!(
-                                    reason = reason.as_str(),
-                                    policy = format!("{policy:?}"),
-                                    duration_ms = refresh_started_at.elapsed().as_millis(),
-                                    device_count = device_count,
-                                    event_code = "cache_refresh_completed",
-                                    "Refreshed input device cache"
-                                );
-                            }
-                            Err(err) => {
-                                warn!(
-                                    reason = reason.as_str(),
-                                    policy = format!("{policy:?}"),
-                                    duration_ms = refresh_started_at.elapsed().as_millis(),
-                                    error = err.to_string(),
-                                    event_code = "cache_refresh_failed",
-                                    "Failed to refresh input device cache"
-                                );
-                            }
-                        }
-
-                        let run_followup = classify_refresh_followup(&mut cache, refresh_completed_at);
-                        if run_followup {
-                            info!(
-                                reason = reason.as_str(),
-                                policy = format!("{policy:?}"),
-                                event_code = "cache_refresh_force_followup",
-                                "Running queued force refresh after in-flight cache refresh completed"
-                            );
-                        }
-                        drop(cache);
-
-                        if !run_followup {
-                            break;
-                        }
-                    }
-                });
-            }
-            InputDeviceCacheRefreshDecision::QueueForceWhileInFlight => {
-                info!(
-                    reason = reason.as_str(),
-                    policy = format!("{policy:?}"),
-                    event_code = "cache_refresh_queued_force",
-                    "Queued forced input device cache refresh behind in-flight refresh"
-                );
-            }
-            InputDeviceCacheRefreshDecision::SkipClean => {
-                debug!(
-                    reason = reason.as_str(),
-                    policy = format!("{policy:?}"),
-                    event_code = "cache_refresh_skipped_clean",
-                    "Input device cache refresh skipped because cache is still fresh and clean"
-                );
-            }
-            InputDeviceCacheRefreshDecision::SkipThrottle => {
-                debug!(
-                    reason = reason.as_str(),
-                    policy = format!("{policy:?}"),
-                    throttle_ms = Self::DEVICE_CACHE_REFRESH_THROTTLE.as_millis(),
-                    event_code = "cache_refresh_skipped_throttle",
-                    "Input device cache refresh skipped due to throttle window"
-                );
-            }
-            InputDeviceCacheRefreshDecision::SkipInFlight => {
-                debug!(
-                    reason = reason.as_str(),
-                    policy = format!("{policy:?}"),
-                    event_code = "cache_refresh_skipped_inflight",
-                    "Input device cache refresh skipped because refresh is already in-flight"
-                );
-            }
-        }
+        Some((age, devices.clone()))
     }
 
     pub fn prime_input_device_cache(&self) {
-        self.refresh_input_device_cache_async(
-            InputDeviceCacheRefreshPolicy::Force,
-            InputDeviceCacheRefreshReason::StartupPrime,
-        );
-    }
-
-    pub fn kickoff_on_demand_prearm(&self, source: RecordingPrearmSource) {
-        if !matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
-            debug!(
-                source = source.as_str(),
-                event_code = "prearm_skipped",
-                "Pre-arm skipped because microphone mode is always-on"
-            );
-            return;
-        }
-
-        let prearm_token = self.next_prearm_owner_token.fetch_add(1, Ordering::SeqCst);
-        if !self.try_claim_prearm_owner(source, prearm_token) {
-            return;
-        }
-
         let manager = self.clone();
         std::thread::spawn(move || {
-            info!(
-                source = source.as_str(),
-                prearm_token = prearm_token,
-                event_code = "prearm_started",
-                "Starting on-demand microphone pre-arm"
-            );
-
-            let opened_stream_epoch = match manager.start_microphone_stream_with_context(
-                StreamOpenContext::Prearm {
-                    owner_token: prearm_token,
-                },
-            ) {
-                Ok(StreamStartOutcome::OpenedNow { stream_epoch }) => {
+            let start_time = Instant::now();
+            match list_input_devices() {
+                Ok(devices) => {
+                    let count = devices.len();
+                    manager.update_device_cache(devices);
                     info!(
-                        source = source.as_str(),
-                        prearm_token = prearm_token,
-                        stream_epoch = stream_epoch,
-                        event_code = "prearm_stream_ready",
-                        "On-demand pre-arm stream is ready"
+                        "[TIMING] Primed input device cache in {:?} ({} devices)",
+                        start_time.elapsed(),
+                        count
                     );
-                    Some(stream_epoch)
                 }
-                Ok(StreamStartOutcome::AlreadyOpen) => {
-                    debug!(
-                        source = source.as_str(),
-                        prearm_token = prearm_token,
-                        event_code = "prearm_cancelled",
-                        reason = "stream_already_open",
-                        "Pre-arm stream open skipped because microphone stream is already active"
-                    );
-                    manager.release_prearm_owner(source, prearm_token, "stream_already_open");
-                    return;
+                Err(e) => {
+                    debug!("Input device cache prime skipped: {}", e);
                 }
-                Ok(StreamStartOutcome::CancelledBeforeOpen) => {
-                    info!(
-                        source = source.as_str(),
-                        prearm_token = prearm_token,
-                        event_code = "prearm_cancelled",
-                        reason = "owner_lost_before_open",
-                        "On-demand pre-arm cancelled because ownership was lost before stream open"
-                    );
-                    manager.release_prearm_owner(source, prearm_token, "owner_lost_before_open");
-                    return;
-                }
-                Err(err) => {
-                    warn!(
-                        source = source.as_str(),
-                        prearm_token = prearm_token,
-                        error = err.to_string(),
-                        event_code = "prearm_cancelled",
-                        reason = "stream_open_failed",
-                        "On-demand pre-arm cancelled due to stream open failure"
-                    );
-                    manager.release_prearm_owner(source, prearm_token, "stream_open_failed");
-                    return;
-                }
-            };
-
-            std::thread::sleep(Self::PREARM_GRACE_TIMEOUT);
-
-            let mode = manager.mode.lock().unwrap().clone();
-            let is_recording = *manager.is_recording.lock().unwrap();
-            let is_open = *manager.is_open.lock().unwrap();
-            let state = manager.state.lock().unwrap().clone();
-            let active_stream_epoch = manager.active_stream_epoch.load(Ordering::SeqCst);
-
-            if should_auto_close_prearm_stream(
-                &mode,
-                &state,
-                is_recording,
-                is_open,
-                opened_stream_epoch.is_some(),
-                opened_stream_epoch,
-                active_stream_epoch,
-            ) {
-                manager.stop_microphone_stream();
-                info!(
-                    source = source.as_str(),
-                    prearm_token = prearm_token,
-                    opened_stream_epoch = opened_stream_epoch.unwrap_or_default(),
-                    active_stream_epoch = active_stream_epoch,
-                    timeout_ms = Self::PREARM_GRACE_TIMEOUT.as_millis(),
-                    event_code = "prearm_timeout_autoclose",
-                    "Closed pre-armed stream after grace timeout with no recording commit"
-                );
-            } else {
-                debug!(
-                    source = source.as_str(),
-                    prearm_token = prearm_token,
-                    opened_stream_epoch = opened_stream_epoch.unwrap_or_default(),
-                    active_stream_epoch = active_stream_epoch,
-                    timeout_ms = Self::PREARM_GRACE_TIMEOUT.as_millis(),
-                    state = format!("{state:?}"),
-                    is_recording = is_recording,
-                    is_open = is_open,
-                    opened_by_prearm = opened_stream_epoch.is_some(),
-                    event_code = "prearm_cancelled",
-                    reason = "recording_progressed_or_stream_not_open_or_not_owned",
-                    "Pre-arm auto-close skipped because recording progressed or stream state changed"
-                );
             }
-
-            manager.release_prearm_owner(source, prearm_token, "completed");
         });
     }
 
@@ -1344,8 +630,12 @@ impl AudioRecordingManager {
         settings: &AppSettings,
         devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>,
     ) -> Option<(cpal::Device, String)> {
-        // Check if we're in clamshell mode and have a clamshell microphone configured.
-        let use_clamshell_mic = Self::is_clamshell_selection_active(settings);
+        // Check if we're in clamshell mode and have a clamshell microphone configured
+        let use_clamshell_mic = if let Ok(is_clamshell) = clamshell::is_clamshell() {
+            is_clamshell && settings.clamshell_microphone.is_some()
+        } else {
+            false
+        };
 
         if use_clamshell_mic {
             let device_name = settings.clamshell_microphone.as_ref().unwrap();
@@ -1416,7 +706,13 @@ impl AudioRecordingManager {
     /// This is faster but won't return the default device if nothing is selected.
     fn get_selected_device_name_fast(&self) -> Option<String> {
         let settings = get_settings(&self.app_handle);
-        let use_clamshell_mic = Self::is_clamshell_selection_active(&settings);
+        
+        // Check clamshell mode first
+        let use_clamshell_mic = if let Ok(is_clamshell) = clamshell::is_clamshell() {
+            is_clamshell && settings.clamshell_microphone.is_some()
+        } else {
+            false
+        };
 
         if use_clamshell_mic {
             return settings.clamshell_microphone.clone();
@@ -1531,92 +827,113 @@ impl AudioRecordingManager {
         }
         
         info!("Pre-warming Bluetooth microphone in background");
-
-        let manager = self.clone();
+        
+        // Clone what we need for the background thread
+        let is_open = Arc::clone(&self.is_open);
+        let is_recording = Arc::clone(&self.is_recording);
+        let recorder = Arc::clone(&self.recorder);
+        let app_handle = self.app_handle.clone();
+        let did_mute = Arc::clone(&self.did_mute);
+        let current_device_name = Arc::clone(&self.current_device_name);
+        
         std::thread::spawn(move || {
+            // Open the microphone stream to trigger Bluetooth profile switch
             let start_time = Instant::now();
-
-            let opened_stream_epoch =
-                match manager.start_microphone_stream_with_context(StreamOpenContext::StartupPrewarm)
-            {
-                Ok(StreamStartOutcome::OpenedNow { stream_epoch }) => {
-                    info!(
-                        duration_ms = start_time.elapsed().as_millis(),
-                        stream_epoch = stream_epoch,
-                        event_code = "prewarm_stream_ready",
-                        "Pre-warm opened microphone stream"
-                    );
-                    Some(stream_epoch)
-                }
-                Ok(StreamStartOutcome::AlreadyOpen) => {
-                    debug!(
-                        event_code = "prewarm_cancelled",
-                        reason = "stream_already_open",
-                        "Pre-warm skipped because microphone stream is already active"
-                    );
-                    None
-                }
-                Ok(StreamStartOutcome::CancelledBeforeOpen) => {
-                    debug!(
-                        event_code = "prewarm_cancelled",
-                        reason = "cancelled_before_open",
-                        "Pre-warm stream open cancelled before recorder open"
-                    );
-                    None
-                }
+            
+            // Get VAD path for recorder initialization
+            let vad_path = match app_handle.path().resolve(
+                "resources/models/silero_vad_v4.onnx",
+                tauri::path::BaseDirectory::Resource,
+            ) {
+                Ok(path) => path,
                 Err(e) => {
-                    debug!(
-                        error = e.to_string(),
-                        event_code = "prewarm_cancelled",
-                        reason = "stream_open_failed",
-                        "Pre-warm failed to open stream"
-                    );
-                    None
+                    debug!("Pre-warm failed to resolve VAD path: {}", e);
+                    return;
                 }
             };
-
-            if opened_stream_epoch.is_none() {
-                return;
+            
+            // Initialize recorder if needed
+            {
+                let mut recorder_guard = recorder.lock().unwrap();
+                if recorder_guard.is_none() {
+                    match create_audio_recorder(vad_path.to_str().unwrap(), &app_handle) {
+                        Ok(rec) => *recorder_guard = Some(rec),
+                        Err(e) => {
+                            debug!("Pre-warm failed to create recorder: {}", e);
+                            return;
+                        }
+                    }
+                }
             }
+            
+            // Open the stream (this triggers Bluetooth profile switch)
+            {
+                let settings = get_settings(&app_handle);
+                let mut recorder_guard = recorder.lock().unwrap();
+                if let Some(rec) = recorder_guard.as_mut() {
+                    // Get the device to use by name lookup
+                    let selected_target: Option<(cpal::Device, String)> = {
+                        // Get effective device considering clamshell mode
+                        let use_clamshell = if let Ok(is_clamshell) = clamshell::is_clamshell() {
+                            is_clamshell && settings.clamshell_microphone.is_some()
+                        } else {
+                            false
+                        };
+                        
+                        let device_name = if use_clamshell {
+                            settings.clamshell_microphone.as_ref()
+                        } else {
+                            settings.selected_microphone.as_ref()
+                        };
+                        
+                        // Find device by name from available devices
+                        device_name.and_then(|name| {
+                            match list_input_devices() {
+                                Ok(devices) => devices.into_iter()
+                                    .find(|d| &d.name == name)
+                                    .map(|d| (d.device, d.name)),
+                                Err(_) => None
+                            }
+                        })
+                    };
 
-            std::thread::sleep(Self::BLUETOOTH_PREWARM_GRACE_TIMEOUT);
+                    let selected_device = selected_target.as_ref().map(|(device, _)| device.clone());
 
-            let mode = manager.mode.lock().unwrap().clone();
-            let state = manager.state.lock().unwrap().clone();
-            let is_recording = *manager.is_recording.lock().unwrap();
-            let is_open = *manager.is_open.lock().unwrap();
-            let active_stream_epoch = manager.active_stream_epoch.load(Ordering::SeqCst);
+                    if let Err(e) = rec.open(selected_device) {
+                        debug!("Pre-warm failed to open stream: {}", e);
+                        return;
+                    }
 
-            if should_auto_close_prewarm_stream(
-                &mode,
-                &state,
-                is_recording,
-                is_open,
-                opened_stream_epoch.is_some(),
-                opened_stream_epoch,
-                active_stream_epoch,
-            ) {
-                manager.stop_microphone_stream();
-                info!(
-                    opened_stream_epoch = opened_stream_epoch.unwrap_or_default(),
-                    active_stream_epoch = active_stream_epoch,
-                    timeout_ms = Self::BLUETOOTH_PREWARM_GRACE_TIMEOUT.as_millis(),
-                    event_code = "prewarm_timeout_autoclose",
-                    "Pre-warm complete: Bluetooth microphone ready"
-                );
+                    // Capture active stream identity for downstream Bluetooth warmup decisions.
+                    let active_name = selected_target
+                        .as_ref()
+                        .map(|(_, name)| name.clone())
+                        .unwrap_or_else(|| "Default".to_string());
+                    *current_device_name.lock().unwrap() = Some(active_name);
+                }
+            }
+            
+            *is_open.lock().unwrap() = true;
+            info!("Pre-warm: Bluetooth profile switch triggered in {:?}", start_time.elapsed());
+            
+            // Keep the stream open briefly to ensure profile switch completes
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            
+            // Close the stream (unless user started recording in the meantime)
+            if !*is_recording.lock().unwrap() {
+                // Safely close the stream
+                if let Some(rec) = recorder.lock().unwrap().as_mut() {
+                    let _ = rec.close();
+                }
+                *is_open.lock().unwrap() = false;
+                *current_device_name.lock().unwrap() = None;
+                
+                // Reset mute flag
+                *did_mute.lock().unwrap() = false;
+                
+                info!("Pre-warm complete: Bluetooth microphone ready");
             } else {
-                debug!(
-                    opened_stream_epoch = opened_stream_epoch.unwrap_or_default(),
-                    active_stream_epoch = active_stream_epoch,
-                    timeout_ms = Self::BLUETOOTH_PREWARM_GRACE_TIMEOUT.as_millis(),
-                    state = format!("{state:?}"),
-                    is_recording = is_recording,
-                    is_open = is_open,
-                    opened_by_prewarm = opened_stream_epoch.is_some(),
-                    event_code = "prewarm_cancelled",
-                    reason = "recording_progressed_or_stream_not_open_or_not_owned",
-                    "Pre-warm auto-close skipped because recording progressed or stream state changed"
-                );
+                debug!("Pre-warm: User started recording, keeping stream open");
             }
         });
     }
@@ -1713,15 +1030,11 @@ impl AudioRecordingManager {
         devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>,
         allow_persist_fallback: bool,
     ) -> (Option<cpal::Device>, String) {
-        let clamshell_selection_active = Self::is_clamshell_selection_active(settings);
-        let active_selection = active_selection_for_cache_policy(
-            settings.selected_microphone.as_deref(),
-            settings.clamshell_microphone.as_deref(),
-            clamshell_selection_active,
-        );
         let selected_device = self.get_effective_device_from_list(settings, devices.clone());
-        let has_explicit_device = is_explicit_microphone_selection(active_selection);
-        let allow_selected_microphone_persistence = allow_persist_fallback && !clamshell_selection_active;
+        let has_explicit_device = settings
+            .selected_microphone
+            .as_ref()
+            .is_some_and(|name| !name.eq_ignore_ascii_case("default"));
 
         if selected_device.is_none() && has_explicit_device {
             // Selected device not found in device list - it's disconnected
@@ -1736,7 +1049,7 @@ impl AudioRecordingManager {
             {
                 info!("Switching to fallback device: {}", fallback_name);
 
-                if allow_selected_microphone_persistence {
+                if allow_persist_fallback {
                     self.persist_auto_switched_microphone(target_device_name, &fallback_name);
                 } else {
                     info!(
@@ -1779,14 +1092,7 @@ impl AudioRecordingManager {
         }
     }
 
-    pub fn start_microphone_stream(&self) -> Result<StreamStartOutcome, anyhow::Error> {
-        self.start_microphone_stream_with_context(StreamOpenContext::UserTriggered)
-    }
-
-    fn start_microphone_stream_with_context(
-        &self,
-        context: StreamOpenContext,
-    ) -> Result<StreamStartOutcome, anyhow::Error> {
+    pub fn start_microphone_stream(&self) -> Result<(), anyhow::Error> {
         // ══════════════════════════════════════════════════════════════════════
         // PHASE 1: Quick check if already open (minimal lock, fast path)
         // ══════════════════════════════════════════════════════════════════════
@@ -1794,145 +1100,49 @@ impl AudioRecordingManager {
             let open_flag = self.is_open.lock().unwrap();
             if *open_flag {
                 debug!("Microphone stream already active");
-                return Ok(StreamStartOutcome::AlreadyOpen);
+                return Ok(());
             }
         } // Lock released immediately
-
-        if let Some(outcome) = self.classify_prearm_open_guard_outcome(context) {
-            if let StreamOpenContext::Prearm { owner_token } = context {
-                debug!(
-                    owner_token = owner_token,
-                    active_owner_token = self.prearm_owner_token.load(Ordering::SeqCst),
-                    event_code = "prearm_cancelled",
-                    reason = "owner_lost_before_open",
-                    "Skipping pre-arm stream open before enumeration because ownership was lost"
-                );
-            }
-            return Ok(outcome);
-        }
 
         let start_time = Instant::now();
         info!("[TIMING] start_microphone_stream starting...");
 
-        let enumerate_devices = |refresh_reason: &str,
-                                 route_change_generation_to_apply: Option<u64>|
-         -> Result<Vec<CpalDeviceInfo>, anyhow::Error> {
-            let enum_start = Instant::now();
-            let enumerated = list_input_devices()
-                .map_err(|e| anyhow::anyhow!("Failed to enumerate devices: {}", e))?;
-            info!(
-                reason = refresh_reason,
-                duration_ms = enum_start.elapsed().as_millis(),
-                device_count = enumerated.len(),
-                event_code = "cache_refresh_completed",
-                "[TIMING] Device enumeration completed and cache refreshed"
-            );
-            self.update_device_cache(enumerated.clone());
-            if let Some(route_change_generation) = route_change_generation_to_apply {
-                self.note_route_change_generation_applied(route_change_generation);
-            }
-            Ok(enumerated)
-        };
-
-        // Get settings early because cache-bypass policy depends on active explicit/default selection.
-        let settings = get_settings(&self.app_handle);
-        let (clamshell_selection_active, active_selected_microphone) =
-            Self::active_selected_microphone_for_cache_policy(&settings);
-        let active_target_device_name = active_selected_microphone.unwrap_or("Default");
-        let monitor_active = crate::audio_device_info::is_input_route_change_monitor_active();
-        let route_change_generation = crate::audio_device_info::input_route_change_generation();
-        let last_applied_route_change_generation = self
-            .last_applied_route_change_generation
-            .load(Ordering::SeqCst);
-        let has_unapplied_route_change = has_unapplied_route_change_generation(
-            route_change_generation,
-            last_applied_route_change_generation,
-        );
-        let force_fresh_topology = should_force_fresh_enumeration_for_start(
-            active_selected_microphone,
-            monitor_active,
-            has_unapplied_route_change,
-            cfg!(target_os = "macos"),
-        );
-
-        if has_unapplied_route_change {
-            self.mark_input_device_cache_dirty(InputDeviceCacheRefreshReason::SystemRouteChanged);
-            info!(
-                route_change_generation = route_change_generation,
-                last_applied_generation = last_applied_route_change_generation,
-                monitor_active = monitor_active,
-                event_code = "cache_system_route_changed",
-                "Detected system input route change(s); forcing fresh topology for this start"
-            );
-        }
-
         // ══════════════════════════════════════════════════════════════════════
         // PHASE 2: Device enumeration OUTSIDE of locks (this is the slow part)
         // ══════════════════════════════════════════════════════════════════════
-        let (mut devices, mut used_cached_devices) = if force_fresh_topology {
-            if has_unapplied_route_change {
-                (
-                    enumerate_devices(
-                        "system_route_changed_refresh",
-                        Some(route_change_generation),
-                    )?,
-                    false,
-                )
-            } else {
-                debug!(
-                    event_code = "cache_default_refresh_no_monitor",
-                    "Bypassing cached topology for default microphone because route monitor is unavailable"
+        let enum_start = Instant::now();
+        let (mut devices, mut used_cached_devices) =
+            if let Some((cache_age, cached_devices)) = self.get_fresh_device_cache() {
+                info!(
+                    "[TIMING] Device enumeration skipped via cache (age: {:?}, {} devices)",
+                    cache_age,
+                    cached_devices.len()
                 );
-                (enumerate_devices("default_route_refresh_no_monitor", None)?, false)
-            }
-        } else {
-            match self.inspect_input_device_cache(Instant::now()) {
-                InputDeviceCacheLookup::Hit { age, devices } => {
-                    info!(
-                        age_ms = age.as_millis(),
-                        device_count = devices.len(),
-                        event_code = "cache_hit",
-                        "[TIMING] Device enumeration skipped via fresh cache"
-                    );
-                    (devices, true)
-                }
-                InputDeviceCacheLookup::Dirty { age } => {
-                    info!(
-                        age_ms = age.as_millis(),
-                        event_code = "cache_dirty",
-                        "[TIMING] Cached device topology is dirty, refreshing before stream start"
-                    );
-                    (enumerate_devices("cache_dirty_refresh", None)?, false)
-                }
-                InputDeviceCacheLookup::Stale { age } => {
-                    info!(
-                        age_ms = age.as_millis(),
-                        ttl_ms = Self::DEVICE_CACHE_TTL.as_millis(),
-                        event_code = "cache_stale",
-                        "[TIMING] Cached device topology is stale, refreshing before stream start"
-                    );
-                    (enumerate_devices("cache_stale_refresh", None)?, false)
-                }
-                InputDeviceCacheLookup::Empty => {
-                    debug!(
-                        event_code = "cache_miss",
-                        "[TIMING] Device cache empty, enumerating input devices"
-                    );
-                    (enumerate_devices("cache_miss_refresh", None)?, false)
-                }
-            }
-        };
+                (cached_devices, true)
+            } else {
+                let enumerated = list_input_devices()
+                    .map_err(|e| anyhow::anyhow!("Failed to enumerate devices: {}", e))?;
+                info!(
+                    "[TIMING] Device enumeration completed in {:?} ({} devices)",
+                    enum_start.elapsed(),
+                    enumerated.len()
+                );
+                self.update_device_cache(enumerated.clone());
+                (enumerated, false)
+            };
 
         // Get settings and find the target device (still outside locks)
+        let settings = get_settings(&self.app_handle);
         // Determine failed device name for potential fallback logging
-        let target_device_name = active_target_device_name.to_string();
-        debug!(
-            target_device = target_device_name,
-            active_selection = active_target_device_name,
-            clamshell_selection_active = clamshell_selection_active,
-            "Target device for stream start"
-        );
-        let has_explicit_device = is_explicit_microphone_selection(active_selected_microphone);
+        let target_device_name = settings
+            .selected_microphone
+            .clone()
+            .unwrap_or_else(|| "Default".to_string());
+        debug!("Target device: {}", target_device_name);
+        let has_explicit_device = settings
+            .selected_microphone
+            .as_ref()
+            .is_some_and(|name| !name.eq_ignore_ascii_case("default"));
 
         // Never trust cached topology when an explicit device appears missing.
         // Refresh before making fallback/persistence decisions.
@@ -1942,20 +1152,28 @@ impl AudioRecordingManager {
                 .get_effective_device_from_list(&settings, devices.clone())
                 .is_none()
         {
+            let refresh_start = Instant::now();
             info!(
                 "Selected device '{}' missing in cached snapshot, refreshing topology before fallback",
                 target_device_name
             );
-            let refreshed = enumerate_devices("cached_selected_device_miss", None)?;
+            let refreshed = list_input_devices()
+                .map_err(|e| anyhow::anyhow!("Failed to refresh devices: {}", e))?;
+            info!(
+                "[TIMING] Device enumeration refreshed in {:?} ({} devices) after cached selected-device miss",
+                refresh_start.elapsed(),
+                refreshed.len()
+            );
+            self.update_device_cache(refreshed.clone());
             devices = refreshed;
             used_cached_devices = false;
         }
 
-        let (mut device_to_open, mut active_device_name) = self.resolve_device_open_target(
+        let (device_to_open, mut active_device_name) = self.resolve_device_open_target(
             &settings,
-            active_target_device_name,
+            &target_device_name,
             devices.clone(),
-            should_persist_fallback_selection(context, used_cached_devices),
+            !used_cached_devices,
         );
 
         // ══════════════════════════════════════════════════════════════════════
@@ -1970,128 +1188,88 @@ impl AudioRecordingManager {
             )
             .map_err(|e| anyhow::anyhow!("Failed to resolve VAD path: {}", e))?;
 
-        enum StreamOpenAttempt {
-            Opened(u64),
-            AlreadyOpen,
-            CancelledBeforeOpen,
-            RetryWithFreshTopology(String),
-            Failed(String),
+        // ══════════════════════════════════════════════════════════════════════
+        // PHASE 4: Acquire locks and perform quick state changes
+        // ══════════════════════════════════════════════════════════════════════
+        let lock_start = Instant::now();
+        let mut open_flag = self.is_open.lock().unwrap();
+        
+        // Double-check another thread didn't open while we were enumerating
+        if *open_flag {
+            info!("[TIMING] Lock check: stream opened by another thread during enumeration");
+            return Ok(());
         }
+        
+        // Reset mute flag
+        let mut did_mute_guard = self.did_mute.lock().unwrap();
+        *did_mute_guard = false;
+        drop(did_mute_guard);
 
-        let mut should_retry_with_fresh_topology = used_cached_devices;
-        loop {
-            // ══════════════════════════════════════════════════════════════════
-            // PHASE 4: Serialize stream open and keep lock scope short.
-            // Avoid holding stream lock during device enumeration.
-            // ══════════════════════════════════════════════════════════════════
-            let attempt = {
-                let lock_start = Instant::now();
-                let _stream_start_guard = self.stream_start_lock.lock().unwrap();
+        let mut recorder_opt = self.recorder.lock().unwrap();
 
-                // Double-check another thread didn't open while we were enumerating.
-                if *self.is_open.lock().unwrap() {
-                    info!("[TIMING] Lock check: stream opened by another thread during enumeration");
-                    StreamOpenAttempt::AlreadyOpen
-                // Re-check pre-arm ownership under stream_start_lock to close the race
-                // where cancellation happens after the early gate but before rec.open().
-                } else if !self.prearm_open_allowed(context) {
-                    if let StreamOpenContext::Prearm { owner_token } = context {
-                        debug!(
-                            owner_token = owner_token,
-                            active_owner_token = self.prearm_owner_token.load(Ordering::SeqCst),
-                            event_code = "prearm_cancelled",
-                            reason = "owner_lost_before_open",
-                            "Skipping pre-arm stream open under stream lock because ownership was lost"
-                        );
-                    }
-                    StreamOpenAttempt::CancelledBeforeOpen
-                } else {
-                    let mut did_mute_guard = self.did_mute.lock().unwrap();
-                    *did_mute_guard = false;
-                    drop(did_mute_guard);
-
-                    let open_result: Result<(), String> = 'open_attempt: {
-                        let mut recorder_opt = self.recorder.lock().unwrap();
-                        if recorder_opt.is_none() {
-                            match create_audio_recorder(vad_path.to_str().unwrap(), &self.app_handle) {
-                                Ok(rec) => *recorder_opt = Some(rec),
-                                Err(err) => break 'open_attempt Err(err.to_string()),
-                            }
-                        }
-
-                        if let Some(rec) = recorder_opt.as_mut() {
-                            rec.open(device_to_open.clone()).map_err(|e| e.to_string())
-                        } else {
-                            Err("Audio recorder unavailable after initialization".to_string())
-                        }
-                    };
-
-                    match open_result {
-                        Ok(()) => {
-                            let stream_epoch = self.next_stream_epoch.fetch_add(1, Ordering::SeqCst);
-                            self.active_stream_epoch
-                                .store(stream_epoch, Ordering::SeqCst);
-                            *self.current_device_name.lock().unwrap() = Some(active_device_name.clone());
-                            *self.is_open.lock().unwrap() = true;
-                            info!(
-                                stream_epoch = stream_epoch,
-                                "[TIMING] Lock held for {:?}, total init: {:?} (active: {})",
-                                lock_start.elapsed(),
-                                start_time.elapsed(),
-                                active_device_name
-                            );
-                            StreamOpenAttempt::Opened(stream_epoch)
-                        }
-                        Err(open_error) => {
-                            if should_retry_with_fresh_topology {
-                                StreamOpenAttempt::RetryWithFreshTopology(open_error)
-                            } else {
-                                StreamOpenAttempt::Failed(open_error)
-                            }
-                        }
-                    }
-                }
-            };
-
-            match attempt {
-                StreamOpenAttempt::Opened(stream_epoch) => {
-                    return Ok(StreamStartOutcome::OpenedNow { stream_epoch });
-                }
-                StreamOpenAttempt::AlreadyOpen => return Ok(StreamStartOutcome::AlreadyOpen),
-                StreamOpenAttempt::CancelledBeforeOpen => {
-                    return Ok(StreamStartOutcome::CancelledBeforeOpen);
-                }
-                StreamOpenAttempt::RetryWithFreshTopology(initial_error) => {
+        if recorder_opt.is_none() {
+            *recorder_opt = Some(create_audio_recorder(
+                vad_path.to_str().unwrap(),
+                &self.app_handle,
+            )?);
+        }
+        if let Some(rec) = recorder_opt.as_mut() {
+            // First attempt to open with the target device (already resolved via fallback if needed)
+            if let Err(e) = rec.open(device_to_open.clone()) {
+                if used_cached_devices {
                     warn!(
                         "Failed to open recorder from cached topology: {}. Retrying once with fresh enumeration",
-                        initial_error
+                        e
                     );
-                    let refreshed = enumerate_devices("open_failure_retry", None).map_err(|refresh_err| {
+                    let refresh_start = Instant::now();
+                    let refreshed = list_input_devices().map_err(|refresh_err| {
                         anyhow::anyhow!(
                             "Failed to refresh devices after cached open failure (initial error: {}, refresh error: {})",
-                            initial_error,
+                            e,
                             refresh_err
                         )
                     })?;
+                    info!(
+                        "[TIMING] Device enumeration refreshed in {:?} ({} devices) after open failure",
+                        refresh_start.elapsed(),
+                        refreshed.len()
+                    );
+                    self.update_device_cache(refreshed.clone());
 
                     let (retry_device_to_open, retry_active_device_name) =
                         self.resolve_device_open_target(
                             &settings,
                             &target_device_name,
                             refreshed,
-                            matches!(context, StreamOpenContext::UserTriggered),
+                            true,
                         );
 
-                    device_to_open = retry_device_to_open;
+                    if let Err(retry_e) = rec.open(retry_device_to_open) {
+                        error!(
+                            "Failed to open recorder after fresh retry (initial error: {}, retry error: {})",
+                            e, retry_e
+                        );
+                        return Err(anyhow::anyhow!("Failed to open microphone: {}", retry_e));
+                    }
                     active_device_name = retry_active_device_name;
-                    should_retry_with_fresh_topology = false;
-                }
-                StreamOpenAttempt::Failed(open_error) => {
-                    error!("Failed to open recorder: {}", open_error);
-                    return Err(anyhow::anyhow!("Failed to open microphone: {}", open_error));
+                } else {
+                    error!("Failed to open recorder: {}", e);
+                    return Err(anyhow::anyhow!("Failed to open microphone: {}", e));
                 }
             }
+
+            // Successfully opened - track the active device
+            *self.current_device_name.lock().unwrap() = Some(active_device_name.clone());
         }
+
+        *open_flag = true;
+        info!(
+            "[TIMING] Lock held for {:?}, total init: {:?} (active: {})",
+            lock_start.elapsed(),
+            start_time.elapsed(),
+            self.current_device_name.lock().unwrap().clone().unwrap_or("Default".to_string())
+        );
+        Ok(())
     }
     
     /// Find a fallback device from a pre-fetched device list.
@@ -2162,12 +1340,8 @@ impl AudioRecordingManager {
     }
 
     pub fn stop_microphone_stream(&self) {
-        let _stream_start_guard = self.stream_start_lock.lock().unwrap();
-
         let mut open_flag = self.is_open.lock().unwrap();
         if !*open_flag {
-            self.prearm_owner_token.store(0, Ordering::SeqCst);
-            self.active_stream_epoch.store(0, Ordering::SeqCst);
             return;
         }
 
@@ -2188,8 +1362,6 @@ impl AudioRecordingManager {
 
         *open_flag = false;
         *self.current_device_name.lock().unwrap() = None;
-        self.prearm_owner_token.store(0, Ordering::SeqCst);
-        self.active_stream_epoch.store(0, Ordering::SeqCst);
         debug!("Microphone stream stopped");
     }
 
@@ -2208,7 +1380,7 @@ impl AudioRecordingManager {
             }
             (MicrophoneMode::OnDemand, MicrophoneMode::AlwaysOn) => {
                 drop(mode_guard);
-                let _ = self.start_microphone_stream()?;
+                self.start_microphone_stream()?;
             }
             _ => {}
         }
@@ -2692,12 +1864,6 @@ impl AudioRecordingManager {
     }
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {
-        self.mark_input_device_cache_dirty(InputDeviceCacheRefreshReason::SelectedDeviceUpdate);
-        self.refresh_input_device_cache_async(
-            InputDeviceCacheRefreshPolicy::Force,
-            InputDeviceCacheRefreshReason::SelectedDeviceUpdate,
-        );
-
         // Reset cache to ensure we fetch fresh config for the new device
         if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
             rec.reset_cache();
@@ -2709,7 +1875,7 @@ impl AudioRecordingManager {
         // If currently open, restart the microphone stream to use the new device
         if *self.is_open.lock().unwrap() {
             self.stop_microphone_stream();
-            let _ = self.start_microphone_stream()?;
+            self.start_microphone_stream()?;
         }
         Ok(())
     }
@@ -2847,24 +2013,14 @@ impl AudioRecordingManager {
 #[cfg(test)]
 mod tests {
     use super::{
-        active_selection_for_cache_policy,
-        begin_prepare_cancellation, build_stopped_recording, classify_cache_lookup,
-        classify_cache_refresh_decision, classify_start_commit_mismatch,
-        classify_prearm_open_guard_outcome, classify_refresh_followup,
+        begin_prepare_cancellation, build_stopped_recording, classify_start_commit_mismatch,
         classify_start_failure_cleanup, finalize_prepare_cancellation, map_recorder_start_error,
-        has_unapplied_route_change_generation, merge_applied_route_change_generation,
-        is_prearm_owner_active, prearm_open_allowed_for_context,
-        should_force_fresh_enumeration_for_start, should_persist_fallback_selection,
-        should_auto_close_prearm_stream, should_auto_close_prewarm_stream,
-        should_stop_stream_for_start_cleanup,
-        InputDeviceCacheEntry, InputDeviceCacheLookup, InputDeviceCacheRefreshDecision,
-        InputDeviceCacheRefreshPolicy, InputDeviceCacheState, MicrophoneMode, PrepareToken,
-        RecordingStartFailure,
-        RecordingState, StateMismatchKind, StreamOpenContext, StreamStartOutcome,
+        should_stop_stream_for_start_cleanup, MicrophoneMode, PrepareToken, RecordingStartFailure, RecordingState,
+        StateMismatchKind,
         StartCommitMismatchOwner, StartFailureCleanupAction, WHISPER_SAMPLE_RATE,
     };
     use crate::audio_toolkit::audio::RecorderStartError;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     #[test]
     fn short_clip_padding_does_not_change_duration_fields() {
@@ -2883,473 +2039,6 @@ mod tests {
 
         assert_eq!(stopped.speech_duration_ms, 400);
         assert_eq!(stopped.recording_duration_ms, 400);
-    }
-
-    #[test]
-    fn cache_lookup_reports_hit_when_fresh_and_clean() {
-        let now = Instant::now();
-        let entry = InputDeviceCacheEntry {
-            cached_at: now - Duration::from_secs(30),
-            devices: vec![],
-            dirty: false,
-        };
-
-        let lookup = classify_cache_lookup(Some(&entry), now, Duration::from_secs(60 * 10));
-        match lookup {
-            InputDeviceCacheLookup::Hit { age, devices } => {
-                assert!(age <= Duration::from_secs(31));
-                assert!(devices.is_empty());
-            }
-            _ => panic!("expected cache hit lookup"),
-        }
-    }
-
-    #[test]
-    fn cache_lookup_reports_dirty_before_ttl_expiry() {
-        let now = Instant::now();
-        let entry = InputDeviceCacheEntry {
-            cached_at: now - Duration::from_secs(30),
-            devices: vec![],
-            dirty: true,
-        };
-
-        let lookup = classify_cache_lookup(Some(&entry), now, Duration::from_secs(60 * 10));
-        assert!(matches!(lookup, InputDeviceCacheLookup::Dirty { .. }));
-    }
-
-    #[test]
-    fn cache_refresh_decision_skips_clean_cache_for_if_stale_or_dirty_policy() {
-        let now = Instant::now();
-        let entry = InputDeviceCacheEntry {
-            cached_at: now - Duration::from_secs(15),
-            devices: vec![],
-            dirty: false,
-        };
-
-        let decision = classify_cache_refresh_decision(
-            InputDeviceCacheRefreshPolicy::IfStaleOrDirty,
-            Some(&entry),
-            false,
-            None,
-            now,
-            Duration::from_secs(60 * 10),
-            Duration::from_secs(2),
-        );
-        assert_eq!(decision, InputDeviceCacheRefreshDecision::SkipClean);
-    }
-
-    #[test]
-    fn cache_refresh_decision_runs_for_stale_or_dirty_entries() {
-        let now = Instant::now();
-        let stale_entry = InputDeviceCacheEntry {
-            cached_at: now - Duration::from_secs(60 * 11),
-            devices: vec![],
-            dirty: false,
-        };
-        let dirty_entry = InputDeviceCacheEntry {
-            cached_at: now - Duration::from_secs(1),
-            devices: vec![],
-            dirty: true,
-        };
-
-        let stale_decision = classify_cache_refresh_decision(
-            InputDeviceCacheRefreshPolicy::IfStaleOrDirty,
-            Some(&stale_entry),
-            false,
-            None,
-            now,
-            Duration::from_secs(60 * 10),
-            Duration::from_secs(2),
-        );
-        let dirty_decision = classify_cache_refresh_decision(
-            InputDeviceCacheRefreshPolicy::IfStaleOrDirty,
-            Some(&dirty_entry),
-            false,
-            None,
-            now,
-            Duration::from_secs(60 * 10),
-            Duration::from_secs(2),
-        );
-
-        assert_eq!(stale_decision, InputDeviceCacheRefreshDecision::Run);
-        assert_eq!(dirty_decision, InputDeviceCacheRefreshDecision::Run);
-    }
-
-    #[test]
-    fn cache_refresh_decision_queues_force_when_refresh_inflight() {
-        let now = Instant::now();
-        let clean_entry = InputDeviceCacheEntry {
-            cached_at: now - Duration::from_secs(60 * 11),
-            devices: vec![],
-            dirty: false,
-        };
-
-        let inflight = classify_cache_refresh_decision(
-            InputDeviceCacheRefreshPolicy::Force,
-            Some(&clean_entry),
-            true,
-            None,
-            now,
-            Duration::from_secs(60 * 10),
-            Duration::from_secs(2),
-        );
-
-        assert_eq!(inflight, InputDeviceCacheRefreshDecision::QueueForceWhileInFlight);
-    }
-
-    #[test]
-    fn cache_refresh_decision_force_bypasses_throttle_when_idle() {
-        let now = Instant::now();
-        let clean_entry = InputDeviceCacheEntry {
-            cached_at: now - Duration::from_secs(60 * 11),
-            devices: vec![],
-            dirty: false,
-        };
-
-        let throttled = classify_cache_refresh_decision(
-            InputDeviceCacheRefreshPolicy::Force,
-            Some(&clean_entry),
-            false,
-            Some(now - Duration::from_millis(500)),
-            now,
-            Duration::from_secs(60 * 10),
-            Duration::from_secs(2),
-        );
-
-        assert_eq!(throttled, InputDeviceCacheRefreshDecision::Run);
-    }
-
-    #[test]
-    fn cache_refresh_decision_if_stale_or_dirty_still_respects_throttle() {
-        let now = Instant::now();
-        let stale_entry = InputDeviceCacheEntry {
-            cached_at: now - Duration::from_secs(60 * 11),
-            devices: vec![],
-            dirty: false,
-        };
-
-        let throttled = classify_cache_refresh_decision(
-            InputDeviceCacheRefreshPolicy::IfStaleOrDirty,
-            Some(&stale_entry),
-            false,
-            Some(now - Duration::from_millis(500)),
-            now,
-            Duration::from_secs(60 * 10),
-            Duration::from_secs(2),
-        );
-
-        assert_eq!(throttled, InputDeviceCacheRefreshDecision::SkipThrottle);
-    }
-
-    #[test]
-    fn refresh_followup_queue_clears_only_after_followup_cycle() {
-        let now = Instant::now();
-        let mut state = InputDeviceCacheState {
-            entry: None,
-            refresh_inflight: true,
-            pending_force_refresh: true,
-            last_refresh_requested_at: None,
-        };
-
-        let first_cycle_followup = classify_refresh_followup(&mut state, now);
-        assert!(first_cycle_followup);
-        assert!(state.refresh_inflight);
-        assert!(!state.pending_force_refresh);
-        assert_eq!(state.last_refresh_requested_at, Some(now));
-
-        let second_cycle_followup =
-            classify_refresh_followup(&mut state, now + Duration::from_millis(1));
-        assert!(!second_cycle_followup);
-        assert!(!state.refresh_inflight);
-        assert!(!state.pending_force_refresh);
-    }
-
-    #[test]
-    fn start_prefers_fresh_enumeration_on_route_change_or_default_without_monitor() {
-        assert!(should_force_fresh_enumeration_for_start(
-            Some("default"),
-            true,
-            true,
-            false
-        ));
-        assert!(should_force_fresh_enumeration_for_start(
-            Some("default"),
-            false,
-            false,
-            true
-        ));
-        assert!(!should_force_fresh_enumeration_for_start(
-            Some("default"),
-            false,
-            false,
-            false
-        ));
-        assert!(!should_force_fresh_enumeration_for_start(
-            Some("Built-in Microphone"),
-            false,
-            false,
-            true
-        ));
-        assert!(!should_force_fresh_enumeration_for_start(
-            None,
-            true,
-            false,
-            true
-        ));
-    }
-
-    #[test]
-    fn active_selection_prefers_clamshell_when_active() {
-        assert_eq!(
-            active_selection_for_cache_policy(
-                Some("Primary USB Mic"),
-                Some("Clamshell USB Mic"),
-                true
-            ),
-            Some("Clamshell USB Mic")
-        );
-        assert_eq!(
-            active_selection_for_cache_policy(
-                Some("Primary USB Mic"),
-                Some("Clamshell USB Mic"),
-                false
-            ),
-            Some("Primary USB Mic")
-        );
-    }
-
-    #[test]
-    fn explicit_clamshell_selection_skips_default_only_force_refresh_rule() {
-        let selection = active_selection_for_cache_policy(
-            Some("default"),
-            Some("Clamshell USB Mic"),
-            true,
-        );
-        assert!(!should_force_fresh_enumeration_for_start(
-            selection,
-            false,
-            false,
-            true
-        ));
-    }
-
-    #[test]
-    fn route_change_generation_detection_only_marks_newer_generations_as_unapplied() {
-        assert!(has_unapplied_route_change_generation(5, 4));
-        assert!(!has_unapplied_route_change_generation(4, 4));
-        assert!(!has_unapplied_route_change_generation(3, 4));
-    }
-
-    #[test]
-    fn route_change_generation_merge_never_regresses_applied_generation() {
-        assert_eq!(merge_applied_route_change_generation(7, 3), 7);
-        assert_eq!(merge_applied_route_change_generation(7, 7), 7);
-        assert_eq!(merge_applied_route_change_generation(7, 8), 8);
-    }
-
-    #[test]
-    fn default_start_without_monitor_forces_refresh_even_without_route_change() {
-        assert!(should_force_fresh_enumeration_for_start(
-            Some("default"),
-            false,
-            false,
-            true
-        ));
-        assert!(should_force_fresh_enumeration_for_start(
-            None,
-            false,
-            false,
-            true
-        ));
-    }
-
-    #[test]
-    fn default_start_without_monitor_uses_cache_when_policy_disabled() {
-        assert!(!should_force_fresh_enumeration_for_start(
-            Some("default"),
-            false,
-            false,
-            false
-        ));
-        assert!(!should_force_fresh_enumeration_for_start(
-            None,
-            false,
-            false,
-            false
-        ));
-    }
-
-    #[test]
-    fn fallback_persistence_is_blocked_for_startup_prewarm() {
-        assert!(should_persist_fallback_selection(
-            StreamOpenContext::UserTriggered,
-            false
-        ));
-        assert!(!should_persist_fallback_selection(
-            StreamOpenContext::UserTriggered,
-            true
-        ));
-        assert!(!should_persist_fallback_selection(
-            StreamOpenContext::StartupPrewarm,
-            false
-        ));
-    }
-
-    #[test]
-    fn prearm_owner_activity_requires_exact_nonzero_token() {
-        assert!(is_prearm_owner_active(9, 9));
-        assert!(!is_prearm_owner_active(0, 9));
-        assert!(!is_prearm_owner_active(9, 0));
-        assert!(!is_prearm_owner_active(9, 7));
-    }
-
-    #[test]
-    fn prearm_open_allowed_requires_matching_active_owner_token() {
-        let context = StreamOpenContext::Prearm { owner_token: 42 };
-        assert!(prearm_open_allowed_for_context(context, 42));
-        assert!(!prearm_open_allowed_for_context(context, 0));
-        assert!(!prearm_open_allowed_for_context(context, 41));
-    }
-
-    #[test]
-    fn non_prearm_contexts_bypass_prearm_owner_gate() {
-        assert!(prearm_open_allowed_for_context(
-            StreamOpenContext::UserTriggered,
-            0
-        ));
-        assert!(prearm_open_allowed_for_context(
-            StreamOpenContext::StartupPrewarm,
-            0
-        ));
-    }
-
-    #[test]
-    fn prearm_owner_loss_maps_to_cancelled_before_open_outcome() {
-        assert_eq!(
-            classify_prearm_open_guard_outcome(StreamOpenContext::Prearm { owner_token: 21 }, 0),
-            Some(StreamStartOutcome::CancelledBeforeOpen)
-        );
-        assert_eq!(
-            classify_prearm_open_guard_outcome(StreamOpenContext::Prearm { owner_token: 21 }, 18),
-            Some(StreamStartOutcome::CancelledBeforeOpen)
-        );
-        assert_eq!(
-            classify_prearm_open_guard_outcome(StreamOpenContext::Prearm { owner_token: 21 }, 21),
-            None
-        );
-    }
-
-    #[test]
-    fn prearm_autoclose_only_runs_for_on_demand_idle_state() {
-        assert!(should_auto_close_prearm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Idle,
-            false,
-            true,
-            true,
-            Some(101),
-            101
-        ));
-        assert!(!should_auto_close_prearm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Idle,
-            false,
-            true,
-            false,
-            Some(101),
-            101
-        ));
-        assert!(!should_auto_close_prearm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Preparing {
-                binding_id: "transcribe".to_string(),
-                prepare_token: 1,
-            },
-            false,
-            true,
-            true,
-            Some(101),
-            101
-        ));
-        assert!(!should_auto_close_prearm_stream(
-            &MicrophoneMode::AlwaysOn,
-            &RecordingState::Idle,
-            false,
-            true,
-            true,
-            Some(101),
-            101
-        ));
-        assert!(!should_auto_close_prearm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Idle,
-            false,
-            true,
-            true,
-            Some(101),
-            202
-        ));
-        assert!(!should_auto_close_prearm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Idle,
-            false,
-            true,
-            true,
-            None,
-            101
-        ));
-    }
-
-    #[test]
-    fn prewarm_autoclose_only_runs_for_owned_on_demand_idle_stream() {
-        assert!(should_auto_close_prewarm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Idle,
-            false,
-            true,
-            true,
-            Some(7),
-            7
-        ));
-        assert!(!should_auto_close_prewarm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Idle,
-            false,
-            true,
-            false,
-            Some(7),
-            7
-        ));
-        assert!(!should_auto_close_prewarm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Preparing {
-                binding_id: "transcribe".to_string(),
-                prepare_token: 1,
-            },
-            false,
-            true,
-            true,
-            Some(7),
-            7
-        ));
-        assert!(!should_auto_close_prewarm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Idle,
-            true,
-            true,
-            true,
-            Some(7),
-            7
-        ));
-        assert!(!should_auto_close_prewarm_stream(
-            &MicrophoneMode::OnDemand,
-            &RecordingState::Idle,
-            false,
-            true,
-            true,
-            Some(7),
-            8
-        ));
     }
 
     #[test]

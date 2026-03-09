@@ -47,9 +47,7 @@ use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
 
 use env_filter::Builder as EnvFilterBuilder;
-use managers::audio::{
-    AudioRecordingManager, InputDeviceCacheRefreshPolicy, InputDeviceCacheRefreshReason,
-};
+use managers::audio::AudioRecordingManager;
 use managers::correction::CorrectionManager;
 use managers::history::HistoryManager;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -705,9 +703,6 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let correction_manager = Arc::new(CorrectionManager::new(app_handle.clone()));
     app_handle.manage(correction_manager);
 
-    // Track system input-route changes so cache decisions can stay fast and correct.
-    crate::audio_device_info::start_input_route_change_monitor();
-
     // Pre-warm Bluetooth microphone if selected
     // (triggers A2DP→HFP switch if needed)
     recording_manager.prewarm_bluetooth_mic();
@@ -1362,14 +1357,6 @@ pub fn run(cli_args: CliArgs) {
             }
             tauri::WindowEvent::Focused(focused) => {
                 if *focused && window.label() == "main" {
-                    if let Some(recording_manager) =
-                        window.app_handle().try_state::<Arc<AudioRecordingManager>>()
-                    {
-                        recording_manager.refresh_input_device_cache_async(
-                            InputDeviceCacheRefreshPolicy::IfStaleOrDirty,
-                            InputDeviceCacheRefreshReason::MainWindowFocus,
-                        );
-                    }
                     undo::flush_pending_linux_toast(&window.app_handle());
                     if growth::has_pending_upgrade_prompt_open_request(&window.app_handle()) {
                         let _ = window
