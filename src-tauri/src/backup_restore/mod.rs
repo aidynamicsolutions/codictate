@@ -245,6 +245,8 @@ struct UserStatsPayloadV1 {
     first_transcription_date: Option<i64>,
     last_transcription_date: Option<i64>,
     transcription_dates: Vec<String>,
+    current_streak_days: i64,
+    current_streak_counted_through_date: Option<String>,
     total_filler_words_removed: i64,
     total_speech_duration_ms: i64,
     duration_stats_semantics_version: i64,

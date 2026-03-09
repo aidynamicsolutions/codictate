@@ -173,6 +173,7 @@ pub(super) fn normalize_user_stats_payload(payload: &UserStatsPayloadV1) -> User
     normalized.total_words = normalized.total_words.max(0);
     normalized.total_duration_ms = normalized.total_duration_ms.max(0);
     normalized.total_transcriptions = normalized.total_transcriptions.max(0);
+    normalized.current_streak_days = normalized.current_streak_days.max(0);
     normalized.total_filler_words_removed = normalized.total_filler_words_removed.max(0);
     normalized.total_speech_duration_ms = normalized
         .total_speech_duration_ms
@@ -193,6 +194,7 @@ pub(super) fn validate_user_stats_payload(payload: &UserStatsPayloadV1) -> Resul
     if payload.total_words < 0
         || payload.total_duration_ms < 0
         || payload.total_transcriptions < 0
+        || payload.current_streak_days < 0
         || payload.total_filler_words_removed < 0
         || payload.total_speech_duration_ms < 0
         || payload.duration_stats_semantics_version < 0
@@ -207,6 +209,19 @@ pub(super) fn validate_user_stats_payload(payload: &UserStatsPayloadV1) -> Resul
     for date in &payload.transcription_dates {
         chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
             .map_err(|error| format!("invalid transcription_dates entry '{date}': {error}"))?;
+    }
+
+    if let Some(date) = payload.current_streak_counted_through_date.as_deref() {
+        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|error| {
+            format!("invalid current_streak_counted_through_date '{date}': {error}")
+        })?;
+    }
+
+    if payload.current_streak_days > 0 && payload.current_streak_counted_through_date.is_none() {
+        return Err(
+            "current_streak_counted_through_date is required when current_streak_days is positive"
+                .to_string(),
+        );
     }
 
     if let (Some(first), Some(last)) = (

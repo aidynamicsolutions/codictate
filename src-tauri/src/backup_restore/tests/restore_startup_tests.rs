@@ -377,6 +377,9 @@
                 first_transcription_date: Some(1_701_000_001),
                 last_transcription_date: Some(1_701_000_999),
                 transcription_dates: vec!["2026-03-03".to_string()],
+                restored_streak_days: 0,
+                restored_streak_counted_through_date: None,
+                restored_streak_restore_date: None,
                 total_filler_words_removed: 0,
                 total_speech_duration_ms: MANUAL_STATS_REPAIR_BAD_SPEECH_MS,
                 duration_stats_semantics_version: 1,
@@ -417,6 +420,9 @@
                 first_transcription_date: Some(1_701_000_001),
                 last_transcription_date: Some(1_701_000_999),
                 transcription_dates: vec!["2026-02-01".to_string()],
+                restored_streak_days: 0,
+                restored_streak_counted_through_date: None,
+                restored_streak_restore_date: None,
                 total_filler_words_removed: 42,
                 total_speech_duration_ms: 1_800_000,
                 duration_stats_semantics_version: 1,
@@ -624,4 +630,3 @@
             "reconcile should not touch snapshot directories outside runtime"
         );
     }
-

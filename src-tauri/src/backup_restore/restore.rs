@@ -4,6 +4,7 @@
 //! and restore runtime artifact cleanup.
 
 use super::*;
+use crate::managers::history::{CurrentStreakSnapshot, compute_standard_streak_snapshot, format_date_key};
 
 pub(super) const MANUAL_STATS_REPAIR_ENV_VAR: &str = "HANDY_MANUAL_STATS_REPAIR_20260303";
 pub(super) const MANUAL_STATS_REPAIR_BAD_WORDS: i64 = 46_208;
@@ -41,6 +42,12 @@ pub(super) struct HistoryImportSummary {
     pub recomputed_stats: UserStatsPayloadV1,
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct RestoreStatsImportReport {
+    pub source: RestoreStatsSource,
+    pub current_streak_snapshot: CurrentStreakSnapshot,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ManualStatsRepairReport {
     pub applied: bool,
@@ -61,6 +68,65 @@ fn user_stats_table_exists(conn: &Connection) -> Result<bool, String> {
         |row| row.get::<_, bool>(0),
     )
     .map_err(|error| format!("Failed to inspect user_stats table availability: {error}"))
+}
+
+fn derive_current_streak_snapshot_from_payload(
+    payload: &UserStatsPayloadV1,
+    backup_created_at: Option<&str>,
+) -> CurrentStreakSnapshot {
+    if payload.current_streak_days > 0 && payload.current_streak_counted_through_date.is_some() {
+        return CurrentStreakSnapshot {
+            days: payload.current_streak_days,
+            counted_through_date: payload.current_streak_counted_through_date.clone(),
+        };
+    }
+
+    let Some(backup_created_at) = backup_created_at else {
+        return CurrentStreakSnapshot::default();
+    };
+    let Some(backup_created_at) = parse_rfc3339(backup_created_at) else {
+        return CurrentStreakSnapshot::default();
+    };
+
+    compute_standard_streak_snapshot(
+        &payload.transcription_dates,
+        backup_created_at.with_timezone(&Local).date_naive(),
+    )
+}
+
+fn apply_restored_streak_state(
+    staged_history_db: &Path,
+    current_streak_snapshot: &CurrentStreakSnapshot,
+) -> Result<(), String> {
+    let mut conn = Connection::open(staged_history_db)
+        .map_err(|error| format!("Failed to open staged history DB for streak restore state: {error}"))?;
+    let tx = conn
+        .transaction()
+        .map_err(|error| format!("Failed to start staged streak restore-state transaction: {error}"))?;
+
+    let restore_date = if current_streak_snapshot.days > 0 {
+        Some(format_date_key(Local::now().date_naive()))
+    } else {
+        None
+    };
+
+    tx.execute(
+        "UPDATE user_stats
+         SET restored_streak_days = ?1,
+             restored_streak_counted_through_date = ?2,
+             restored_streak_restore_date = ?3
+         WHERE id = 1",
+        params![
+            current_streak_snapshot.days.max(0),
+            current_streak_snapshot.counted_through_date,
+            restore_date,
+        ],
+    )
+    .map_err(|error| format!("Failed to persist restored streak state: {error}"))?;
+
+    tx.commit()
+        .map_err(|error| format!("Failed to commit restored streak state: {error}"))?;
+    Ok(())
 }
 
 pub(super) fn maybe_run_manual_stats_repair(
@@ -380,15 +446,21 @@ pub fn apply_restore<R: tauri::Runtime>(
             &mut warnings,
         )?;
 
-        let stats_source = import_user_stats_payload(
+        let stats_import_report = import_user_stats_payload(
             &extract_dir.join(HISTORY_USER_STATS_FILE),
             &new_data_dir.join(HISTORY_DB_FILE),
+            preflight.report.summary.as_ref().map(|summary| summary.created_at.as_str()),
+            &history_import_summary.recomputed_stats,
             &mut warnings,
+        )?;
+        apply_restored_streak_state(
+            &new_data_dir.join(HISTORY_DB_FILE),
+            &stats_import_report.current_streak_snapshot,
         )?;
         let imported_stats = read_user_stats_payload_from_history_db(&new_data_dir.join(HISTORY_DB_FILE))?;
         info!(
             event_code = "restore_stats_import_summary",
-            stats_source = stats_source.as_str(),
+            stats_source = stats_import_report.source.as_str(),
             history_rows = history_import_summary.row_count,
             zero_speech_duration_rows = history_import_summary.zero_speech_duration_rows,
             recomputed_total_words = history_import_summary.recomputed_stats.total_words,
@@ -794,7 +866,10 @@ pub(super) fn initialize_history_db(path: &Path) -> Result<(), String> {
             transcription_dates TEXT DEFAULT '[]',
             total_filler_words_removed INTEGER DEFAULT 0,
             total_speech_duration_ms INTEGER DEFAULT 0,
-            duration_stats_semantics_version INTEGER DEFAULT 1
+            duration_stats_semantics_version INTEGER DEFAULT 1,
+            restored_streak_days INTEGER DEFAULT 0,
+            restored_streak_counted_through_date TEXT,
+            restored_streak_restore_date TEXT
         );
         ",
     )
@@ -923,6 +998,8 @@ pub(super) fn import_history_jsonl<R: tauri::Runtime>(
         first_transcription_date: first_timestamp,
         last_transcription_date: last_timestamp,
         transcription_dates,
+        current_streak_days: 0,
+        current_streak_counted_through_date: None,
         total_filler_words_removed: 0,
         total_speech_duration_ms,
         duration_stats_semantics_version: 1,
@@ -940,10 +1017,12 @@ pub(super) fn import_history_jsonl<R: tauri::Runtime>(
             first_transcription_date,
             last_transcription_date,
             transcription_dates,
+            restored_streak_days,
+            restored_streak_counted_through_date,
             total_filler_words_removed,
             total_speech_duration_ms,
             duration_stats_semantics_version
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             1_i64,
             recomputed_stats.total_words,
@@ -953,6 +1032,8 @@ pub(super) fn import_history_jsonl<R: tauri::Runtime>(
             recomputed_stats.last_transcription_date,
             serde_json::to_string(&recomputed_stats.transcription_dates)
                 .map_err(|error| format!("Failed to serialize recomputed transcription dates: {error}"))?,
+            0_i64,
+            Option::<String>::None,
             recomputed_stats.total_filler_words_removed,
             recomputed_stats.total_speech_duration_ms,
             recomputed_stats.duration_stats_semantics_version,
@@ -1002,10 +1083,18 @@ fn push_warning_once(warnings: &mut Vec<String>, warning: String) {
 pub(super) fn import_user_stats_payload(
     payload_path: &Path,
     staged_history_db: &Path,
+    backup_created_at: Option<&str>,
+    fallback_stats: &UserStatsPayloadV1,
     warnings: &mut Vec<String>,
-) -> Result<RestoreStatsSource, String> {
+) -> Result<RestoreStatsImportReport, String> {
     if !payload_path.exists() {
-        return Ok(RestoreStatsSource::FallbackRecompute);
+        return Ok(RestoreStatsImportReport {
+            source: RestoreStatsSource::FallbackRecompute,
+            current_streak_snapshot: derive_current_streak_snapshot_from_payload(
+                fallback_stats,
+                backup_created_at,
+            ),
+        });
     }
 
     let payload = match read_json_file::<UserStatsPayloadV1>(payload_path) {
@@ -1017,7 +1106,13 @@ pub(super) fn import_user_stats_payload(
                     "{HISTORY_USER_STATS_FILE} was malformed and productivity stats were recomputed: {error}"
                 ),
             );
-            return Ok(RestoreStatsSource::FallbackRecompute);
+            return Ok(RestoreStatsImportReport {
+                source: RestoreStatsSource::FallbackRecompute,
+                current_streak_snapshot: derive_current_streak_snapshot_from_payload(
+                    fallback_stats,
+                    backup_created_at,
+                ),
+            });
         }
     };
 
@@ -1028,9 +1123,17 @@ pub(super) fn import_user_stats_payload(
                 "{HISTORY_USER_STATS_FILE} had invalid structure and productivity stats were recomputed: {error}"
             ),
         );
-        return Ok(RestoreStatsSource::FallbackRecompute);
+        return Ok(RestoreStatsImportReport {
+            source: RestoreStatsSource::FallbackRecompute,
+            current_streak_snapshot: derive_current_streak_snapshot_from_payload(
+                fallback_stats,
+                backup_created_at,
+            ),
+        });
     }
     let payload = normalize_user_stats_payload(&payload);
+    let current_streak_snapshot =
+        derive_current_streak_snapshot_from_payload(&payload, backup_created_at);
     let transcription_dates_json = serde_json::to_string(&payload.transcription_dates)
         .map_err(|error| format!("Failed to serialize canonical transcription dates: {error}"))?;
 
@@ -1050,10 +1153,12 @@ pub(super) fn import_user_stats_payload(
             first_transcription_date,
             last_transcription_date,
             transcription_dates,
+            restored_streak_days,
+            restored_streak_counted_through_date,
             total_filler_words_removed,
             total_speech_duration_ms,
             duration_stats_semantics_version
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             1_i64,
             payload.total_words,
@@ -1062,6 +1167,8 @@ pub(super) fn import_user_stats_payload(
             payload.first_transcription_date,
             payload.last_transcription_date,
             transcription_dates_json,
+            0_i64,
+            Option::<String>::None,
             payload.total_filler_words_removed,
             payload.total_speech_duration_ms,
             payload.duration_stats_semantics_version,
@@ -1071,7 +1178,10 @@ pub(super) fn import_user_stats_payload(
     tx.commit()
         .map_err(|error| format!("Failed to commit canonical user_stats import: {error}"))?;
 
-    Ok(RestoreStatsSource::CanonicalPayload)
+    Ok(RestoreStatsImportReport {
+        source: RestoreStatsSource::CanonicalPayload,
+        current_streak_snapshot,
+    })
 }
 
 pub(super) fn read_user_stats_payload_from_history_db(
@@ -1105,6 +1215,8 @@ pub(super) fn read_user_stats_payload_from_history_db(
                     last_transcription_date: row.get(4)?,
                     transcription_dates: serde_json::from_str::<Vec<String>>(&transcription_dates_json)
                         .unwrap_or_default(),
+                    current_streak_days: 0,
+                    current_streak_counted_through_date: None,
                     total_filler_words_removed: row.get(6)?,
                     total_speech_duration_ms: row.get(7)?,
                     duration_stats_semantics_version: row.get(8)?,

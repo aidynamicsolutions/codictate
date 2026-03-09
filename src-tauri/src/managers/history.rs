@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Local, Utc};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use tracing::{debug, error, info};
 use rusqlite::{params, Connection, OptionalExtension};
 use rusqlite_migration::{Migrations, M};
@@ -61,6 +61,10 @@ static MIGRATIONS: &[M] = &[
             payload_json TEXT NOT NULL
         );",
     ),
+    // Migration 11: Persist restore-aware current streak carry-over state
+    M::up("ALTER TABLE user_stats ADD COLUMN restored_streak_days INTEGER DEFAULT 0;"),
+    M::up("ALTER TABLE user_stats ADD COLUMN restored_streak_counted_through_date TEXT;"),
+    M::up("ALTER TABLE user_stats ADD COLUMN restored_streak_restore_date TEXT;"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -151,6 +155,20 @@ pub struct HistoryManager {
 }
 
 const DURATION_SEMANTICS_VERSION_V1: i64 = 1;
+const DATE_KEY_FORMAT: &str = "%Y-%m-%d";
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct CurrentStreakSnapshot {
+    pub days: i64,
+    pub counted_through_date: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct RestoredStreakState {
+    pub days: i64,
+    pub counted_through_date: Option<String>,
+    pub restore_date: Option<String>,
+}
 
 fn compute_effective_text(
     inserted_text: Option<&str>,
@@ -193,6 +211,153 @@ fn compute_duration_metrics(
         wpm,
         time_saved_minutes,
     )
+}
+
+fn parse_date_key(value: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(value, DATE_KEY_FORMAT).ok()
+}
+
+pub(crate) fn format_date_key(date: NaiveDate) -> String {
+    date.format(DATE_KEY_FORMAT).to_string()
+}
+
+fn parse_streak_dates(dates: &[String]) -> Vec<NaiveDate> {
+    let mut naive_dates: Vec<NaiveDate> = dates.iter().filter_map(|date| parse_date_key(date)).collect();
+    naive_dates.sort();
+    naive_dates.dedup();
+    naive_dates
+}
+
+pub(crate) fn compute_standard_streak_snapshot(
+    dates: &[String],
+    today: NaiveDate,
+) -> CurrentStreakSnapshot {
+    let naive_dates = parse_streak_dates(dates);
+    let Some(&last_date) = naive_dates.last() else {
+        return CurrentStreakSnapshot::default();
+    };
+
+    let diff = today.signed_duration_since(last_date).num_days();
+    if !(0..=1).contains(&diff) {
+        return CurrentStreakSnapshot::default();
+    }
+
+    let mut days = 1_i64;
+    let mut current_expected = match last_date.pred_opt() {
+        Some(previous) => previous,
+        None => {
+            return CurrentStreakSnapshot {
+                days,
+                counted_through_date: Some(format_date_key(last_date)),
+            };
+        }
+    };
+
+    for index in (0..naive_dates.len().saturating_sub(1)).rev() {
+        if naive_dates[index] == current_expected {
+            days += 1;
+            if let Some(previous) = current_expected.pred_opt() {
+                current_expected = previous;
+            } else {
+                break;
+            }
+        } else if naive_dates[index] < current_expected {
+            break;
+        }
+    }
+
+    CurrentStreakSnapshot {
+        days,
+        counted_through_date: Some(format_date_key(last_date)),
+    }
+}
+
+pub(crate) fn compute_restored_streak_snapshot(
+    dates: &[String],
+    today: NaiveDate,
+    restored_state: &RestoredStreakState,
+) -> CurrentStreakSnapshot {
+    if restored_state.days <= 0 {
+        return CurrentStreakSnapshot::default();
+    }
+
+    let Some(counted_through_date) = restored_state
+        .counted_through_date
+        .as_deref()
+        .and_then(parse_date_key)
+    else {
+        return CurrentStreakSnapshot::default();
+    };
+    let Some(restore_date) = restored_state.restore_date.as_deref().and_then(parse_date_key) else {
+        return CurrentStreakSnapshot::default();
+    };
+
+    if today < restore_date {
+        return CurrentStreakSnapshot::default();
+    }
+
+    let date_set: std::collections::BTreeSet<NaiveDate> = parse_streak_dates(dates).into_iter().collect();
+    let extension_start = if restore_date > counted_through_date {
+        restore_date
+    } else {
+        match counted_through_date.succ_opt() {
+            Some(next_day) => next_day,
+            None => {
+                return CurrentStreakSnapshot {
+                    days: restored_state.days,
+                    counted_through_date: restored_state.counted_through_date.clone(),
+                };
+            }
+        }
+    };
+
+    if today == restore_date {
+        if extension_start > today || !date_set.contains(&extension_start) {
+            return CurrentStreakSnapshot {
+                days: restored_state.days,
+                counted_through_date: restored_state.counted_through_date.clone(),
+            };
+        }
+    } else if today < extension_start {
+        return CurrentStreakSnapshot::default();
+    }
+
+    let mut extension_days = 0_i64;
+    let mut last_counted = counted_through_date;
+    let mut current = extension_start;
+
+    while current <= today {
+        if !date_set.contains(&current) {
+            return CurrentStreakSnapshot::default();
+        }
+
+        extension_days += 1;
+        last_counted = current;
+        let Some(next_day) = current.succ_opt() else {
+            break;
+        };
+        current = next_day;
+    }
+
+    CurrentStreakSnapshot {
+        days: restored_state.days.saturating_add(extension_days),
+        counted_through_date: Some(format_date_key(last_counted)),
+    }
+}
+
+pub(crate) fn compute_current_streak_snapshot(
+    dates: &[String],
+    today: NaiveDate,
+    restored_state: &RestoredStreakState,
+) -> CurrentStreakSnapshot {
+    let standard = compute_standard_streak_snapshot(dates, today);
+    let restored = compute_restored_streak_snapshot(dates, today, restored_state);
+
+    if restored.days > standard.days {
+        restored
+    } else {
+        standard
+    }
 }
 
 fn normalize_runtime_durations(recording_duration_ms: i64, speech_duration_ms: i64) -> (i64, i64) {
@@ -435,11 +600,17 @@ impl HistoryManager {
                 "CREATE TABLE IF NOT EXISTS user_stats (
                     id INTEGER PRIMARY KEY DEFAULT 1,
                     total_words INTEGER DEFAULT 0,
+                    total_speech_duration_ms INTEGER DEFAULT 0,
                     total_duration_ms INTEGER DEFAULT 0,
                     total_transcriptions INTEGER DEFAULT 0,
                     first_transcription_date INTEGER,
                     last_transcription_date INTEGER,
-                    transcription_dates TEXT DEFAULT '[]'
+                    transcription_dates TEXT DEFAULT '[]',
+                    total_filler_words_removed INTEGER DEFAULT 0,
+                    duration_stats_semantics_version INTEGER DEFAULT 0,
+                    restored_streak_days INTEGER DEFAULT 0,
+                    restored_streak_counted_through_date TEXT,
+                    restored_streak_restore_date TEXT
                 );",
             )?;
             schema_changed = true;
@@ -463,6 +634,24 @@ impl HistoryManager {
             "user_stats",
             "duration_stats_semantics_version",
             "INTEGER DEFAULT 0",
+        )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "user_stats",
+            "restored_streak_days",
+            "INTEGER DEFAULT 0",
+        )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "user_stats",
+            "restored_streak_counted_through_date",
+            "TEXT",
+        )?;
+        schema_changed |= Self::ensure_column_exists(
+            conn,
+            "user_stats",
+            "restored_streak_restore_date",
+            "TEXT",
         )?;
 
         if !Self::table_exists(conn, "user_stats_migration_backup")? {
@@ -488,6 +677,9 @@ impl HistoryManager {
             && Self::column_exists(conn, "user_stats", "total_filler_words_removed")?
             && Self::column_exists(conn, "user_stats", "total_speech_duration_ms")?
             && Self::column_exists(conn, "user_stats", "duration_stats_semantics_version")?
+            && Self::column_exists(conn, "user_stats", "restored_streak_days")?
+            && Self::column_exists(conn, "user_stats", "restored_streak_counted_through_date")?
+            && Self::column_exists(conn, "user_stats", "restored_streak_restore_date")?
             && Self::table_exists(conn, "user_stats_migration_backup")?;
 
         let target_version = MIGRATIONS.len() as i32;
@@ -516,7 +708,15 @@ impl HistoryManager {
 
         if count == 0 {
             conn.execute(
-                "INSERT INTO user_stats (id, total_words, total_duration_ms, total_transcriptions, transcription_dates) VALUES (1, 0, 0, 0, '[]')",
+                "INSERT INTO user_stats (
+                    id,
+                    total_words,
+                    total_speech_duration_ms,
+                    total_duration_ms,
+                    total_transcriptions,
+                    transcription_dates,
+                    restored_streak_days
+                ) VALUES (1, 0, 0, 0, 0, '[]', 0)",
                 [],
             )?;
             debug!("Initialized empty user stats");
@@ -1607,15 +1807,21 @@ impl HistoryManager {
             total_speech_duration_ms,
             duration_stats_semantics_version,
             transcription_dates_json,
-            total_filler_words_removed
-        ): (i64, i64, i64, i64, String, i64) = conn.query_row(
+            total_filler_words_removed,
+            restored_streak_days,
+            restored_streak_counted_through_date,
+            restored_streak_restore_date,
+        ): (i64, i64, i64, i64, String, i64, i64, Option<String>, Option<String>) = conn.query_row(
             "SELECT
                 total_words,
                 total_duration_ms,
                 COALESCE(total_speech_duration_ms, 0),
                 COALESCE(duration_stats_semantics_version, 0),
                 transcription_dates,
-                COALESCE(total_filler_words_removed, 0)
+                COALESCE(total_filler_words_removed, 0),
+                COALESCE(restored_streak_days, 0),
+                restored_streak_counted_through_date,
+                restored_streak_restore_date
              FROM user_stats WHERE id = 1",
             [],
             |row| Ok((
@@ -1625,8 +1831,11 @@ impl HistoryManager {
                 row.get(3).unwrap_or(0),
                 row.get(4).unwrap_or_else(|_| "[]".to_string()),
                 row.get(5).unwrap_or(0),
+                row.get(6).unwrap_or(0),
+                row.get(7).unwrap_or(None),
+                row.get(8).unwrap_or(None),
             )),
-        ).unwrap_or((0, 0, 0, 0, "[]".to_string(), 0));
+        ).unwrap_or((0, 0, 0, 0, "[]".to_string(), 0, 0, None, None));
 
         // Read filler filter setting
         let filler_filter_active = crate::settings::get_settings(&self.app_handle).enable_filler_word_filter;
@@ -1649,43 +1858,18 @@ impl HistoryManager {
             filler_filter_active
         );
 
-        // Streak calculation
         let dates: Vec<String> = serde_json::from_str(&transcription_dates_json).unwrap_or_default();
-        
-        // Parse dates to NaiveDate
-        let mut naive_dates: Vec<chrono::NaiveDate> = dates
-            .iter()
-            .filter_map(|d| chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
-            .collect();
-            
-        naive_dates.sort();
-        naive_dates.dedup();
-        
         let today = Local::now().date_naive();
-        let mut streak_days = 0;
-        
-        if !naive_dates.is_empty() {
-            let last_date = *naive_dates.last().unwrap();
-            let diff = today.signed_duration_since(last_date).num_days();
-            
-            if diff <= 1 {
-                streak_days = 1;
-                let mut current_expected = last_date.pred_opt().unwrap();
-                
-                for i in (0..naive_dates.len() - 1).rev() {
-                    if naive_dates[i] == current_expected {
-                        streak_days += 1;
-                        if let Some(pred) = current_expected.pred_opt() {
-                            current_expected = pred;
-                        } else {
-                            break;
-                        }
-                    } else if naive_dates[i] < current_expected {
-                        break;
-                    } 
-                }
-            }
-        }
+        let streak_days = compute_current_streak_snapshot(
+            &dates,
+            today,
+            &RestoredStreakState {
+                days: restored_streak_days,
+                counted_through_date: restored_streak_counted_through_date,
+                restore_date: restored_streak_restore_date,
+            },
+        )
+        .days;
 
         let mut faster_than_typing_percentage = 0.0;
         if wpm > 40.0 {
@@ -1739,7 +1923,10 @@ mod tests {
                 last_transcription_date INTEGER,
                 transcription_dates TEXT DEFAULT '[]',
                 total_filler_words_removed INTEGER DEFAULT 0,
-                duration_stats_semantics_version INTEGER DEFAULT 0
+                duration_stats_semantics_version INTEGER DEFAULT 0,
+                restored_streak_days INTEGER DEFAULT 0,
+                restored_streak_counted_through_date TEXT,
+                restored_streak_restore_date TEXT
             );
             CREATE TABLE user_stats_migration_backup (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1755,8 +1942,9 @@ mod tests {
                 total_transcriptions,
                 transcription_dates,
                 total_filler_words_removed,
-                duration_stats_semantics_version
-            ) VALUES (1, 0, 0, 0, 0, '[]', 0, 0);",
+                duration_stats_semantics_version,
+                restored_streak_days
+            ) VALUES (1, 0, 0, 0, 0, '[]', 0, 0, 0);",
         )
         .expect("create transcription_history table");
         conn
@@ -1846,6 +2034,100 @@ mod tests {
         let (recording_clamped, speech_clamped) = normalize_runtime_durations(-500, -10);
         assert_eq!(recording_clamped, 0);
         assert_eq!(speech_clamped, 0);
+    }
+
+    #[test]
+    fn standard_streak_snapshot_is_zero_when_gap_exceeds_one_day() {
+        let dates = vec![
+            "2026-03-01".to_string(),
+            "2026-03-02".to_string(),
+            "2026-03-03".to_string(),
+            "2026-03-04".to_string(),
+        ];
+
+        let snapshot = compute_standard_streak_snapshot(
+            &dates,
+            NaiveDate::from_ymd_opt(2026, 3, 9).expect("valid date"),
+        );
+
+        assert_eq!(snapshot.days, 0);
+        assert_eq!(snapshot.counted_through_date, None);
+    }
+
+    #[test]
+    fn current_streak_snapshot_preserves_restored_baseline_on_restore_day() {
+        let dates = vec![
+            "2026-03-01".to_string(),
+            "2026-03-02".to_string(),
+            "2026-03-03".to_string(),
+            "2026-03-04".to_string(),
+        ];
+
+        let snapshot = compute_current_streak_snapshot(
+            &dates,
+            NaiveDate::from_ymd_opt(2026, 3, 9).expect("valid date"),
+            &RestoredStreakState {
+                days: 4,
+                counted_through_date: Some("2026-03-04".to_string()),
+                restore_date: Some("2026-03-09".to_string()),
+            },
+        );
+
+        assert_eq!(snapshot.days, 4);
+        assert_eq!(
+            snapshot.counted_through_date.as_deref(),
+            Some("2026-03-04")
+        );
+    }
+
+    #[test]
+    fn current_streak_snapshot_increments_preserved_streak_on_restore_day_transcription() {
+        let dates = vec![
+            "2026-03-01".to_string(),
+            "2026-03-02".to_string(),
+            "2026-03-03".to_string(),
+            "2026-03-04".to_string(),
+            "2026-03-09".to_string(),
+        ];
+
+        let snapshot = compute_current_streak_snapshot(
+            &dates,
+            NaiveDate::from_ymd_opt(2026, 3, 9).expect("valid date"),
+            &RestoredStreakState {
+                days: 4,
+                counted_through_date: Some("2026-03-04".to_string()),
+                restore_date: Some("2026-03-09".to_string()),
+            },
+        );
+
+        assert_eq!(snapshot.days, 5);
+        assert_eq!(
+            snapshot.counted_through_date.as_deref(),
+            Some("2026-03-09")
+        );
+    }
+
+    #[test]
+    fn current_streak_snapshot_expires_after_missed_post_restore_day() {
+        let dates = vec![
+            "2026-03-01".to_string(),
+            "2026-03-02".to_string(),
+            "2026-03-03".to_string(),
+            "2026-03-04".to_string(),
+        ];
+
+        let snapshot = compute_current_streak_snapshot(
+            &dates,
+            NaiveDate::from_ymd_opt(2026, 3, 10).expect("valid date"),
+            &RestoredStreakState {
+                days: 4,
+                counted_through_date: Some("2026-03-04".to_string()),
+                restore_date: Some("2026-03-09".to_string()),
+            },
+        );
+
+        assert_eq!(snapshot.days, 0);
+        assert_eq!(snapshot.counted_through_date, None);
     }
 
     #[test]

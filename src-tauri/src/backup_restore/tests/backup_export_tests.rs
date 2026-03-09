@@ -57,6 +57,9 @@
                 "2026-03-01".to_string(),
                 "2026-03-02".to_string(),
             ],
+            restored_streak_days: 0,
+            restored_streak_counted_through_date: None,
+            restored_streak_restore_date: None,
             total_filler_words_removed: 777,
             total_speech_duration_ms: 8_888_000,
             duration_stats_semantics_version: 1,
@@ -76,6 +79,9 @@
                 first_transcription_date: Some(1_700_000_000),
                 last_transcription_date: Some(1_700_000_000),
                 transcription_dates: vec!["2026-01-01".to_string()],
+                restored_streak_days: 0,
+                restored_streak_counted_through_date: None,
+                restored_streak_restore_date: None,
                 total_filler_words_removed: 1,
                 total_speech_duration_ms: 4_000,
                 duration_stats_semantics_version: 1,
@@ -789,3 +795,117 @@
         }
     }
 
+    #[test]
+    fn backup_export_includes_current_streak_from_restored_state() {
+        let (_guard, _env, app, app_data_dir) = setup_test_app();
+        let app_handle = app.handle().clone();
+        let today = Local::now().date_naive();
+        let counted_through = today
+            .checked_sub_signed(Duration::days(5))
+            .expect("counted-through date should exist");
+        let counted_through_key = format_date_key(counted_through);
+        let today_key = format_date_key(today);
+
+        seed_history_db(&app_data_dir, &history_rows("restored-streak-export"));
+        seed_dictionary(&app_handle, vec![custom_word("restored-streak-export", "EXPORT")]);
+        seed_user_store(&app_data_dir, &json!({ "profile": "restored-streak-export" }));
+        seed_user_stats(
+            &app_data_dir,
+            &TestUserStatsSnapshot {
+                total_words: 500,
+                total_duration_ms: 12_000,
+                total_transcriptions: 20,
+                first_transcription_date: Some(1_701_000_001),
+                last_transcription_date: Some(1_701_000_999),
+                transcription_dates: vec![counted_through_key.clone()],
+                restored_streak_days: 7,
+                restored_streak_counted_through_date: Some(counted_through_key.clone()),
+                restored_streak_restore_date: Some(today_key),
+                total_filler_words_removed: 0,
+                total_speech_duration_ms: 10_000,
+                duration_stats_semantics_version: 1,
+            },
+        );
+
+        let archive_path = make_backup(
+            &app_handle,
+            BackupScope::Smaller,
+            "restored-streak-export-backup",
+        );
+
+        let source = File::open(&archive_path).expect("open backup archive");
+        let mut archive = ZipArchive::new(source).expect("parse backup archive");
+        let mut payload_entry = archive
+            .by_name(HISTORY_USER_STATS_FILE)
+            .expect("read user stats payload entry");
+        let payload: UserStatsPayloadV1 =
+            serde_json::from_reader(&mut payload_entry).expect("parse user stats payload");
+
+        assert_eq!(payload.current_streak_days, 7);
+        assert_eq!(
+            payload.current_streak_counted_through_date.as_deref(),
+            Some(counted_through_key.as_str())
+        );
+    }
+
+    #[test]
+    fn restore_applies_restored_streak_state_from_canonical_payload() {
+        let (_guard, _env, app, app_data_dir) = setup_test_app();
+        let app_handle = app.handle().clone();
+        let today = Local::now().date_naive();
+        let counted_through = today
+            .checked_sub_signed(Duration::days(4))
+            .expect("counted-through date should exist");
+        let counted_through_key = format_date_key(counted_through);
+        let today_key = format_date_key(today);
+
+        seed_history_db(&app_data_dir, &history_rows("restored-streak-source"));
+        seed_dictionary(&app_handle, vec![custom_word("restored-streak-source", "SOURCE")]);
+        seed_user_store(&app_data_dir, &json!({ "profile": "restored-streak-source" }));
+        seed_user_stats(
+            &app_data_dir,
+            &TestUserStatsSnapshot {
+                total_words: 1_000,
+                total_duration_ms: 24_000,
+                total_transcriptions: 40,
+                first_transcription_date: Some(1_701_000_001),
+                last_transcription_date: Some(1_701_000_999),
+                transcription_dates: vec![counted_through_key.clone()],
+                restored_streak_days: 9,
+                restored_streak_counted_through_date: Some(counted_through_key.clone()),
+                restored_streak_restore_date: Some(today_key.clone()),
+                total_filler_words_removed: 3,
+                total_speech_duration_ms: 20_000,
+                duration_stats_semantics_version: 1,
+            },
+        );
+
+        let archive_path = make_backup(
+            &app_handle,
+            BackupScope::Smaller,
+            "restored-streak-roundtrip",
+        );
+
+        seed_history_db(&app_data_dir, &history_rows("restored-streak-mutated"));
+        seed_dictionary(&app_handle, vec![custom_word("restored-streak-mutated", "MUTATED")]);
+        seed_user_store(&app_data_dir, &json!({ "profile": "restored-streak-mutated" }));
+
+        apply_restore(
+            &app_handle,
+            ApplyRestoreRequest {
+                archive_path: archive_path.to_string_lossy().to_string(),
+            },
+        )
+        .expect("apply restore with canonical current streak payload");
+
+        let restored_stats = read_user_stats(&app_data_dir).expect("read restored user_stats");
+        assert_eq!(restored_stats.restored_streak_days, 9);
+        assert_eq!(
+            restored_stats.restored_streak_counted_through_date.as_deref(),
+            Some(counted_through_key.as_str())
+        );
+        assert_eq!(
+            restored_stats.restored_streak_restore_date.as_deref(),
+            Some(today_key.as_str())
+        );
+    }

@@ -5,6 +5,7 @@ use super::backup::{
     export_history_jsonl, export_recordings_payload, map_stage_progress_units,
     package_progress_units, package_workspace_to_archive_with_cancel,
 };
+use crate::managers::history::format_date_key;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{json, Value};
 use std::io::{Read, Write};
@@ -212,6 +213,9 @@ use zip::write::SimpleFileOptions;
         first_transcription_date: Option<i64>,
         last_transcription_date: Option<i64>,
         transcription_dates: Vec<String>,
+        restored_streak_days: i64,
+        restored_streak_counted_through_date: Option<String>,
+        restored_streak_restore_date: Option<String>,
         total_filler_words_removed: i64,
         total_speech_duration_ms: i64,
         duration_stats_semantics_version: i64,
@@ -338,10 +342,13 @@ use zip::write::SimpleFileOptions;
                 first_transcription_date,
                 last_transcription_date,
                 transcription_dates,
+                restored_streak_days,
+                restored_streak_counted_through_date,
+                restored_streak_restore_date,
                 total_filler_words_removed,
                 total_speech_duration_ms,
                 duration_stats_semantics_version
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 1_i64,
                 total_words,
@@ -350,6 +357,9 @@ use zip::write::SimpleFileOptions;
                 first_timestamp,
                 last_timestamp,
                 transcription_dates_json,
+                0_i64,
+                Option::<String>::None,
+                Option::<String>::None,
                 0_i64,
                 total_speech_duration_ms,
                 1_i64,
@@ -374,10 +384,13 @@ use zip::write::SimpleFileOptions;
                 first_transcription_date,
                 last_transcription_date,
                 transcription_dates,
+                restored_streak_days,
+                restored_streak_counted_through_date,
+                restored_streak_restore_date,
                 total_filler_words_removed,
                 total_speech_duration_ms,
                 duration_stats_semantics_version
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 1_i64,
                 stats.total_words,
@@ -386,6 +399,9 @@ use zip::write::SimpleFileOptions;
                 stats.first_transcription_date,
                 stats.last_transcription_date,
                 serde_json::to_string(&stats.transcription_dates).expect("serialize seeded dates"),
+                stats.restored_streak_days,
+                stats.restored_streak_counted_through_date,
+                stats.restored_streak_restore_date,
                 stats.total_filler_words_removed,
                 stats.total_speech_duration_ms,
                 stats.duration_stats_semantics_version,
@@ -518,6 +534,9 @@ use zip::write::SimpleFileOptions;
                 first_transcription_date,
                 last_transcription_date,
                 COALESCE(transcription_dates, '[]'),
+                COALESCE(restored_streak_days, 0),
+                restored_streak_counted_through_date,
+                restored_streak_restore_date,
                 COALESCE(total_filler_words_removed, 0),
                 COALESCE(total_speech_duration_ms, 0),
                 COALESCE(duration_stats_semantics_version, 0)
@@ -534,9 +553,12 @@ use zip::write::SimpleFileOptions;
                     last_transcription_date: row.get(4)?,
                     transcription_dates: serde_json::from_str::<Vec<String>>(&transcription_dates_json)
                         .unwrap_or_default(),
-                    total_filler_words_removed: row.get(6)?,
-                    total_speech_duration_ms: row.get(7)?,
-                    duration_stats_semantics_version: row.get(8)?,
+                    restored_streak_days: row.get(6)?,
+                    restored_streak_counted_through_date: row.get(7)?,
+                    restored_streak_restore_date: row.get(8)?,
+                    total_filler_words_removed: row.get(9)?,
+                    total_speech_duration_ms: row.get(10)?,
+                    duration_stats_semantics_version: row.get(11)?,
                 })
             },
         )

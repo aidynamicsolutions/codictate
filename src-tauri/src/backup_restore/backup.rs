@@ -770,6 +770,9 @@ pub(super) fn export_user_stats_payload(
             first_transcription_date,
             last_transcription_date,
             COALESCE(transcription_dates, '[]'),
+            COALESCE(restored_streak_days, 0),
+            restored_streak_counted_through_date,
+            restored_streak_restore_date,
             COALESCE(total_filler_words_removed, 0),
             COALESCE(total_speech_duration_ms, 0),
             COALESCE(duration_stats_semantics_version, 0)
@@ -785,8 +788,11 @@ pub(super) fn export_user_stats_payload(
                 row.get::<_, Option<i64>>(4)?,
                 row.get::<_, String>(5)?,
                 row.get::<_, i64>(6)?,
-                row.get::<_, i64>(7)?,
-                row.get::<_, i64>(8)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
+                row.get::<_, i64>(9)?,
+                row.get::<_, i64>(10)?,
+                row.get::<_, i64>(11)?,
             ))
         },
     ) {
@@ -800,6 +806,15 @@ pub(super) fn export_user_stats_payload(
     };
 
     let transcription_dates: Vec<String> = serde_json::from_str(&row.5).unwrap_or_default();
+    let current_streak_snapshot = crate::managers::history::compute_current_streak_snapshot(
+        &transcription_dates,
+        Local::now().date_naive(),
+        &crate::managers::history::RestoredStreakState {
+            days: row.6,
+            counted_through_date: row.7.clone(),
+            restore_date: row.8.clone(),
+        },
+    );
     let payload = normalize_user_stats_payload(&UserStatsPayloadV1 {
         version: USER_STATS_PAYLOAD_VERSION,
         total_words: row.0,
@@ -808,9 +823,11 @@ pub(super) fn export_user_stats_payload(
         first_transcription_date: row.3,
         last_transcription_date: row.4,
         transcription_dates,
-        total_filler_words_removed: row.6,
-        total_speech_duration_ms: row.7,
-        duration_stats_semantics_version: row.8,
+        current_streak_days: current_streak_snapshot.days,
+        current_streak_counted_through_date: current_streak_snapshot.counted_through_date,
+        total_filler_words_removed: row.9,
+        total_speech_duration_ms: row.10,
+        duration_stats_semantics_version: row.11,
     });
 
     validate_user_stats_payload(&payload).map_err(|error| {
