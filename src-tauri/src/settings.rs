@@ -337,6 +337,9 @@ pub struct AppSettings {
     /// When true, removes filler words (um, uh, hmm, etc.) from transcriptions.
     #[serde(default = "default_true")]
     pub enable_filler_word_filter: bool,
+    /// Additional user-specified filler words appended to the language defaults.
+    #[serde(default)]
+    pub extra_filler_words: Vec<String>,
     /// When true, collapses repeated/stuttered words caused by ASR hallucinations.
     #[serde(default = "default_true")]
     pub enable_hallucination_filter: bool,
@@ -869,6 +872,7 @@ pub fn get_default_settings() -> AppSettings {
         paste_last_use_smart_insertion: false,
         app_language: default_app_language(),
         enable_filler_word_filter: true,
+        extra_filler_words: Vec::new(),
         enable_hallucination_filter: true,
         show_tray_icon: default_show_tray_icon(),
         show_unload_model_in_tray: false,

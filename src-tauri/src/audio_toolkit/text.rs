@@ -907,11 +907,32 @@ fn extract_punctuation(word: &str) -> (&str, &str) {
 // Filler Word Removal
 // ============================================
 
-/// Filler words to remove from transcriptions
-const FILLER_WORDS: &[&str] = &[
-    "uh", "um", "uhm", "umm", "uhh", "uhhh", "ah", "eh", "hmm", "hm", "mmm", "mm", "mh", "ha",
-    "ehh",
-];
+fn get_filler_words_for_language(lang: &str) -> &'static [&'static str] {
+    let base_lang = lang.split(&['-', '_'][..]).next().unwrap_or(lang);
+
+    match base_lang {
+        "en" => &[
+            "uh", "um", "uhm", "umm", "uhh", "uhhh", "ah", "hmm", "hm", "mmm", "mm", "mh", "eh",
+            "ehh", "ha",
+        ],
+        "es" => &["ehm", "mmm", "hmm", "hm"],
+        "pt" => &["ahm", "hmm", "mmm", "hm"],
+        "fr" => &["euh", "hmm", "hm", "mmm"],
+        "de" => &["ah", "ahm", "hmm", "hm", "mmm"],
+        "it" => &["ehm", "hmm", "mmm", "hm"],
+        "cs" => &["ehm", "hmm", "mmm", "hm"],
+        "pl" => &["hmm", "mmm", "hm"],
+        "tr" => &["hmm", "mmm", "hm"],
+        "ru" => &["хм", "ммм", "hmm", "mmm"],
+        "uk" => &["хм", "ммм", "hmm", "mmm"],
+        "ar" => &["hmm", "mmm"],
+        "ja" => &["hmm", "mmm"],
+        "ko" => &["hmm", "mmm"],
+        "vi" => &["hmm", "mmm", "hm"],
+        "zh" => &["hmm", "mmm"],
+        _ => &["uh", "uhm", "umm", "uhh", "uhhh", "ah", "hmm", "hm", "mmm", "mm", "mh", "ehh"],
+    }
+}
 
 static MULTI_SPACE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s{2,}").unwrap());
 
@@ -972,26 +993,55 @@ fn collapse_stutters(text: &str) -> String {
     result.join(" ")
 }
 
-/// Pre-compiled filler word patterns (built lazily)
-static FILLER_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
-    FILLER_WORDS
-        .iter()
-        .map(|word| {
-            // Match filler word with word boundaries, optionally followed by comma or period
-            Regex::new(&format!(r"(?i)\b{}\b[,.]?", regex::escape(word))).unwrap()
-        })
+fn filler_words_with_extras(lang: &str, extra_filler_words: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut words = Vec::new();
+
+    for word in get_filler_words_for_language(lang) {
+        let trimmed = word.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let normalized = trimmed.to_lowercase();
+        if seen.insert(normalized) {
+            words.push(trimmed.to_string());
+        }
+    }
+
+    for word in extra_filler_words {
+        let trimmed = word.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let normalized = trimmed.to_lowercase();
+        if seen.insert(normalized) {
+            words.push(trimmed.to_string());
+        }
+    }
+
+    words
+}
+
+fn filler_patterns(words: &[String]) -> Vec<Regex> {
+    words.iter()
+        .map(|word| Regex::new(&format!(r"(?i)\b{}\b[,.]?", regex::escape(word))).unwrap())
         .collect()
-});
+}
 
 /// Filters filler words and returns (filtered_text, removed_count).
 /// This is the core implementation used by both `filter_transcription_output`
 /// and callers that need the removal count (e.g., stats tracking).
-pub fn filter_and_count_filler_words(text: &str) -> (String, usize) {
+pub fn filter_and_count_filler_words(
+    text: &str,
+    lang: &str,
+    extra_filler_words: &[String],
+) -> (String, usize) {
     let mut filtered = text.to_string();
     let mut count = 0;
+    let patterns = filler_patterns(&filler_words_with_extras(lang, extra_filler_words));
 
     // Count and remove filler words
-    for pattern in FILLER_PATTERNS.iter() {
+    for pattern in &patterns {
         count += pattern.find_iter(&filtered).count();
         filtered = pattern.replace_all(&filtered, "").to_string();
     }
@@ -1005,8 +1055,8 @@ pub fn filter_and_count_filler_words(text: &str) -> (String, usize) {
 
 /// Filters transcription output by removing filler words only.
 /// Stutter/repetition handling is in `filter_hallucinations()`.
-pub fn filter_transcription_output(text: &str) -> String {
-    filter_and_count_filler_words(text).0
+pub fn filter_transcription_output(text: &str, lang: &str, extra_filler_words: &[String]) -> String {
+    filter_and_count_filler_words(text, lang, extra_filler_words).0
 }
 
 /// Collapse progressive self-correction patterns where consecutive short fragments
@@ -1707,36 +1757,78 @@ mod tests {
 
     #[test]
     fn test_filter_transcription_output() {
-        assert_eq!(filter_transcription_output("hello uh world"), "hello world");
-        assert_eq!(filter_transcription_output("um hello"), "hello");
+        assert_eq!(
+            filter_transcription_output("hello uh world", "en", &[]),
+            "hello world"
+        );
+        assert_eq!(filter_transcription_output("um hello", "en", &[]), "hello");
     }
 
     #[test]
     fn test_filter_and_count_single_filler() {
-        let (text, count) = filter_and_count_filler_words("hello uh world");
+        let (text, count) = filter_and_count_filler_words("hello uh world", "en", &[]);
         assert_eq!(text, "hello world");
         assert_eq!(count, 1);
     }
 
     #[test]
     fn test_filter_and_count_multiple_fillers() {
-        let (text, count) = filter_and_count_filler_words("um like uh hello umm world");
+        let (text, count) =
+            filter_and_count_filler_words("um like uh hello umm world", "en", &[]);
         assert_eq!(text, "like hello world");
         assert_eq!(count, 3); // um, uh, umm
     }
 
     #[test]
     fn test_filter_and_count_no_fillers() {
-        let (text, count) = filter_and_count_filler_words("clean text here");
+        let (text, count) = filter_and_count_filler_words("clean text here", "en", &[]);
         assert_eq!(text, "clean text here");
         assert_eq!(count, 0);
     }
 
     #[test]
     fn test_filter_and_count_empty_input() {
-        let (text, count) = filter_and_count_filler_words("");
+        let (text, count) = filter_and_count_filler_words("", "en", &[]);
         assert_eq!(text, "");
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_filter_preserves_portuguese_um() {
+        let (text, count) = filter_and_count_filler_words("um gato bonito", "pt-BR", &[]);
+        assert_eq!(text, "um gato bonito");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_filter_preserves_spanish_ha() {
+        let (text, count) = filter_and_count_filler_words("ha sido un buen dia", "es", &[]);
+        assert_eq!(text, "ha sido un buen dia");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_filter_preserves_italian_eh() {
+        let (text, count) = filter_and_count_filler_words("eh va bene", "it", &[]);
+        assert_eq!(text, "eh va bene");
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_filter_appends_extra_filler_words() {
+        let extras = vec!["like".to_string(), "you know".to_string()];
+        let (text, count) =
+            filter_and_count_filler_words("like this is good you know", "en", &extras);
+        assert_eq!(text, "this is good");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn test_filter_empty_extra_filler_words_is_noop() {
+        let extras: Vec<String> = Vec::new();
+        let (text, count) = filter_and_count_filler_words("uh this works", "en", &extras);
+        assert_eq!(text, "this works");
+        assert_eq!(count, 1);
     }
 
     #[test]

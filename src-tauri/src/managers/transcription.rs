@@ -1300,7 +1300,11 @@ impl TranscriptionManager {
         let mut filler_words_removed: usize = 0;
 
         if settings.enable_filler_word_filter {
-            let (new_text, count) = filter_and_count_filler_words(&filtered_result);
+            let (new_text, count) = filter_and_count_filler_words(
+                &filtered_result,
+                &settings.app_language,
+                &settings.extra_filler_words,
+            );
             filtered_result = new_text;
             filler_words_removed = count;
         }
