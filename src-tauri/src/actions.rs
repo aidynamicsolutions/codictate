@@ -789,7 +789,11 @@ impl ShortcutAction for TranscribeAction {
                 // On-demand mode: Start recording first, then play audio feedback, then apply mute
                 // This allows the microphone to be activated before playing the sound
                 debug!("On-demand mode: Starting recording first (blocking), then audio feedback");
-                const CONNECTING_OVERLAY_THRESHOLD: Duration = Duration::from_millis(120);
+                // Fast internal-mic starts often complete just after 120ms, which makes the
+                // "Starting microphone..." state flash too briefly to read before we switch to
+                // the recording bars. Hold back the connecting overlay until startup is clearly
+                // perceptible, while still preserving it for genuinely slow starts.
+                const CONNECTING_OVERLAY_THRESHOLD: Duration = Duration::from_millis(220);
 
                 let is_first_trigger = rm.is_first_trigger();
                 // Fast pre-start hint only from explicit settings.

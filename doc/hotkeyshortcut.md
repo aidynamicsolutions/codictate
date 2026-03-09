@@ -74,7 +74,7 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
   3. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
     - **Cons**: Small initial delay (typically ~100-200ms) before UI appears; start fails after capture-ready timeout (500ms) instead of showing a false recording state.
-    - **Implementation**: `TranscribeAction::start` waits for `try_start_recording()` to return `RecordingStartOutcome::Started(...)` before showing recording UI. If startup is slow, a "Starting microphone..." connecting overlay appears (immediate for known Bluetooth devices, or after a 120ms threshold for slower non-Bluetooth starts). ASR model warm-up continues in the background and does not block the recording bars.
+    - **Implementation**: `TranscribeAction::start` waits for `try_start_recording()` to return `RecordingStartOutcome::Started(...)` before showing recording UI. If startup is slow, a "Starting microphone..." connecting overlay appears (immediate for known Bluetooth devices, or after a 220ms threshold for slower non-Bluetooth starts). ASR model warm-up continues in the background and does not block the recording bars.
  5. **AX Fast Fallback (macOS insertion path)**: Smart-insertion AX context capture now applies a short messaging timeout and degrades to context-unavailable behavior when focus lookup is unresponsive (`kAXErrorCannotComplete`) so delivery does not stall behind long AX waits.
 
 ### Bluetooth Microphone Handling
@@ -84,7 +84,7 @@ Bluetooth mics (e.g., AirPods) require special handling due to the A2DP→HFP pr
 **Pre-warming**: On app startup, if a Bluetooth mic is selected, the system briefly opens the audio stream in the background to trigger the profile switch. This happens before the user presses fn.
 
 **Overlay Behavior**:
-- **Internal mics**: Usually go directly to recording overlay (fast ~100-200ms init); if startup crosses the 120ms threshold, "Starting microphone..." is shown briefly.
+- **Internal mics**: Usually go directly to recording overlay (fast ~100-200ms init); if startup crosses the 220ms threshold, "Starting microphone..." is shown.
 - **Bluetooth mics**: Show "Starting microphone..." connecting overlay → warmup delay → recording overlay
 
 **Warmup Delays** (Bluetooth only):
