@@ -73,6 +73,14 @@ static PERMISSION_CHECK_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Note: Checking AXIsProcessTrusted() is very cheap (just reads a flag), so frequent polling is fine.
 const PERMISSION_CHECK_INTERVAL_MS: u64 = 500;
 
+fn new_trigger_id() -> String {
+    uuid::Uuid::new_v4().to_string()[..8].to_string()
+}
+
+fn annotate_shortcut_with_trigger(shortcut: &str, trigger_id: &str) -> String {
+    format!("{shortcut}#trigger={trigger_id}")
+}
+
 /// Helper to get the app handle safely
 fn get_app_handle() -> Option<AppHandle> {
     APP_HANDLE
@@ -577,9 +585,29 @@ fn handle_fn_pressed(app: &AppHandle) {
             }
         }
 
+        if !crate::backup_restore::ensure_transcription_start_allowed(app) {
+            info!(
+                press_id = press_id,
+                event_code = "fn_ptt_start_blocked_maintenance",
+                "Skipping Fn push-to-talk start because backup/restore maintenance mode is active"
+            );
+            return;
+        }
+
         // All checks passed - start push-to-talk recording
         info!("handle_fn_pressed: Starting push-to-talk recording (press_id={})", press_id);
         PTT_STARTED.store(true, Ordering::SeqCst);
+
+        let trigger_id = new_trigger_id();
+        info!(
+            binding = "transcribe",
+            shortcut = "fn",
+            trigger_id = %trigger_id,
+            trigger_source = "fn_key_down",
+            press_id = press_id,
+            event_code = "startup_trigger_received",
+            "Audio startup trigger received before session creation"
+        );
         
         // Reset hands-free toggle state to ensure mutual exclusivity
         // This prevents stale toggle state if hands-free was previously active
@@ -589,9 +617,10 @@ fn handle_fn_pressed(app: &AppHandle) {
                 states.active_toggles.insert("transcribe_handsfree".to_string(), false);
             };
         }
-        
+
         if let Some(action) = ACTION_MAP.get("transcribe") {
-            action.start(app, "transcribe", "fn");
+            let shortcut = annotate_shortcut_with_trigger("fn", &trigger_id);
+            action.start(app, "transcribe", &shortcut);
         }
     }
 }
@@ -690,7 +719,17 @@ fn handle_handsfree_toggle(app: &AppHandle) {
         // Now call the action without holding the lock
         if should_start {
             debug!("Hands-free mode: starting transcription");
-            action.start(app, BINDING_ID, "fn+space");
+            let trigger_id = new_trigger_id();
+            info!(
+                binding = BINDING_ID,
+                shortcut = "fn+space",
+                trigger_id = %trigger_id,
+                trigger_source = "shortcut_start",
+                event_code = "startup_trigger_received",
+                "Audio startup trigger received before session creation"
+            );
+            let shortcut = annotate_shortcut_with_trigger("fn+space", &trigger_id);
+            action.start(app, BINDING_ID, &shortcut);
         } else {
             debug!("Hands-free mode: stopping transcription");
             action.stop(app, BINDING_ID, "fn+space");

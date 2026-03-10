@@ -703,6 +703,10 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let correction_manager = Arc::new(CorrectionManager::new(app_handle.clone()));
     app_handle.manage(correction_manager);
 
+    // Track default-input and topology changes so default-route startup can
+    // safely reuse cached topology only when the route is unchanged.
+    crate::audio_device_info::start_input_route_change_monitor();
+
     // Pre-warm Bluetooth microphone if selected
     // (triggers A2DP→HFP switch if needed)
     recording_manager.prewarm_bluetooth_mic();

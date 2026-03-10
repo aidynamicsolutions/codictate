@@ -40,9 +40,16 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
   User presses Fn
         │
         ▼
+  ┌─────────────────────┐
+  │ Emit trigger_id +   │
+  │ start mic prearm    │
+  └─────────────────────┘
+        │
+        ▼
   ┌─────────────────┐
   │ Start Recording │  ──▶ PUSH-TO-TALK MODE
-  │  Immediately    │      (recording active)
+  │ when capture is │      (recording active)
+  │ actually ready  │
   └─────────────────┘
         │
         ├──── Space pressed while holding Fn ──▶ HANDS-FREE MODE (Cancel PTT, Start Hands-free)
@@ -66,16 +73,15 @@ On macOS, the standalone `Fn` key requires special handling via `fn_key_monitor`
 
  To eliminate audio cutoff (the "first word missing" problem), the system employs several strategies:
 
- 1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time.
- 2. **VAD & Model Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading the ASR model (`initiate_model_load`) at app startup. This eliminates the ~700ms cold start delay for the first recording.
- 3. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
-  1. **Config Caching**: The `AudioRecorder` caches the `cpal` stream configuration. This bypasses slow device enumeration on subsequent uses, reducing startup time.
-  2. **VAD & Model Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading the ASR model (`initiate_model_load`) at app startup. This eliminates the ~700ms cold start delay for the first recording.
-  3. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
+ 1. **Recorder Warmup**: The system pre-loads the VAD model (`warmup_recorder`) and starts loading the ASR model in the background. This removes the cold-start cost of constructing the recorder on the first recording.
+ 2. **Trigger-Bound Prearm**: In on-demand mode, `Fn` down starts a narrow warm path immediately, and non-Fn shortcuts start the same warm path at the earliest synchronous action boundary. Prearm opens the microphone stream behind a single serialized gate so the later recording start reuses in-flight or ready work instead of opening twice.
+ 3. **Route-Aware Default Cache Reuse**: The input-device cache now stores the macOS default-input generation it was captured under. System-default starts only reuse cached topology when the CoreAudio route monitor confirms the default route has not changed; otherwise the app falls back to fresh enumeration.
+ 4. **Wait for Ready (UI)**: The overlay is **only shown** after the audio stream is fully active.
     - **Pros**: Guaranteed data integrity. If the user sees "Recording", the mic is definitely capturing audio.
     - **Cons**: Small initial delay (typically ~100-200ms) before UI appears; start fails after capture-ready timeout (500ms) instead of showing a false recording state.
-    - **Implementation**: `TranscribeAction::start` waits for `try_start_recording()` to return `RecordingStartOutcome::Started(...)` before showing recording UI. If startup is slow, a "Starting microphone..." connecting overlay appears (immediate for known Bluetooth devices, or after a 220ms threshold for slower non-Bluetooth starts). ASR model warm-up continues in the background and does not block the recording bars.
- 5. **AX Fast Fallback (macOS insertion path)**: Smart-insertion AX context capture now applies a short messaging timeout and degrades to context-unavailable behavior when focus lookup is unresponsive (`kAXErrorCannotComplete`) so delivery does not stall behind long AX waits.
+    - **Implementation**: `TranscribeAction::start` waits for `try_start_recording()` to return `RecordingStartOutcome::Started(...)` before showing recording UI. If startup is slow, a "Starting microphone..." connecting overlay appears (immediate for known Bluetooth devices, or after a 220ms threshold for slower non-Bluetooth starts).
+ 5. **Structured Startup Logs**: The backend emits `trigger_id`, topology resolution mode (`warm`, `cache`, `fresh`), and startup event codes so developers can follow `fn_press -> connecting_overlay -> stream_open_ready -> recording_overlay` in the unified log without ad hoc instrumentation.
+ 6. **AX Fast Fallback (macOS insertion path)**: Smart-insertion AX context capture now applies a short messaging timeout and degrades to context-unavailable behavior when focus lookup is unresponsive (`kAXErrorCannotComplete`) so delivery does not stall behind long AX waits.
 
 ### Bluetooth Microphone Handling
 
@@ -92,9 +98,10 @@ Bluetooth mics (e.g., AirPods) require special handling due to the A2DP→HFP pr
 - Subsequent triggers: 750ms (buffer stabilization)
 
 **Key Files**:
-- [audio.rs](../src-tauri/src/managers/audio.rs): `prewarm_bluetooth_mic()`, `should_show_connecting_overlay_pre_start()`, `is_active_stream_bluetooth()`
-- [lib.rs](../src-tauri/src/lib.rs): Calls prewarm on app startup
-- [actions.rs](../src-tauri/src/actions.rs): Warmup delay logic
+- [audio.rs](../src-tauri/src/managers/audio.rs): prearm lifecycle, default-route cache policy, and structured startup logs
+- [fn_key_monitor.rs](../src-tauri/src/fn_key_monitor.rs): `Fn` trigger logging and immediate push-to-talk prearm kickoff
+- [lib.rs](../src-tauri/src/lib.rs): starts the CoreAudio route monitor and Bluetooth prewarm on startup
+- [actions.rs](../src-tauri/src/actions.rs): safe capture-ready gating, connecting overlay timing, and `trigger_id` propagation into session logs
 
 ### Seamless Mode Switching
 

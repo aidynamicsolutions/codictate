@@ -246,6 +246,7 @@ pub async fn start_mic_preview(app: AppHandle) -> Result<(), String> {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager
         .start_microphone_stream()
+        .map(|_| ())
         .map_err(|e| format!("Failed to start mic preview: {}", e))
 }
 

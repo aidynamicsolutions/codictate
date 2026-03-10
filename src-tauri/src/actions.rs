@@ -3,7 +3,9 @@ use crate::apple_intelligence;
 use crate::analytics::{self, BackendAnalyticsEvent};
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::growth::{self, FeatureName};
-use crate::managers::audio::{AudioRecordingManager, RecordingStartFailure, RecordingStartOutcome};
+use crate::managers::audio::{
+    AudioRecordingManager, RecordingPrearmSource, RecordingStartFailure, RecordingStartOutcome,
+};
 use crate::managers::history::{HistoryEntry, HistoryManager};
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::managers::mlx::MlxModelManager;
@@ -583,6 +585,36 @@ fn complete_connecting_overlay_phase(phase: &AtomicU8) -> u8 {
     phase.swap(CONNECTING_PHASE_COMPLETED, Ordering::SeqCst)
 }
 
+fn log_connecting_overlay_shown(
+    session_id: &str,
+    binding_id: &str,
+    trigger_id: &str,
+    message: &'static str,
+    threshold_ms: Option<u128>,
+) {
+    match threshold_ms {
+        Some(threshold_ms) => {
+            info!(
+                session = %session_id,
+                binding = binding_id,
+                trigger_id = %trigger_id,
+                threshold_ms = threshold_ms,
+                event_code = "overlay_connecting_shown",
+                "{message}"
+            );
+        }
+        None => {
+            info!(
+                session = %session_id,
+                binding = binding_id,
+                trigger_id = %trigger_id,
+                event_code = "overlay_connecting_shown",
+                "{message}"
+            );
+        }
+    }
+}
+
 fn should_hide_aborted_recording_overlay(
     has_active_recording_session: bool,
     has_active_transcription_session: bool,
@@ -620,6 +652,22 @@ fn maybe_hide_aborted_recording_overlay(
     }
 }
 
+fn ensure_microphone_permission_or_notify(app: &AppHandle) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use crate::permissions::{check_microphone_permission, MicrophonePermission};
+
+        if check_microphone_permission() == MicrophonePermission::Denied {
+            error!("Microphone permission denied, cannot start recording");
+            let _ = app.emit("microphone-permission-denied", ());
+            crate::notification::show_microphone_permission_denied(app);
+            return false;
+        }
+    }
+
+    true
+}
+
 fn emit_transcription_delivery_events(app: &AppHandle, source_action: &str) {
     let _ = app.emit("transcription-inserted", source_action.to_string());
 
@@ -632,13 +680,64 @@ fn emit_transcription_delivery_events(app: &AppHandle, source_action: &str) {
         let _ = app.emit("onboarding-transcription-success", source_action.to_string());
     }
 }
+
+const TRIGGER_METADATA_SEPARATOR: &str = "#trigger=";
+
+fn split_shortcut_trigger_metadata(shortcut_str: &str) -> (&str, Option<&str>) {
+    match shortcut_str.split_once(TRIGGER_METADATA_SEPARATOR) {
+        Some((base_shortcut, trigger_id)) if !trigger_id.is_empty() => {
+            (base_shortcut, Some(trigger_id))
+        }
+        _ => (shortcut_str, None),
+    }
+}
+
+fn new_trigger_id() -> String {
+    uuid::Uuid::new_v4().to_string()[..8].to_string()
+}
+
+fn recording_prearm_source_for_shortcut(shortcut_str: &str) -> RecordingPrearmSource {
+    if shortcut_str == "fn" {
+        RecordingPrearmSource::FnKeyDown
+    } else {
+        RecordingPrearmSource::ShortcutStart
+    }
+}
+
+fn trigger_source_label_for_shortcut(shortcut_str: &str) -> &'static str {
+    if shortcut_str == "fn" {
+        "fn_key_down"
+    } else {
+        "shortcut_start"
+    }
+}
+
 impl ShortcutAction for TranscribeAction {
-    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         if !crate::backup_restore::ensure_transcription_start_allowed(app) {
             debug!(
                 "Skipped transcription start for '{}' because backup/restore maintenance mode is active",
                 binding_id
             );
+            return;
+        }
+
+        let (shortcut_name, existing_trigger_id) = split_shortcut_trigger_metadata(shortcut_str);
+        let trigger_id = existing_trigger_id
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(new_trigger_id);
+        if existing_trigger_id.is_none() {
+            info!(
+                binding = binding_id,
+                shortcut = shortcut_name,
+                trigger_id = %trigger_id,
+                trigger_source = trigger_source_label_for_shortcut(shortcut_name),
+                event_code = "startup_trigger_received",
+                "Audio startup trigger received before session creation"
+            );
+        }
+
+        if !ensure_microphone_permission_or_notify(app) {
             return;
         }
 
@@ -653,6 +752,8 @@ impl ShortcutAction for TranscribeAction {
 
         let app_clone = app.clone();
         let binding_id_clone = binding_id.to_string();
+        let trigger_id_clone = trigger_id.clone();
+        let shortcut_name = shortcut_name.to_string();
 
         // Synchronously prepare recording state to handle race conditions
         // This sets the state to "Preparing" so if stop() is called immediately,
@@ -666,34 +767,23 @@ impl ShortcutAction for TranscribeAction {
             return;
         };
 
+        rm.kickoff_on_demand_prearm(
+            recording_prearm_source_for_shortcut(&shortcut_name),
+            &trigger_id,
+        );
+
         // Spawn a thread to avoid blocking the event tap/caller
         std::thread::spawn(move || {
             let app = &app_clone;
             let binding_id = &binding_id_clone;
+            let trigger_id = &trigger_id_clone;
 
-            // Check microphone permission BEFORE showing any UI
-            // This prevents the overlay from appearing when permission is denied
-            #[cfg(target_os = "macos")]
-            {
-                use crate::permissions::{check_microphone_permission, MicrophonePermission};
-
-                if check_microphone_permission() == MicrophonePermission::Denied {
-                    error!("Microphone permission denied, cannot start recording");
-
-                    // Emit event so frontend can show permission UI if it's already visible
-                    let _ = app.emit("microphone-permission-denied", ());
-                    // Show native notification without stealing focus from the active app
-                    crate::notification::show_microphone_permission_denied(app);
-                    return; // Don't show overlay or start recording
-                }
-            }
+            let rm = app.state::<Arc<AudioRecordingManager>>();
 
             let start_time = Instant::now();
             info!("Recording started for binding: {}", binding_id);
 
             change_tray_icon(app, TrayIconState::Recording);
-
-            let rm = app.state::<Arc<AudioRecordingManager>>();
 
             // Get the microphone mode to determine audio feedback timing
             let settings = get_settings(app);
@@ -705,6 +795,8 @@ impl ShortcutAction for TranscribeAction {
             info!(
                 binding = binding_id,
                 session = %session_id,
+                trigger_id = %trigger_id,
+                trigger_source = trigger_source_label_for_shortcut(&shortcut_name),
                 event_code = "recording_start_triggered",
                 "Recording start triggered"
             );
@@ -726,12 +818,13 @@ impl ShortcutAction for TranscribeAction {
                     rm_clone.apply_mute();
                 });
 
-                match rm.try_start_recording(binding_id, &session_id, prepare_token) {
+                match rm.try_start_recording(binding_id, &session_id, prepare_token, trigger_id) {
                     RecordingStartOutcome::Started(start_success) => {
                         recording_started = true;
                         info!(
                             session = %session_id,
                             binding = binding_id,
+                            trigger_id = %trigger_id,
                             latency_ms = start_success.capture_ready_latency.as_millis(),
                             device = start_success
                                 .active_device_name
@@ -753,6 +846,7 @@ impl ShortcutAction for TranscribeAction {
                             info!(
                                 session = %session_id,
                                 binding = binding_id,
+                                trigger_id = %trigger_id,
                                 model_ready_for_recording,
                                 model_loading = !selected_model.is_empty()
                                     && !model_ready_for_recording,
@@ -763,6 +857,7 @@ impl ShortcutAction for TranscribeAction {
                             info!(
                                 session = %session_id,
                                 binding = binding_id,
+                                trigger_id = %trigger_id,
                                 event_code = "recording_released_before_overlay_shown",
                                 "Recording stopped before the recording overlay could be shown"
                             );
@@ -774,6 +869,7 @@ impl ShortcutAction for TranscribeAction {
                         warn!(
                             session = %session_id,
                             binding = binding_id,
+                            trigger_id = %trigger_id,
                             reason = recording_start_failure_label(&reason),
                             details = recording_start_failure_details(&reason),
                             owner = recording_start_failure_owner(&reason),
@@ -809,25 +905,31 @@ impl ShortcutAction for TranscribeAction {
                 let connecting_phase = Arc::new(AtomicU8::new(CONNECTING_PHASE_PENDING));
 
                 // Show connecting immediately for known Bluetooth devices.
-                if likely_bluetooth {
-                    info!(
-                        event_code = "overlay_connecting_shown",
-                        "Bluetooth mic detected, showing connecting overlay"
+                if likely_bluetooth && try_mark_connecting_overlay_shown(&connecting_phase) {
+                    log_connecting_overlay_shown(
+                        &session_id,
+                        binding_id,
+                        trigger_id,
+                        "Bluetooth mic detected, showing connecting overlay",
+                        None,
                     );
-                    if try_mark_connecting_overlay_shown(&connecting_phase) {
-                        utils::show_connecting_overlay(app);
-                    }
+                    utils::show_connecting_overlay(app);
                 } else {
                     // For non-Bluetooth starts, only show connecting if startup is visibly slow.
                     let app_for_threshold = app.clone();
                     let connecting_phase_for_threshold = Arc::clone(&connecting_phase);
+                    let binding_id_for_threshold = binding_id.to_string();
+                    let session_id_for_threshold = session_id.clone();
+                    let trigger_id_for_threshold = trigger_id.clone();
                     std::thread::spawn(move || {
                         std::thread::sleep(CONNECTING_OVERLAY_THRESHOLD);
                         if try_mark_connecting_overlay_shown(&connecting_phase_for_threshold) {
-                            info!(
-                                threshold_ms = CONNECTING_OVERLAY_THRESHOLD.as_millis(),
-                                event_code = "overlay_connecting_shown",
-                                "Recording start exceeded threshold, showing connecting overlay"
+                            log_connecting_overlay_shown(
+                                &session_id_for_threshold,
+                                &binding_id_for_threshold,
+                                &trigger_id_for_threshold,
+                                "Recording start exceeded threshold, showing connecting overlay",
+                                Some(CONNECTING_OVERLAY_THRESHOLD.as_millis()),
                             );
                             utils::show_connecting_overlay(&app_for_threshold);
                         }
@@ -837,7 +939,8 @@ impl ShortcutAction for TranscribeAction {
                 let recording_start_time = Instant::now();
 
                 // Blocks here until Mic is ready (~100-200ms for internal, ~500ms+ for Bluetooth)
-                let start_outcome = rm.try_start_recording(binding_id, &session_id, prepare_token);
+                let start_outcome =
+                    rm.try_start_recording(binding_id, &session_id, prepare_token, trigger_id);
 
                 match start_outcome {
                     RecordingStartOutcome::Started(start_success) => {
@@ -846,6 +949,7 @@ impl ShortcutAction for TranscribeAction {
                         info!(
                             session = %session_id,
                             binding = binding_id,
+                            trigger_id = %trigger_id,
                             latency_ms = start_success.capture_ready_latency.as_millis(),
                             device = start_success
                                 .active_device_name
@@ -867,8 +971,12 @@ impl ShortcutAction for TranscribeAction {
                         // If we couldn't infer Bluetooth from settings pre-start (e.g. Default mic),
                         // but the active stream is Bluetooth, still show connecting state before delay.
                         if is_bluetooth && try_mark_connecting_overlay_shown(&connecting_phase) {
-                            info!(
-                                "Bluetooth mic detected after stream open, showing connecting overlay"
+                            log_connecting_overlay_shown(
+                                &session_id,
+                                binding_id,
+                                trigger_id,
+                                "Bluetooth mic detected after stream open, showing connecting overlay",
+                                None,
                             );
                             utils::show_connecting_overlay(app);
                         }
@@ -885,6 +993,7 @@ impl ShortcutAction for TranscribeAction {
                             info!(
                                 delay_ms = warmup_delay_ms,
                                 is_first_trigger = is_first_trigger,
+                                trigger_id = %trigger_id,
                                 "Bluetooth microphone: adding warmup delay (pre-warmed)"
                             );
                             std::thread::sleep(std::time::Duration::from_millis(warmup_delay_ms));
@@ -906,6 +1015,7 @@ impl ShortcutAction for TranscribeAction {
                             info!(
                                 session = %session_id,
                                 binding = binding_id,
+                                trigger_id = %trigger_id,
                                 model_ready_for_recording,
                                 model_loading = !selected_model.is_empty()
                                     && !model_ready_for_recording,
@@ -916,6 +1026,7 @@ impl ShortcutAction for TranscribeAction {
                             info!(
                                 session = %session_id,
                                 binding = binding_id,
+                                trigger_id = %trigger_id,
                                 event_code = "recording_released_before_overlay_shown",
                                 "Recording stopped before the recording overlay could be shown"
                             );
@@ -940,6 +1051,7 @@ impl ShortcutAction for TranscribeAction {
                         warn!(
                             session = %session_id,
                             binding = binding_id,
+                            trigger_id = %trigger_id,
                             reason = recording_start_failure_label(&reason),
                             details = recording_start_failure_details(&reason),
                             owner = recording_start_failure_owner(&reason),
@@ -1945,6 +2057,7 @@ mod tests {
     use super::{
         auto_refined_from_post_processed_text, build_undo_paste_capture,
         complete_connecting_overlay_phase,
+        new_trigger_id, recording_prearm_source_for_shortcut, split_shortcut_trigger_metadata,
         should_hide_aborted_recording_overlay,
         should_cleanup_ui_for_recording_start_failure, try_mark_connecting_overlay_shown,
         maybe_inserted_text_from_paste_result, paste_last_preparation_mode, select_inserted_text_for_refine_replace,
@@ -1955,7 +2068,7 @@ mod tests {
         CONNECTING_PHASE_SHOWN,
     };
     use crate::clipboard::PastePreparationMode;
-    use crate::managers::audio::{RecordingStartFailure, StateMismatchKind};
+    use crate::managers::audio::{RecordingPrearmSource, RecordingStartFailure, StateMismatchKind};
     use crate::managers::history::HistoryEntry;
     use crate::settings::ClipboardHandling;
     use std::sync::atomic::AtomicU8;
@@ -2200,6 +2313,43 @@ mod tests {
             sanitize_refine_punctuation_artifacts(source, refined),
             "alpha - - beta"
         );
+    }
+
+    #[test]
+    fn split_shortcut_trigger_metadata_extracts_embedded_trigger_id() {
+        let (shortcut, trigger_id) = split_shortcut_trigger_metadata("fn#trigger=abc123");
+        assert_eq!(shortcut, "fn");
+        assert_eq!(trigger_id, Some("abc123"));
+    }
+
+    #[test]
+    fn split_shortcut_trigger_metadata_leaves_plain_shortcut_unchanged() {
+        let (shortcut, trigger_id) = split_shortcut_trigger_metadata("option+space");
+        assert_eq!(shortcut, "option+space");
+        assert_eq!(trigger_id, None);
+    }
+
+    #[test]
+    fn shortcut_prearm_source_uses_fn_only_for_fn_shortcut() {
+        assert_eq!(
+            recording_prearm_source_for_shortcut("fn"),
+            RecordingPrearmSource::FnKeyDown
+        );
+        assert_eq!(
+            recording_prearm_source_for_shortcut("fn+space"),
+            RecordingPrearmSource::ShortcutStart
+        );
+        assert_eq!(
+            recording_prearm_source_for_shortcut("option+space"),
+            RecordingPrearmSource::ShortcutStart
+        );
+    }
+
+    #[test]
+    fn generated_trigger_ids_are_short_non_empty_tokens() {
+        let trigger_id = new_trigger_id();
+        assert_eq!(trigger_id.len(), 8);
+        assert!(trigger_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-'));
     }
 
     #[test]

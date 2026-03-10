@@ -117,6 +117,8 @@ Codictate is a cross-platform desktop speech-to-text app built with Tauri 2.x (R
 
 **Fn key on macOS**: The Fn/Globe key cannot be captured via Tauri's global shortcut API. It's handled natively in `fn_key_monitor.rs` using `CGEventTap`, emitting `fn-key-down`/`fn-key-up` Tauri events.
 
+**On-demand audio startup**: `fn_key_monitor.rs` now begins a narrow microphone prearm on `Fn` down for push-to-talk, and `actions.rs` starts the same warm path at the earliest action boundary for other shortcuts. `audio.rs` serializes stream-open work so prearm and recording start reuse the same open, auto-closes unused warm streams after a short grace window, and logs a `trigger_id` before session creation so later startup logs can be correlated to the original trigger.
+
 **Reserved shortcuts**: Common system shortcuts are blocked in `shortcut.rs` to prevent users from accidentally overriding copy/paste etc. Includes:
 - macOS: `fn+a/c/d/e/f/h/m/n/q`, `cmd+c/v/x/z/a/s/tab/space/q`
 - Windows/Linux: `ctrl+c/v/x/z/a/s`, `alt+tab/f4`, `super+l/d`
