@@ -8,6 +8,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { commands } from "@/bindings";
 import { AudioAGC } from "@/utils/audioAGC";
 import { MicrophoneModal, AudioLevelBars } from "@/components/shared/MicrophoneModal";
+import { findBuiltInOrInternalMic } from "@/utils/microphoneUtils";
 
 interface MicrophoneCheckStepProps {
   onContinue: () => void;
@@ -21,6 +22,7 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
   const { t } = useTranslation();
   const {
     refreshAudioDevices,
+    audioDevices,
     isLoading,
   } = useSettings();
 
@@ -31,6 +33,7 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
 
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const preferredConsistencyMic = findBuiltInOrInternalMic(audioDevices);
 
   // Start mic preview on mount & Listen for mic level updates
   useEffect(() => {
@@ -105,7 +108,16 @@ export const MicrophoneCheckStep: React.FC<MicrophoneCheckStepProps> = ({
               {t("onboarding.microphoneCheck.title")}
             </h1>
             <p className="text-muted-foreground">
-              {t("onboarding.microphoneCheck.subtitle")}
+              {preferredConsistencyMic
+                ? t("onboarding.microphoneCheck.subtitleBuiltIn", {
+                    name: preferredConsistencyMic.name,
+                    defaultValue:
+                      "For the most consistent startup speed, choose {{name}} instead of Default when it matches how you usually dictate.",
+                  })
+                : t("onboarding.microphoneCheck.subtitleGeneric", {
+                    defaultValue:
+                      "A specific microphone gives the most predictable startup speed. Default stays flexible and follows macOS input changes automatically.",
+                  })}
             </p>
           </div>
 

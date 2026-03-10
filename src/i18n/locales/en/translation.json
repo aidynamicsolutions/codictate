@@ -366,6 +366,8 @@
       "back": "Back",
       "title": "Speak to test your microphone",
       "subtitle": "Your computer's built-in mic will ensure optimal transcription.",
+      "subtitleBuiltIn": "For the most consistent startup speed, choose {{name}} instead of Default when it matches how you usually dictate.",
+      "subtitleGeneric": "A specific microphone gives the most predictable startup speed. Default stays flexible and follows macOS input changes automatically.",
       "question": "Do you see red bars moving while you speak?",
       "changeMicrophone": "No, change microphone",
       "yes": "Yes",
@@ -375,7 +377,9 @@
         "autoDetectDescription": "Uses the system default microphone",
         "default": "default",
         "defaultOption": "Default",
-        "defaultDescription": "Automatically selects the best available microphone"
+        "defaultDescription": "Follows macOS input changes automatically.",
+        "guidanceBuiltIn": "For the most consistent startup speed, choose {{name}}.",
+        "guidanceGeneric": "A specific microphone gives the most predictable startup behavior."
       }
     },
     "hotkeySetup": {

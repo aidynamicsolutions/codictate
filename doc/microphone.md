@@ -1,5 +1,9 @@
 # Microphone System Architecture
 
+For startup-speed behavior, cache lifecycle, and verification logs, use
+`doc/microphone-startup-optimization.md` as the canonical reference. This file
+focuses on device-selection and fallback behavior.
+
 ## Key Files
 
 | File | Purpose |

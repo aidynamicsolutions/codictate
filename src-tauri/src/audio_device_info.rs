@@ -4,14 +4,50 @@
 //! On other platforms, it falls back to name pattern matching.
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use tracing::debug;
+use once_cell::sync::Lazy;
+use std::sync::{Arc, Mutex};
+use tracing::{debug, info};
 #[cfg(target_os = "macos")]
 use tracing::warn;
 
 static INPUT_ROUTE_MONITOR_ACTIVE: AtomicBool = AtomicBool::new(false);
+static AUDIO_TOPOLOGY_EVENT_HANDLER: Lazy<Mutex<Option<Arc<dyn Fn(AudioTopologyEvent) + Send + Sync>>>> =
+    Lazy::new(|| Mutex::new(None));
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AudioTopologyEvent {
+    RouteChange,
+    Wake,
+}
+
+impl AudioTopologyEvent {
+    #[cfg(test)]
+    fn from_raw(code: i32) -> Option<Self> {
+        match code {
+            1 => Some(Self::RouteChange),
+            2 => Some(Self::Wake),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::RouteChange => "audio_route_change",
+            Self::Wake => "wake",
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MonitorRegistrationState {
+    Started,
+    AlreadyActive,
+}
 
 #[cfg(target_os = "macos")]
 mod ffi {
+    use super::MonitorRegistrationState;
     use std::ffi::CString;
     use std::os::raw::{c_char, c_int};
 
@@ -22,6 +58,7 @@ mod ffi {
         pub fn is_audio_device_continuity_camera(device_name: *const c_char) -> c_int;
         pub fn start_input_route_change_monitor() -> c_int;
         pub fn get_input_route_change_generation() -> u64;
+        pub fn start_audio_lifecycle_monitor() -> c_int;
     }
 
     /// Check if a device is Bluetooth using CoreAudio on macOS.
@@ -72,10 +109,11 @@ mod ffi {
         }
     }
 
-    pub fn start_route_monitor() -> Result<(), String> {
+    pub fn start_route_monitor() -> Result<MonitorRegistrationState, String> {
         let result = unsafe { start_input_route_change_monitor() };
         match result {
-            0 | 1 => Ok(()),
+            0 => Ok(MonitorRegistrationState::Started),
+            1 => Ok(MonitorRegistrationState::AlreadyActive),
             other => Err(format!(
                 "start_input_route_change_monitor failed with status {other}"
             )),
@@ -85,6 +123,60 @@ mod ffi {
     pub fn route_change_generation() -> u64 {
         unsafe { get_input_route_change_generation() }
     }
+
+    pub fn start_lifecycle_monitor() -> Result<MonitorRegistrationState, String> {
+        let result = unsafe { start_audio_lifecycle_monitor() };
+        match result {
+            0 => Ok(MonitorRegistrationState::Started),
+            1 => Ok(MonitorRegistrationState::AlreadyActive),
+            other => Err(format!(
+                "start_audio_lifecycle_monitor failed with status {other}"
+            )),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn log_audio_topology_bridge_event(bridge_source: &str, outcome: &str, reason: Option<&str>) {
+    info!(
+        bridge_source = bridge_source,
+        outcome = outcome,
+        reason = reason.unwrap_or(""),
+        event_code = "audio_topology_event_bridge",
+        "Audio topology bridge state updated"
+    );
+}
+
+fn dispatch_audio_topology_event(event: AudioTopologyEvent) {
+    log_audio_topology_bridge_event(event.as_str(), "event_received", None);
+    let handler = AUDIO_TOPOLOGY_EVENT_HANDLER
+        .lock()
+        .unwrap()
+        .as_ref()
+        .cloned();
+    if let Some(handler) = handler {
+        handler(event);
+    } else {
+        warn!(
+            bridge_source = event.as_str(),
+            outcome = "dropped_no_handler",
+            reason = "handler_not_registered",
+            event_code = "audio_topology_event_bridge",
+            "Dropped audio topology event because no Rust handler is registered"
+        );
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[unsafe(no_mangle)]
+pub extern "C" fn notify_audio_topology_route_change() {
+    dispatch_audio_topology_event(AudioTopologyEvent::RouteChange);
+}
+
+#[cfg(target_os = "macos")]
+#[unsafe(no_mangle)]
+pub extern "C" fn notify_audio_topology_wake() {
+    dispatch_audio_topology_event(AudioTopologyEvent::Wake);
 }
 
 /// Common Bluetooth device name patterns for fallback detection.
@@ -126,18 +218,49 @@ pub fn start_input_route_change_monitor() {
     #[cfg(target_os = "macos")]
     {
         match ffi::start_route_monitor() {
-            Ok(()) => {
+            Ok(MonitorRegistrationState::Started) => {
                 INPUT_ROUTE_MONITOR_ACTIVE.store(true, Ordering::SeqCst);
-                debug!("Input route change monitor active");
+                log_audio_topology_bridge_event("route_monitor", "started", None);
+            }
+            Ok(MonitorRegistrationState::AlreadyActive) => {
+                INPUT_ROUTE_MONITOR_ACTIVE.store(true, Ordering::SeqCst);
+                log_audio_topology_bridge_event("route_monitor", "already_active", None);
             }
             Err(err) => {
                 INPUT_ROUTE_MONITOR_ACTIVE.store(false, Ordering::SeqCst);
                 warn!(
+                    bridge_source = "route_monitor",
+                    outcome = "registration_failed",
+                    reason = err.as_str(),
+                    event_code = "audio_topology_event_bridge",
                     error = err,
                     "Failed to start input route change monitor; default-route startup will fall back to fresh enumeration"
                 );
             }
         }
+    }
+}
+
+pub fn register_audio_topology_event_handler(
+    handler: Arc<dyn Fn(AudioTopologyEvent) + Send + Sync>,
+) {
+    *AUDIO_TOPOLOGY_EVENT_HANDLER.lock().unwrap() = Some(handler);
+    #[cfg(target_os = "macos")]
+    log_audio_topology_bridge_event("rust_handler", "registered", None);
+}
+
+#[cfg(target_os = "macos")]
+pub fn start_audio_lifecycle_monitor() -> Result<(), String> {
+    match ffi::start_lifecycle_monitor() {
+        Ok(MonitorRegistrationState::Started) => {
+            log_audio_topology_bridge_event("lifecycle_monitor", "started", None);
+            Ok(())
+        }
+        Ok(MonitorRegistrationState::AlreadyActive) => {
+            log_audio_topology_bridge_event("lifecycle_monitor", "already_active", None);
+            Ok(())
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -212,6 +335,60 @@ pub fn is_device_bluetooth(device_name: &str) -> bool {
         "Bluetooth detection result (fallback)"
     );
     is_bt
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod macos_bridge_tests {
+    use super::{
+        dispatch_audio_topology_event, register_audio_topology_event_handler, AudioTopologyEvent,
+    };
+    use once_cell::sync::Lazy;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    static TEST_HANDLER_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    #[test]
+    fn topology_event_from_raw_maps_known_codes() {
+        let _guard = TEST_HANDLER_LOCK.lock().unwrap();
+        assert_eq!(
+            AudioTopologyEvent::from_raw(1),
+            Some(AudioTopologyEvent::RouteChange)
+        );
+        assert_eq!(AudioTopologyEvent::from_raw(2), Some(AudioTopologyEvent::Wake));
+        assert_eq!(AudioTopologyEvent::from_raw(99), None);
+    }
+
+    #[test]
+    fn topology_event_dispatch_invokes_registered_handler() {
+        let _guard = TEST_HANDLER_LOCK.lock().unwrap();
+        let call_count = Arc::new(AtomicUsize::new(0));
+        let received = Arc::new(Mutex::new(Vec::new()));
+        register_audio_topology_event_handler(Arc::new({
+            let call_count = Arc::clone(&call_count);
+            let received = Arc::clone(&received);
+            move |event| {
+                call_count.fetch_add(1, Ordering::SeqCst);
+                received.lock().unwrap().push(event);
+            }
+        }));
+
+        dispatch_audio_topology_event(AudioTopologyEvent::Wake);
+
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+        assert_eq!(*received.lock().unwrap(), vec![AudioTopologyEvent::Wake]);
+    }
+
+    #[test]
+    fn topology_event_dispatch_without_handler_is_a_noop() {
+        let _guard = TEST_HANDLER_LOCK.lock().unwrap();
+        *super::AUDIO_TOPOLOGY_EVENT_HANDLER.lock().unwrap() = None;
+        dispatch_audio_topology_event(AudioTopologyEvent::RouteChange);
+        assert!(super::AUDIO_TOPOLOGY_EVENT_HANDLER
+            .lock()
+            .unwrap()
+            .is_none());
+    }
 }
 
 /// Check if an audio device is a Built-in device.

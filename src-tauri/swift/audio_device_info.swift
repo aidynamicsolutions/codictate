@@ -3,6 +3,7 @@
 // NOTE: All logging is handled by Rust wrappers - do not add logging here
 
 import AudioToolbox
+import AppKit
 import CoreAudio
 import Foundation
 import os
@@ -10,6 +11,21 @@ import os
 private let routeMonitorLock = NSLock()
 private var routeMonitorStarted = false
 private var inputRouteChangeGeneration: UInt64 = 0
+private let lifecycleMonitorLock = NSLock()
+private var lifecycleMonitorStarted = false
+private var lifecycleMonitorRegistrationInProgress = false
+private var wakeLifecycleObserver: NSObjectProtocol?
+
+private func emitAudioTopologyEvent(_ eventCode: Int32) {
+    switch eventCode {
+    case 1:
+        notify_audio_topology_route_change()
+    case 2:
+        notify_audio_topology_wake()
+    default:
+        break
+    }
+}
 
 private func inputRouteChangeListener(
     _ inObjectID: AudioObjectID,
@@ -20,6 +36,7 @@ private func inputRouteChangeListener(
     routeMonitorLock.lock()
     inputRouteChangeGeneration &+= 1
     routeMonitorLock.unlock()
+    emitAudioTopologyEvent(1)
     return noErr
 }
 
@@ -85,6 +102,56 @@ public func getInputRouteChangeGeneration() -> UInt64 {
     let generation = inputRouteChangeGeneration
     routeMonitorLock.unlock()
     return generation
+}
+
+private func beginLifecycleMonitorRegistration() -> Int32 {
+    lifecycleMonitorLock.lock()
+    defer { lifecycleMonitorLock.unlock() }
+
+    if lifecycleMonitorStarted || lifecycleMonitorRegistrationInProgress {
+        return 1
+    }
+
+    lifecycleMonitorRegistrationInProgress = true
+    return 0
+}
+
+private func completeLifecycleMonitorRegistration(
+    wakeObserver: NSObjectProtocol
+) {
+    lifecycleMonitorLock.lock()
+    wakeLifecycleObserver = wakeObserver
+    lifecycleMonitorStarted = true
+    lifecycleMonitorRegistrationInProgress = false
+    lifecycleMonitorLock.unlock()
+}
+
+@_cdecl("start_audio_lifecycle_monitor")
+public func startAudioLifecycleMonitor() -> Int32 {
+    let registrationState = beginLifecycleMonitorRegistration()
+    if registrationState != 0 {
+        return registrationState
+    }
+
+    let registerObservers = { () -> Int32 in
+        let workspaceCenter = NSWorkspace.shared.notificationCenter
+        let wakeObserver = workspaceCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            emitAudioTopologyEvent(2)
+        }
+
+        completeLifecycleMonitorRegistration(wakeObserver: wakeObserver)
+        return 0
+    }
+
+    if Thread.isMainThread {
+        return registerObservers()
+    }
+
+    return DispatchQueue.main.sync(execute: registerObservers)
 }
 
 /// Checks if an audio device with the given name is a Bluetooth device.

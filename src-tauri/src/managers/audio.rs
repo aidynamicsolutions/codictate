@@ -9,7 +9,7 @@ use crate::settings::{get_settings, AppSettings};
 use crate::utils;
 use anyhow::Result;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{mpsc, Arc, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -186,6 +186,16 @@ pub enum StreamStartOutcome {
     CancelledBeforeOpen,
 }
 
+impl StreamStartOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            StreamStartOutcome::AlreadyOpen => "already_open",
+            StreamStartOutcome::OpenedNow { .. } => "opened_now",
+            StreamStartOutcome::CancelledBeforeOpen => "cancelled_before_open",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum StreamOpenContext {
     UserTriggered,
@@ -210,18 +220,229 @@ impl TopologyResolutionMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TopologyRefreshSource {
+    StartupPrime,
+    StartupPath,
+    AppForeground,
+    Wake,
+    AudioRouteChange,
+}
+
+impl TopologyRefreshSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TopologyRefreshSource::StartupPrime => "startup_prime",
+            TopologyRefreshSource::StartupPath => "startup_path",
+            TopologyRefreshSource::AppForeground => "app_foreground",
+            TopologyRefreshSource::Wake => "wake",
+            TopologyRefreshSource::AudioRouteChange => "audio_route_change",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TopologyRefreshPath {
+    Startup,
+    Opportunistic,
+}
+
+impl TopologyRefreshPath {
+    fn as_str(self) -> &'static str {
+        match self {
+            TopologyRefreshPath::Startup => "startup_path",
+            TopologyRefreshPath::Opportunistic => "opportunistic",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StartupFreshReason {
+    CacheMissing,
+    CacheExpired,
+    RouteChanged,
+    RouteUnknown,
+    SelectedDeviceMissingInCache,
+    CachedOpenFailed,
+}
+
+impl StartupFreshReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            StartupFreshReason::CacheMissing => "cache_missing",
+            StartupFreshReason::CacheExpired => "cache_expired",
+            StartupFreshReason::RouteChanged => "route_changed",
+            StartupFreshReason::RouteUnknown => "route_unknown",
+            StartupFreshReason::SelectedDeviceMissingInCache => "selected_device_missing",
+            StartupFreshReason::CachedOpenFailed => "cached_open_failed",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StreamStartResult {
     pub outcome: StreamStartOutcome,
     pub resolution_mode: TopologyResolutionMode,
     pub resolution_reason: String,
+    pub fresh_reason: Option<String>,
+    pub cache_refresh_source: Option<String>,
+    pub cache_refresh_path: Option<String>,
+    pub cache_age: Option<Duration>,
+    pub cache_route_generation: Option<u64>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ActiveStreamTopologyProvenance {
+    resolution_mode: TopologyResolutionMode,
+    resolution_reason: String,
+    fresh_reason: Option<String>,
+    cache_refresh_source: Option<String>,
+    cache_refresh_path: Option<String>,
+    cache_age: Option<Duration>,
+    cache_route_generation: Option<u64>,
+}
+
+#[derive(Clone, Debug)]
+struct ActiveStreamState {
+    stream_epoch: u64,
+    provenance: ActiveStreamTopologyProvenance,
 }
 
 #[derive(Clone)]
 struct InputDeviceCacheEntry {
     cached_at: Instant,
     route_generation: Option<u64>,
+    refresh_source: TopologyRefreshSource,
+    refresh_path: TopologyRefreshPath,
     devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>,
+}
+
+#[derive(Clone)]
+enum TopologyCacheState {
+    Missing,
+    Fresh {
+        age: Duration,
+        entry: InputDeviceCacheEntry,
+    },
+    Expired { age: Duration },
+}
+
+#[derive(Clone)]
+struct TopologyRefreshResult {
+    devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>,
+    route_generation: Option<u64>,
+}
+
+fn topology_cache_is_expired(age: Duration, ttl: Duration) -> bool {
+    age > ttl
+}
+
+fn stream_start_result_from_provenance(
+    outcome: StreamStartOutcome,
+    provenance: &ActiveStreamTopologyProvenance,
+) -> StreamStartResult {
+    StreamStartResult {
+        outcome,
+        resolution_mode: provenance.resolution_mode,
+        resolution_reason: provenance.resolution_reason.clone(),
+        fresh_reason: provenance.fresh_reason.clone(),
+        cache_refresh_source: provenance.cache_refresh_source.clone(),
+        cache_refresh_path: provenance.cache_refresh_path.clone(),
+        cache_age: provenance.cache_age,
+        cache_route_generation: provenance.cache_route_generation,
+    }
+}
+
+#[derive(Clone)]
+struct StartupRefreshCoordinator {
+    state: Arc<(Mutex<StartupRefreshState>, Condvar)>,
+}
+
+#[derive(Clone)]
+struct CompletedStartupRefresh {
+    request_id: u64,
+    result: Result<TopologyRefreshResult, String>,
+}
+
+struct StartupRefreshState {
+    next_request_id: u64,
+    in_flight_request_id: Option<u64>,
+    last_completed: Option<CompletedStartupRefresh>,
+}
+
+impl StartupRefreshCoordinator {
+    fn new() -> Self {
+        Self {
+            state: Arc::new((
+                Mutex::new(StartupRefreshState {
+                    next_request_id: 1,
+                    in_flight_request_id: None,
+                    last_completed: None,
+                }),
+                Condvar::new(),
+            )),
+        }
+    }
+
+    fn run<F, C>(&self, on_coalesced: C, refresh: F) -> Result<TopologyRefreshResult, anyhow::Error>
+    where
+        F: FnOnce(u64) -> Result<TopologyRefreshResult, anyhow::Error>,
+        C: FnOnce(u64),
+    {
+        enum RefreshRole {
+            Leader(u64),
+            Follower(u64),
+        }
+
+        let role = {
+            let (state_lock, _) = &*self.state;
+            let mut state = state_lock.lock().unwrap();
+            if let Some(request_id) = state.in_flight_request_id {
+                RefreshRole::Follower(request_id)
+            } else {
+                let request_id = state.next_request_id;
+                state.next_request_id += 1;
+                state.in_flight_request_id = Some(request_id);
+                RefreshRole::Leader(request_id)
+            }
+        };
+
+        match role {
+            RefreshRole::Leader(request_id) => {
+                let result = refresh(request_id).map_err(|error| error.to_string());
+                let cloned_result = result.clone();
+                let (state_lock, condvar) = &*self.state;
+                let mut state = state_lock.lock().unwrap();
+                state.in_flight_request_id = None;
+                state.last_completed = Some(CompletedStartupRefresh {
+                    request_id,
+                    result: cloned_result,
+                });
+                condvar.notify_all();
+                result.map_err(anyhow::Error::msg)
+            }
+            RefreshRole::Follower(request_id) => {
+                on_coalesced(request_id);
+                let (state_lock, condvar) = &*self.state;
+                let mut state = state_lock.lock().unwrap();
+                while state.in_flight_request_id == Some(request_id) {
+                    state = condvar.wait(state).unwrap();
+                }
+
+                let Some(completed) = state.last_completed.as_ref() else {
+                    return Err(anyhow::anyhow!(
+                        "startup refresh finished without recording a completed result"
+                    ));
+                };
+                if completed.request_id != request_id {
+                    return Err(anyhow::anyhow!(
+                        "startup refresh completed with an unexpected request id"
+                    ));
+                }
+                completed.result.clone().map_err(anyhow::Error::msg)
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -497,23 +718,24 @@ fn active_selection_for_cache_policy<'a>(
     selected_microphone
 }
 
-fn should_force_fresh_default_route_enumeration(
+fn default_route_fresh_reason(
     active_selected_microphone: Option<&str>,
     route_monitor_active: bool,
     cached_route_generation: Option<u64>,
     current_route_generation: Option<u64>,
-) -> bool {
+) -> Option<StartupFreshReason> {
     if is_explicit_microphone_selection(active_selected_microphone) {
-        return false;
+        return None;
     }
 
     if !route_monitor_active {
-        return true;
+        return Some(StartupFreshReason::RouteUnknown);
     }
 
     match (cached_route_generation, current_route_generation) {
-        (Some(cached), Some(current)) => cached != current,
-        _ => true,
+        (Some(cached), Some(current)) if cached == current => None,
+        (Some(_), Some(_)) => Some(StartupFreshReason::RouteChanged),
+        _ => Some(StartupFreshReason::RouteUnknown),
     }
 }
 
@@ -676,8 +898,15 @@ pub struct AudioRecordingManager {
     
     /// The name of the device currently opened in the stream (for logging)
     current_device_name: Arc<Mutex<Option<String>>>,
+    /// Topology provenance for the currently open stream epoch.
+    active_stream_state: Arc<Mutex<Option<ActiveStreamState>>>,
     /// Cached topology plus the route generation it was observed under.
     device_cache: Arc<Mutex<Option<InputDeviceCacheEntry>>>,
+    /// Keeps background topology refresh single-flight across lifecycle events.
+    refresh_inflight: Arc<AtomicU64>,
+    next_refresh_request_id: Arc<AtomicU64>,
+    /// Keeps startup-path refresh single-flight across concurrent callers.
+    startup_refresh_coordinator: Arc<StartupRefreshCoordinator>,
     /// Serialize stream-open work so prearm and recording start can reuse the same open.
     stream_start_lock: Arc<Mutex<()>>,
     /// Active stream epoch for ownership-safe warm-stream auto-close.
@@ -714,7 +943,11 @@ impl AudioRecordingManager {
             recording_start_time: Arc::new(Mutex::new(None)),
             timer_stop_tx: Arc::new(Mutex::new(None)),
             current_device_name: Arc::new(Mutex::new(None)),
+            active_stream_state: Arc::new(Mutex::new(None)),
             device_cache: Arc::new(Mutex::new(None)),
+            refresh_inflight: Arc::new(AtomicU64::new(0)),
+            next_refresh_request_id: Arc::new(AtomicU64::new(1)),
+            startup_refresh_coordinator: Arc::new(StartupRefreshCoordinator::new()),
             stream_start_lock: Arc::new(Mutex::new(())),
             active_stream_epoch: Arc::new(AtomicU64::new(0)),
             next_stream_epoch: Arc::new(AtomicU64::new(1)),
@@ -733,31 +966,312 @@ impl AudioRecordingManager {
 
     /* ---------- helper methods --------------------------------------------- */
 
-    const DEVICE_CACHE_TTL: Duration = Duration::from_secs(60 * 10);
+    const DEVICE_CACHE_TTL: Duration = Duration::from_secs(60 * 60 * 24);
     const PREARM_GRACE_TIMEOUT: Duration = Duration::from_millis(900);
 
     fn update_device_cache(
         &self,
         devices: Vec<crate::audio_toolkit::audio::CpalDeviceInfo>,
         route_generation: Option<u64>,
+        refresh_source: TopologyRefreshSource,
+        refresh_path: TopologyRefreshPath,
     ) {
         *self.device_cache.lock().unwrap() = Some(InputDeviceCacheEntry {
             cached_at: Instant::now(),
             route_generation,
+            refresh_source,
+            refresh_path,
             devices,
         });
     }
 
-    fn get_fresh_device_cache(
-        &self,
-    ) -> Option<(Duration, InputDeviceCacheEntry)> {
+    fn topology_cache_state(&self) -> TopologyCacheState {
         let cache = self.device_cache.lock().unwrap();
-        let entry = cache.as_ref()?;
+        let Some(entry) = cache.as_ref() else {
+            return TopologyCacheState::Missing;
+        };
         let age = entry.cached_at.elapsed();
-        if age > Self::DEVICE_CACHE_TTL {
+        if topology_cache_is_expired(age, Self::DEVICE_CACHE_TTL) {
+            return TopologyCacheState::Expired { age };
+        }
+        TopologyCacheState::Fresh {
+            age,
+            entry: entry.clone(),
+        }
+    }
+
+    fn remember_active_stream_state(
+        &self,
+        stream_epoch: u64,
+        provenance: ActiveStreamTopologyProvenance,
+    ) {
+        *self.active_stream_state.lock().unwrap() = Some(ActiveStreamState {
+            stream_epoch,
+            provenance,
+        });
+    }
+
+    fn clear_active_stream_state(&self) {
+        *self.active_stream_state.lock().unwrap() = None;
+    }
+
+    fn result_for_active_stream(
+        &self,
+        outcome: StreamStartOutcome,
+    ) -> Option<StreamStartResult> {
+        let active_epoch = self.active_stream_epoch.load(Ordering::SeqCst);
+        if active_epoch == 0 {
             return None;
         }
-        Some((age, entry.clone()))
+
+        let active_stream_state = self.active_stream_state.lock().unwrap().clone()?;
+        if active_stream_state.stream_epoch != active_epoch {
+            return None;
+        }
+
+        Some(stream_start_result_from_provenance(
+            outcome,
+            &active_stream_state.provenance,
+        ))
+    }
+
+    fn reused_active_stream_result(&self) -> StreamStartResult {
+        if let Some(result) = self.result_for_active_stream(StreamStartOutcome::AlreadyOpen) {
+            return result;
+        }
+
+        warn!(
+            stream_open_outcome = StreamStartOutcome::AlreadyOpen.as_str(),
+            provenance_missing = true,
+            event_code = "topology_resolution",
+            "Reused an open microphone stream without stored topology provenance"
+        );
+
+        StreamStartResult {
+            outcome: StreamStartOutcome::AlreadyOpen,
+            resolution_mode: TopologyResolutionMode::Warm,
+            resolution_reason: "reused_open_stream".to_string(),
+            fresh_reason: None,
+            cache_refresh_source: None,
+            cache_refresh_path: None,
+            cache_age: None,
+            cache_route_generation: None,
+        }
+    }
+
+    fn log_topology_refresh_attempt(
+        &self,
+        source: TopologyRefreshSource,
+        refresh_path: TopologyRefreshPath,
+        outcome: &'static str,
+        duration: Option<Duration>,
+        device_count: Option<usize>,
+        route_generation: Option<u64>,
+        cache_updated: bool,
+        skip_reason: Option<&str>,
+        request_id: Option<u64>,
+        error: Option<&str>,
+    ) {
+        let duration_ms = duration.map(|value| value.as_millis() as u64).unwrap_or_default();
+        let device_count = device_count.unwrap_or_default();
+        let route_generation = route_generation.unwrap_or_default();
+
+        match outcome {
+            "failed" => warn!(
+                refresh_source = source.as_str(),
+                refresh_path = refresh_path.as_str(),
+                outcome = outcome,
+                duration_ms = duration_ms,
+                device_count = device_count,
+                route_generation = route_generation,
+                cache_updated = cache_updated,
+                skip_reason = skip_reason.unwrap_or(""),
+                request_id = request_id.unwrap_or_default(),
+                error = error.unwrap_or(""),
+                event_code = "topology_cache_refresh",
+                "Topology cache refresh failed"
+            ),
+            "coalesced" | "skipped" => info!(
+                refresh_source = source.as_str(),
+                refresh_path = refresh_path.as_str(),
+                outcome = outcome,
+                duration_ms = duration_ms,
+                device_count = device_count,
+                route_generation = route_generation,
+                cache_updated = cache_updated,
+                skip_reason = skip_reason.unwrap_or(""),
+                request_id = request_id.unwrap_or_default(),
+                event_code = "topology_cache_refresh",
+                "Topology cache refresh did not start"
+            ),
+            _ => info!(
+                refresh_source = source.as_str(),
+                refresh_path = refresh_path.as_str(),
+                outcome = outcome,
+                duration_ms = duration_ms,
+                device_count = device_count,
+                route_generation = route_generation,
+                cache_updated = cache_updated,
+                skip_reason = skip_reason.unwrap_or(""),
+                request_id = request_id.unwrap_or_default(),
+                event_code = "topology_cache_refresh",
+                "Topology cache refresh state updated"
+            ),
+        }
+    }
+
+    fn refresh_topology_cache(
+        &self,
+        source: TopologyRefreshSource,
+        refresh_path: TopologyRefreshPath,
+        request_id: Option<u64>,
+    ) -> Result<TopologyRefreshResult, anyhow::Error> {
+        self.log_topology_refresh_attempt(
+            source,
+            refresh_path,
+            "started",
+            None,
+            None,
+            None,
+            false,
+            None,
+            request_id,
+            None,
+        );
+
+        let refresh_started_at = Instant::now();
+        let devices = list_input_devices()
+            .map_err(|error| anyhow::anyhow!("Failed to enumerate devices: {}", error));
+
+        match devices {
+            Ok(devices) => {
+                let route_generation = self.current_route_generation();
+                let duration = refresh_started_at.elapsed();
+                let device_count = devices.len();
+                self.update_device_cache(
+                    devices.clone(),
+                    route_generation,
+                    source,
+                    refresh_path,
+                );
+                self.log_topology_refresh_attempt(
+                    source,
+                    refresh_path,
+                    "completed",
+                    Some(duration),
+                    Some(device_count),
+                    route_generation,
+                    true,
+                    None,
+                    request_id,
+                    None,
+                );
+                Ok(TopologyRefreshResult {
+                    devices,
+                    route_generation,
+                })
+            }
+            Err(error) => {
+                let duration = refresh_started_at.elapsed();
+                let error_text = error.to_string();
+                self.log_topology_refresh_attempt(
+                    source,
+                    refresh_path,
+                    "failed",
+                    Some(duration),
+                    None,
+                    None,
+                    false,
+                    None,
+                    request_id,
+                    Some(error_text.as_str()),
+                );
+                Err(error)
+            }
+        }
+    }
+
+    fn refresh_startup_topology_cache(&self) -> Result<TopologyRefreshResult, anyhow::Error> {
+        let coalesced_manager = self.clone();
+        let refresh_manager = self.clone();
+        self.startup_refresh_coordinator.run(
+            |request_id| {
+                coalesced_manager.log_topology_refresh_attempt(
+                    TopologyRefreshSource::StartupPath,
+                    TopologyRefreshPath::Startup,
+                    "coalesced",
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                    Some(request_id),
+                    None,
+                );
+            },
+            |request_id| {
+                refresh_manager.refresh_topology_cache(
+                    TopologyRefreshSource::StartupPath,
+                    TopologyRefreshPath::Startup,
+                    Some(request_id),
+                )
+            },
+        )
+    }
+
+    pub fn log_topology_refresh_skip(
+        &self,
+        source: TopologyRefreshSource,
+        skip_reason: &str,
+    ) {
+        self.log_topology_refresh_attempt(
+            source,
+            TopologyRefreshPath::Opportunistic,
+            "skipped",
+            None,
+            None,
+            None,
+            false,
+            Some(skip_reason),
+            None,
+            None,
+        );
+    }
+
+    pub fn request_background_topology_refresh(&self, source: TopologyRefreshSource) {
+        let request_id = self
+            .next_refresh_request_id
+            .fetch_add(1, Ordering::SeqCst);
+
+        if self
+            .refresh_inflight
+            .compare_exchange(0, request_id, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            self.log_topology_refresh_attempt(
+                source,
+                TopologyRefreshPath::Opportunistic,
+                "coalesced",
+                None,
+                None,
+                None,
+                false,
+                None,
+                Some(request_id),
+                None,
+            );
+            return;
+        }
+
+        let manager = self.clone();
+        std::thread::spawn(move || {
+            let _ = manager.refresh_topology_cache(
+                source,
+                TopologyRefreshPath::Opportunistic,
+                Some(request_id),
+            );
+            manager.refresh_inflight.store(0, Ordering::SeqCst);
+        });
     }
 
     fn current_route_generation(&self) -> Option<u64> {
@@ -792,26 +1306,7 @@ impl AudioRecordingManager {
     }
 
     pub fn prime_input_device_cache(&self) {
-        let manager = self.clone();
-        std::thread::spawn(move || {
-            let start_time = Instant::now();
-            match list_input_devices() {
-                Ok(devices) => {
-                    let count = devices.len();
-                    let route_generation = manager.current_route_generation();
-                    manager.update_device_cache(devices, route_generation);
-                    info!(
-                        route_generation = route_generation.unwrap_or_default(),
-                        "[TIMING] Primed input device cache in {:?} ({} devices)",
-                        start_time.elapsed(),
-                        count
-                    );
-                }
-                Err(e) => {
-                    debug!("Input device cache prime skipped: {}", e);
-                }
-            }
-        });
+        self.request_background_topology_refresh(TopologyRefreshSource::StartupPrime);
     }
 
     fn try_claim_prearm_owner(&self, source: RecordingPrearmSource, prearm_token: u64) -> bool {
@@ -919,6 +1414,7 @@ impl AudioRecordingManager {
                             trigger_id = trigger_id,
                             prearm_token = prearm_token,
                             stream_epoch = stream_epoch,
+                            stream_open_outcome = result.outcome.as_str(),
                             resolution_mode = result.resolution_mode.as_str(),
                             resolution_reason = result.resolution_reason.as_str(),
                             event_code = "prearm_completed",
@@ -1241,6 +1737,7 @@ impl AudioRecordingManager {
                     StreamStartOutcome::OpenedNow { stream_epoch } => {
                         info!(
                             stream_epoch = stream_epoch,
+                            stream_open_outcome = result.outcome.as_str(),
                             resolution_mode = result.resolution_mode.as_str(),
                             resolution_reason = result.resolution_reason.as_str(),
                             event_code = "prewarm_stream_ready",
@@ -1495,17 +1992,18 @@ impl AudioRecordingManager {
             let _stream_start_guard = self.stream_start_lock.lock().unwrap();
             if *self.is_open.lock().unwrap() {
                 debug!("Microphone stream already active");
-                return Ok(StreamStartResult {
-                    outcome: StreamStartOutcome::AlreadyOpen,
-                    resolution_mode: TopologyResolutionMode::Warm,
-                    resolution_reason: "reused_open_stream".to_string(),
-                });
+                return Ok(self.reused_active_stream_result());
             }
             if !self.prearm_open_allowed(context) {
                 return Ok(StreamStartResult {
                     outcome: StreamStartOutcome::CancelledBeforeOpen,
                     resolution_mode: TopologyResolutionMode::Warm,
                     resolution_reason: "owner_lost_before_open".to_string(),
+                    fresh_reason: None,
+                    cache_refresh_source: None,
+                    cache_refresh_path: None,
+                    cache_age: None,
+                    cache_route_generation: None,
                 });
             }
         }
@@ -1513,57 +2011,47 @@ impl AudioRecordingManager {
         let start_time = Instant::now();
         info!("[TIMING] start_microphone_stream starting...");
 
-        let enumerate_devices = |reason: &str| -> Result<Vec<crate::audio_toolkit::audio::CpalDeviceInfo>, anyhow::Error> {
-            let enum_start = Instant::now();
-            let enumerated = list_input_devices()
-                .map_err(|e| anyhow::anyhow!("Failed to enumerate devices: {}", e))?;
-            let route_generation = self.current_route_generation();
-            info!(
-                reason = reason,
-                route_generation = route_generation.unwrap_or_default(),
-                duration_ms = enum_start.elapsed().as_millis(),
-                device_count = enumerated.len(),
-                event_code = "cache_refresh_completed",
-                "[TIMING] Device enumeration completed and cache refreshed"
-            );
-            self.update_device_cache(enumerated.clone(), route_generation);
-            Ok(enumerated)
-        };
-
         let settings = get_settings(&self.app_handle);
         let (clamshell_selection_active, active_selected_microphone) =
             Self::active_selected_microphone_for_cache_policy(&settings);
         let target_device_name = active_selected_microphone.unwrap_or("Default").to_string();
         let route_monitor_active = crate::audio_device_info::is_input_route_change_monitor_active();
         let current_route_generation = self.current_route_generation();
+        let startup_refresh_source = Some(TopologyRefreshSource::StartupPath.as_str().to_string());
+        let startup_refresh_path = Some(TopologyRefreshPath::Startup.as_str().to_string());
 
         let (
             mut devices,
             mut used_cached_devices,
-            cached_route_generation,
+            mut cache_route_generation,
             mut resolution_mode,
             mut resolution_reason,
+            mut fresh_reason,
+            mut cache_refresh_source,
+            mut cache_refresh_path,
+            mut cache_age,
         ) =
-            if let Some((cache_age, cache_entry)) = self.get_fresh_device_cache() {
-                let force_fresh_default_route = should_force_fresh_default_route_enumeration(
+            match self.topology_cache_state() {
+            TopologyCacheState::Fresh { age, entry: cache_entry } => {
+                let default_route_fresh_reason = default_route_fresh_reason(
                     active_selected_microphone,
                     route_monitor_active,
                     cache_entry.route_generation,
                     current_route_generation,
                 );
 
-                if force_fresh_default_route {
-                    let resolution_reason = if !route_monitor_active {
-                        "default_route_monitor_unavailable".to_string()
-                    } else {
-                        "default_route_generation_changed".to_string()
-                    };
+                if let Some(reason) = default_route_fresh_reason {
+                    let refresh_result = self.refresh_startup_topology_cache()?;
                     (
-                        enumerate_devices(&resolution_reason)?,
+                        refresh_result.devices,
                         false,
-                        cache_entry.route_generation,
+                        refresh_result.route_generation,
                         TopologyResolutionMode::Fresh,
-                        resolution_reason,
+                        reason.as_str().to_string(),
+                        Some(reason.as_str().to_string()),
+                        startup_refresh_source.clone(),
+                        startup_refresh_path.clone(),
+                        Some(age),
                     )
                 } else {
                     let resolution_reason =
@@ -1573,7 +2061,7 @@ impl AudioRecordingManager {
                             "default_route_confirmed".to_string()
                         };
                     info!(
-                        age_ms = cache_age.as_millis(),
+                        age_ms = age.as_millis(),
                         route_generation = cache_entry.route_generation.unwrap_or_default(),
                         device_count = cache_entry.devices.len(),
                         event_code = "cache_hit",
@@ -1585,25 +2073,49 @@ impl AudioRecordingManager {
                         cache_entry.route_generation,
                         TopologyResolutionMode::Cache,
                         resolution_reason,
+                        None,
+                        Some(cache_entry.refresh_source.as_str().to_string()),
+                        Some(cache_entry.refresh_path.as_str().to_string()),
+                        Some(age),
                     )
                 }
-            } else {
-                let resolution_reason = "cache_miss_or_stale".to_string();
+            }
+            TopologyCacheState::Expired { age } => {
+                let refresh_result = self.refresh_startup_topology_cache()?;
                 (
-                    enumerate_devices(&resolution_reason)?,
+                    refresh_result.devices,
                     false,
-                    None,
+                    refresh_result.route_generation,
                     TopologyResolutionMode::Fresh,
-                    resolution_reason,
+                    StartupFreshReason::CacheExpired.as_str().to_string(),
+                    Some(StartupFreshReason::CacheExpired.as_str().to_string()),
+                    startup_refresh_source.clone(),
+                    startup_refresh_path.clone(),
+                    Some(age),
                 )
-            };
+            }
+            TopologyCacheState::Missing => {
+                let refresh_result = self.refresh_startup_topology_cache()?;
+                (
+                    refresh_result.devices,
+                    false,
+                    refresh_result.route_generation,
+                    TopologyResolutionMode::Fresh,
+                    StartupFreshReason::CacheMissing.as_str().to_string(),
+                    Some(StartupFreshReason::CacheMissing.as_str().to_string()),
+                    startup_refresh_source.clone(),
+                    startup_refresh_path.clone(),
+                    None,
+                )
+            }
+        };
 
         debug!(
             target_device = target_device_name,
             active_selection = active_selected_microphone.unwrap_or("Default"),
             clamshell_selection_active = clamshell_selection_active,
             route_generation = current_route_generation.unwrap_or_default(),
-            cached_route_generation = cached_route_generation.unwrap_or_default(),
+            cache_route_generation = cache_route_generation.unwrap_or_default(),
             "Target device for stream start"
         );
 
@@ -1618,10 +2130,22 @@ impl AudioRecordingManager {
                 "Selected device '{}' missing in cached snapshot, refreshing topology before fallback",
                 target_device_name
             );
-            devices = enumerate_devices("cached_selected_device_miss")?;
+            let refresh_result = self.refresh_startup_topology_cache()?;
+            devices = refresh_result.devices;
             used_cached_devices = false;
             resolution_mode = TopologyResolutionMode::Fresh;
-            resolution_reason = "selected_device_missing_in_cache".to_string();
+            resolution_reason = StartupFreshReason::SelectedDeviceMissingInCache
+                .as_str()
+                .to_string();
+            fresh_reason = Some(
+                StartupFreshReason::SelectedDeviceMissingInCache
+                    .as_str()
+                    .to_string(),
+            );
+            cache_refresh_source = startup_refresh_source.clone();
+            cache_refresh_path = startup_refresh_path.clone();
+            cache_age = None;
+            cache_route_generation = refresh_result.route_generation;
         }
 
         let (mut device_to_open, mut active_device_name) = self.resolve_device_open_target(
@@ -1709,24 +2233,34 @@ impl AudioRecordingManager {
 
             match attempt {
                 StreamOpenAttempt::Opened(stream_epoch) => {
-                    return Ok(StreamStartResult {
-                        outcome: StreamStartOutcome::OpenedNow { stream_epoch },
+                    let provenance = ActiveStreamTopologyProvenance {
                         resolution_mode,
                         resolution_reason,
-                    });
+                        fresh_reason,
+                        cache_refresh_source,
+                        cache_refresh_path,
+                        cache_age,
+                        cache_route_generation,
+                    };
+                    self.remember_active_stream_state(stream_epoch, provenance.clone());
+                    return Ok(stream_start_result_from_provenance(
+                        StreamStartOutcome::OpenedNow { stream_epoch },
+                        &provenance,
+                    ));
                 }
                 StreamOpenAttempt::AlreadyOpen => {
-                    return Ok(StreamStartResult {
-                        outcome: StreamStartOutcome::AlreadyOpen,
-                        resolution_mode: TopologyResolutionMode::Warm,
-                        resolution_reason: "reused_open_stream".to_string(),
-                    });
+                    return Ok(self.reused_active_stream_result());
                 }
                 StreamOpenAttempt::CancelledBeforeOpen => {
                     return Ok(StreamStartResult {
                         outcome: StreamStartOutcome::CancelledBeforeOpen,
                         resolution_mode: TopologyResolutionMode::Warm,
                         resolution_reason: "owner_lost_before_open".to_string(),
+                        fresh_reason: None,
+                        cache_refresh_source: None,
+                        cache_refresh_path: None,
+                        cache_age: None,
+                        cache_route_generation: None,
                     });
                 }
                 StreamOpenAttempt::RetryWithFreshTopology(initial_error) => {
@@ -1734,25 +2268,32 @@ impl AudioRecordingManager {
                         "Failed to open recorder from cached topology: {}. Retrying once with fresh enumeration",
                         initial_error
                     );
-                    let refreshed = enumerate_devices("cached_open_failure_retry").map_err(|refresh_err| {
-                        anyhow::anyhow!(
-                            "Failed to refresh devices after cached open failure (initial error: {}, refresh error: {})",
-                            initial_error,
-                            refresh_err
-                        )
-                    })?;
+                    let refresh_result =
+                        self.refresh_startup_topology_cache().map_err(|refresh_err| {
+                            anyhow::anyhow!(
+                                "Failed to refresh devices after cached open failure (initial error: {}, refresh error: {})",
+                                initial_error,
+                                refresh_err
+                            )
+                        })?;
                     let (retry_device_to_open, retry_active_device_name) =
                         self.resolve_device_open_target(
                             &settings,
                             &target_device_name,
-                            refreshed,
+                            refresh_result.devices,
                             matches!(context, StreamOpenContext::UserTriggered),
                         );
                     device_to_open = retry_device_to_open;
                     active_device_name = retry_active_device_name;
                     should_retry_with_fresh_topology = false;
                     resolution_mode = TopologyResolutionMode::Fresh;
-                    resolution_reason = "cached_open_failed_retry".to_string();
+                    resolution_reason = StartupFreshReason::CachedOpenFailed.as_str().to_string();
+                    fresh_reason =
+                        Some(StartupFreshReason::CachedOpenFailed.as_str().to_string());
+                    cache_refresh_source = startup_refresh_source.clone();
+                    cache_refresh_path = startup_refresh_path.clone();
+                    cache_age = None;
+                    cache_route_generation = refresh_result.route_generation;
                 }
                 StreamOpenAttempt::Failed(open_error) => {
                     error!("Failed to open recorder: {}", open_error);
@@ -1854,6 +2395,7 @@ impl AudioRecordingManager {
         *self.current_device_name.lock().unwrap() = None;
         self.prearm_owner_token.store(0, Ordering::SeqCst);
         self.active_stream_epoch.store(0, Ordering::SeqCst);
+        self.clear_active_stream_state();
         debug!("Microphone stream stopped");
         true
     }
@@ -2063,8 +2605,28 @@ impl AudioRecordingManager {
                         session = session_id,
                         binding = binding_id,
                         trigger_id = trigger_id,
+                        stream_open_outcome = stream_start_result.outcome.as_str(),
                         resolution_mode = stream_start_result.resolution_mode.as_str(),
                         resolution_reason = stream_start_result.resolution_reason.as_str(),
+                        fresh_reason = stream_start_result
+                            .fresh_reason
+                            .as_deref()
+                            .unwrap_or(""),
+                        cache_refresh_source = stream_start_result
+                            .cache_refresh_source
+                            .as_deref()
+                            .unwrap_or(""),
+                        cache_refresh_path = stream_start_result
+                            .cache_refresh_path
+                            .as_deref()
+                            .unwrap_or(""),
+                        cache_age_ms = stream_start_result
+                            .cache_age
+                            .map(|age| age.as_millis() as u64)
+                            .unwrap_or_default(),
+                        cache_route_generation = stream_start_result
+                            .cache_route_generation
+                            .unwrap_or_default(),
                         event_code = "topology_resolution",
                         "Resolved microphone topology for startup"
                     );
@@ -2536,13 +3098,20 @@ impl AudioRecordingManager {
 mod tests {
     use super::{
         begin_prepare_cancellation, build_stopped_recording, classify_start_commit_mismatch,
-        classify_start_failure_cleanup, finalize_prepare_cancellation, map_recorder_start_error,
-        should_auto_close_prearm_stream, should_force_fresh_default_route_enumeration,
-        should_stop_stream_for_start_cleanup, MicrophoneMode, PrepareToken,
-        RecordingStartFailure, RecordingState, StateMismatchKind,
-        StartCommitMismatchOwner, StartFailureCleanupAction, WHISPER_SAMPLE_RATE,
+        classify_start_failure_cleanup, default_route_fresh_reason,
+        finalize_prepare_cancellation, map_recorder_start_error,
+        should_auto_close_prearm_stream, should_stop_stream_for_start_cleanup,
+        stream_start_result_from_provenance, topology_cache_is_expired,
+        ActiveStreamTopologyProvenance, MicrophoneMode, PrepareToken,
+        RecordingStartFailure, RecordingState, StartCommitMismatchOwner,
+        StartFailureCleanupAction, StartupFreshReason, StartupRefreshCoordinator,
+        StateMismatchKind, StreamStartOutcome, TopologyRefreshResult,
+        TopologyResolutionMode, WHISPER_SAMPLE_RATE,
     };
     use crate::audio_toolkit::audio::RecorderStartError;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::{mpsc, Arc};
+    use std::thread;
     use std::time::Duration;
 
     #[test]
@@ -2618,44 +3187,131 @@ mod tests {
 
     #[test]
     fn default_route_requires_fresh_enumeration_without_monitor() {
-        assert!(should_force_fresh_default_route_enumeration(
-            Some("default"),
-            false,
-            Some(5),
-            Some(5),
+        assert_eq!(
+            default_route_fresh_reason(Some("default"), false, Some(5), Some(5)),
+            Some(StartupFreshReason::RouteUnknown)
+        );
+        assert_eq!(
+            default_route_fresh_reason(None, false, Some(5), Some(5)),
+            Some(StartupFreshReason::RouteUnknown)
+        );
+    }
+
+    #[test]
+    fn topology_cache_expires_only_after_twenty_four_hours() {
+        assert!(!topology_cache_is_expired(
+            Duration::from_secs(60 * 60 * 24),
+            Duration::from_secs(60 * 60 * 24),
         ));
-        assert!(should_force_fresh_default_route_enumeration(
-            None,
-            false,
-            Some(5),
-            Some(5),
+        assert!(topology_cache_is_expired(
+            Duration::from_secs(60 * 60 * 24 + 1),
+            Duration::from_secs(60 * 60 * 24),
         ));
     }
 
     #[test]
     fn default_route_requires_fresh_enumeration_when_generation_changes() {
-        assert!(should_force_fresh_default_route_enumeration(
-            Some("default"),
-            true,
-            Some(4),
-            Some(5),
-        ));
-        assert!(should_force_fresh_default_route_enumeration(
-            Some("default"),
-            true,
-            None,
-            Some(5),
-        ));
+        assert_eq!(
+            default_route_fresh_reason(Some("default"), true, Some(4), Some(5)),
+            Some(StartupFreshReason::RouteChanged)
+        );
+        assert_eq!(
+            default_route_fresh_reason(Some("default"), true, None, Some(5)),
+            Some(StartupFreshReason::RouteUnknown)
+        );
     }
 
     #[test]
     fn explicit_selection_does_not_force_fresh_default_route_policy() {
-        assert!(!should_force_fresh_default_route_enumeration(
-            Some("USB Mic"),
-            false,
-            None,
-            None,
-        ));
+        assert_eq!(
+            default_route_fresh_reason(Some("USB Mic"), false, None, None),
+            None
+        );
+    }
+
+    #[test]
+    fn default_route_reuse_is_allowed_when_generation_is_current() {
+        assert_eq!(
+            default_route_fresh_reason(Some("default"), true, Some(5), Some(5)),
+            None
+        );
+    }
+
+    #[test]
+    fn reused_stream_result_preserves_original_topology_provenance() {
+        let provenance = ActiveStreamTopologyProvenance {
+            resolution_mode: TopologyResolutionMode::Fresh,
+            resolution_reason: StartupFreshReason::RouteChanged.as_str().to_string(),
+            fresh_reason: Some(StartupFreshReason::RouteChanged.as_str().to_string()),
+            cache_refresh_source: Some("startup_path".to_string()),
+            cache_refresh_path: Some("startup_path".to_string()),
+            cache_age: Some(Duration::from_millis(250)),
+            cache_route_generation: Some(9),
+        };
+
+        let reused = stream_start_result_from_provenance(StreamStartOutcome::AlreadyOpen, &provenance);
+
+        assert_eq!(reused.outcome, StreamStartOutcome::AlreadyOpen);
+        assert_eq!(reused.resolution_mode, TopologyResolutionMode::Fresh);
+        assert_eq!(reused.resolution_reason, "route_changed");
+        assert_eq!(reused.fresh_reason.as_deref(), Some("route_changed"));
+        assert_eq!(reused.cache_refresh_source.as_deref(), Some("startup_path"));
+        assert_eq!(reused.cache_refresh_path.as_deref(), Some("startup_path"));
+        assert_eq!(reused.cache_age, Some(Duration::from_millis(250)));
+        assert_eq!(reused.cache_route_generation, Some(9));
+    }
+
+    #[test]
+    fn startup_refresh_coordinator_single_flights_concurrent_callers() {
+        let coordinator = StartupRefreshCoordinator::new();
+        let refresh_call_count = Arc::new(AtomicUsize::new(0));
+        let coalesced = Arc::new(AtomicBool::new(false));
+        let (started_tx, started_rx) = mpsc::channel();
+
+        let leader_count = Arc::clone(&refresh_call_count);
+        let leader = {
+            let coordinator = coordinator.clone();
+            thread::spawn(move || {
+                coordinator.run(
+                    |_| panic!("leader should not coalesce"),
+                    move |_| {
+                        leader_count.fetch_add(1, Ordering::SeqCst);
+                        started_tx.send(()).unwrap();
+                        thread::sleep(Duration::from_millis(40));
+                        Ok(TopologyRefreshResult {
+                            devices: Vec::new(),
+                            route_generation: Some(17),
+                        })
+                    },
+                )
+            })
+        };
+
+        started_rx.recv().unwrap();
+
+        let follower = coordinator.run(
+            {
+                let coalesced = Arc::clone(&coalesced);
+                move |_| {
+                    coalesced.store(true, Ordering::SeqCst);
+                }
+            },
+            |_| {
+                refresh_call_count.fetch_add(1, Ordering::SeqCst);
+                Ok(TopologyRefreshResult {
+                    devices: Vec::new(),
+                    route_generation: Some(99),
+                })
+            },
+        );
+
+        let leader_result = leader.join().unwrap().unwrap();
+        let follower_result = follower.unwrap();
+
+        assert_eq!(refresh_call_count.load(Ordering::SeqCst), 1);
+        assert!(coalesced.load(Ordering::SeqCst));
+        assert_eq!(leader_result.route_generation, Some(17));
+        assert_eq!(follower_result.route_generation, Some(17));
     }
 
     #[test]

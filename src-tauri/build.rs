@@ -362,6 +362,7 @@ fn build_audio_device_info_bridge() {
     println!("cargo:rustc-link-lib=static=audio_device_info");
     println!("cargo:rustc-link-lib=framework=CoreAudio");
     println!("cargo:rustc-link-lib=framework=AudioToolbox");
+    println!("cargo:rustc-link-lib=framework=AppKit");
 
     println!("cargo:warning=Built audio_device_info bridge for Bluetooth detection");
 }

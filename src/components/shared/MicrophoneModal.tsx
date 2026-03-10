@@ -15,7 +15,7 @@ import {
 import { useSettings } from "@/hooks/useSettings";
 import { commands } from "@/bindings";
 import { AudioAGC } from "@/utils/audioAGC";
-import { isDefaultMicSetting } from "@/utils/microphoneUtils";
+import { findBuiltInOrInternalMic, isDefaultMicSetting } from "@/utils/microphoneUtils";
 
 // Audio level bars component with AGC normalization built-in
 export const AudioLevelBars: React.FC<{ levels: number[] }> = ({ levels }) => {
@@ -189,6 +189,10 @@ export const MicrophoneModal: React.FC<MicrophoneModalProps> = ({
     () => audioDevices.filter((d) => d.name !== "Default"),
     [audioDevices]
   );
+  const preferredConsistencyMic = useMemo(
+    () => findBuiltInOrInternalMic(audioDevices),
+    [audioDevices]
+  );
 
   const effectiveSelectedMic = isUsingDefault ? "Default" : selectedMicrophone;
 
@@ -238,11 +242,26 @@ export const MicrophoneModal: React.FC<MicrophoneModalProps> = ({
         </DialogHeader>
 
         <div className="flex flex-col gap-2 mt-4">
+          <p className="text-sm text-muted-foreground">
+            {preferredConsistencyMic
+              ? t("onboarding.microphoneCheck.dialog.guidanceBuiltIn", {
+                  name: preferredConsistencyMic.name,
+                  defaultValue:
+                    "For the most consistent startup speed, choose {{name}}.",
+                })
+              : t("onboarding.microphoneCheck.dialog.guidanceGeneric", {
+                  defaultValue:
+                    "A specific microphone gives the most predictable startup behavior.",
+                })}
+          </p>
           <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
             {/* "Default" option — uses smart device selection with BT avoidance */}
             <MicrophoneOption
               name={t("onboarding.microphoneCheck.dialog.defaultOption")}
-              subtitle={t("onboarding.microphoneCheck.dialog.defaultDescription")}
+              subtitle={t("onboarding.microphoneCheck.dialog.defaultDescription", {
+                defaultValue:
+                  "Follows macOS input changes automatically. Best when you want flexibility.",
+              })}
               isSelected={isUsingDefault}
               levels={isUsingDefault ? displayLevels : undefined}
               onClick={handleSelectDefault}

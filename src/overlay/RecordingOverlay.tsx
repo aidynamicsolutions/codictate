@@ -122,6 +122,8 @@ const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [state, setState] = useState<OverlayState>("recording");
+  const isVisibleRef = useRef(false);
+  const overlayStateRef = useRef<OverlayState>("recording");
   const [levels, setLevels] = useState<number[]>(Array(16).fill(0));
   const [correctionData, setCorrectionData] = useState<CorrectionResult | null>(
     null,
@@ -136,6 +138,9 @@ const RecordingOverlay: React.FC = () => {
     null,
   );
   const undoCardClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const hideStateResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
   const direction = getLanguageDirection(i18n.language);
@@ -284,6 +289,22 @@ const RecordingOverlay: React.FC = () => {
       clearTimeout(undoCardClearTimerRef.current);
       undoCardClearTimerRef.current = null;
     }
+  };
+
+  const clearHideStateResetTimer = () => {
+    if (hideStateResetTimerRef.current) {
+      clearTimeout(hideStateResetTimerRef.current);
+      hideStateResetTimerRef.current = null;
+    }
+  };
+
+  const overlayStateRank: Record<OverlayState, number> = {
+    connecting: 0,
+    recording: 1,
+    transcribing: 2,
+    processing: 3,
+    correcting: 4,
+    cancelling: 5,
   };
 
   const scheduleUndoAutoDismiss = (payload: UndoOverlayEventPayload) => {
@@ -565,6 +586,14 @@ const RecordingOverlay: React.FC = () => {
   }, [undoCard]);
 
   useEffect(() => {
+    isVisibleRef.current = isVisible;
+  }, [isVisible]);
+
+  useEffect(() => {
+    overlayStateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
     // React StrictMode-safe pattern: https://react.dev/learn/synchronizing-with-effects#fetching-data
     // Use `ignore` flag to prevent state updates after cleanup
     let ignore = false;
@@ -574,6 +603,7 @@ const RecordingOverlay: React.FC = () => {
       // Listen for show-overlay event from Rust
       const unlistenShow = await listen("show-overlay", async (event) => {
         if (ignore) return; // Ignore if cleanup already ran
+        clearHideStateResetTimer();
         if (undoCardRef.current) {
           commands.undoOverlayCardDismissed().catch((error) => {
             logWarn(
@@ -591,6 +621,18 @@ const RecordingOverlay: React.FC = () => {
         setIsPointerOverAction(false);
         setHoverTooltip(null);
         const overlayState = event.payload as OverlayState;
+
+        if (
+          isVisibleRef.current &&
+          overlayStateRank[overlayState] < overlayStateRank[overlayStateRef.current]
+        ) {
+          logInfo(
+            `RecordingOverlay: ignoring stale state transition ${overlayStateRef.current} -> ${overlayState}`,
+            "fe-overlay",
+          );
+          return;
+        }
+
         setState(overlayState);
         setIsVisible(true);
 
@@ -629,6 +671,7 @@ const RecordingOverlay: React.FC = () => {
         }
         clearUndoDismissTimer();
         clearUndoCardClearTimer();
+        clearHideStateResetTimer();
         setUndoCard(null);
         setPointerLaneHover(false);
         setNativeLaneHover(false);
@@ -642,10 +685,11 @@ const RecordingOverlay: React.FC = () => {
         // Wait for fade-out animation (300ms) to complete before resetting state
         // This prevents the overlay from switching back to "recording" (audio bars)
         // while it is still visible fading out.
-        setTimeout(() => {
+        hideStateResetTimerRef.current = setTimeout(() => {
           if (!ignore) {
             setState("recording");
           }
+          hideStateResetTimerRef.current = null;
         }, 350);
       });
 
@@ -813,6 +857,7 @@ const RecordingOverlay: React.FC = () => {
       ignore = true; // Prevent any pending async operations from updating state
       clearUndoDismissTimer();
       clearUndoCardClearTimer();
+      clearHideStateResetTimer();
       setPointerLaneHover(false);
       setNativeLaneHover(false);
       setNativeCursorIntent("default");

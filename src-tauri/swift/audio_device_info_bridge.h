@@ -36,4 +36,14 @@ int32_t start_input_route_change_monitor(void);
 /// Read monotonic input-route change generation detected by the monitor.
 uint64_t get_input_route_change_generation(void);
 
+/// Notify Rust that the default input route or device topology changed.
+void notify_audio_topology_route_change(void);
+
+/// Notify Rust that macOS woke from sleep.
+void notify_audio_topology_wake(void);
+
+/// Start listening for macOS wake notifications.
+/// Returns: 0 = started, 1 = already active, -1 = failed
+int32_t start_audio_lifecycle_monitor(void);
+
 #endif /* audio_device_info_bridge_h */

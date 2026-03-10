@@ -1,5 +1,13 @@
 import type { AudioDevice } from "@/bindings";
 
+const BUILT_IN_MIC_PATTERNS = [
+  "built-in",
+  "internal",
+  "macbook",
+  "imac",
+  "studio display",
+];
+
 /**
  * Check if a microphone setting means "use system default".
  * The frontend may store "default", "Default", or undefined/null.
@@ -25,4 +33,19 @@ export function resolveDefaultMicName(
   );
   const systemDefault = nonBtDevices.find((d) => d.is_default);
   return systemDefault?.name || nonBtDevices[0]?.name || null;
+}
+
+export function findBuiltInOrInternalMic(
+  audioDevices: AudioDevice[],
+): AudioDevice | null {
+  return (
+    audioDevices.find((device) => {
+      if (device.name === "Default" || device.is_bluetooth) {
+        return false;
+      }
+
+      const lowerName = device.name.toLowerCase();
+      return BUILT_IN_MIC_PATTERNS.some((pattern) => lowerName.includes(pattern));
+    }) || null
+  );
 }

@@ -208,6 +208,48 @@ fn resolve_sentry_release() -> String {
         .unwrap_or_else(|| format!("codictate@{}", env!("CARGO_PKG_VERSION")))
 }
 
+fn register_audio_topology_refresh_hooks(recording_manager: Arc<AudioRecordingManager>) {
+    crate::audio_device_info::register_audio_topology_event_handler(Arc::new({
+        let recording_manager = Arc::clone(&recording_manager);
+        move |event| match event {
+            crate::audio_device_info::AudioTopologyEvent::RouteChange => recording_manager
+                .request_background_topology_refresh(
+                    managers::audio::TopologyRefreshSource::AudioRouteChange,
+                ),
+            crate::audio_device_info::AudioTopologyEvent::Wake => recording_manager
+                .request_background_topology_refresh(
+                    managers::audio::TopologyRefreshSource::Wake,
+                ),
+        }
+    }));
+
+    // Track default-input and topology changes so default-route startup can
+    // safely reuse cached topology only when the route is unchanged.
+    crate::audio_device_info::start_input_route_change_monitor();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(error) = crate::audio_device_info::start_audio_lifecycle_monitor() {
+            tracing::warn!(
+                error = error,
+                "Failed to register macOS audio lifecycle monitor"
+            );
+            recording_manager.log_topology_refresh_skip(
+                managers::audio::TopologyRefreshSource::Wake,
+                "registration_failed",
+            );
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        recording_manager.log_topology_refresh_skip(
+            managers::audio::TopologyRefreshSource::Wake,
+            "unsupported_platform",
+        );
+    }
+}
+
 impl AptabaseKeySource {
     fn label(self) -> &'static str {
         match self {
@@ -703,9 +745,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     let correction_manager = Arc::new(CorrectionManager::new(app_handle.clone()));
     app_handle.manage(correction_manager);
 
-    // Track default-input and topology changes so default-route startup can
-    // safely reuse cached topology only when the route is unchanged.
-    crate::audio_device_info::start_input_route_change_monitor();
+    register_audio_topology_refresh_hooks(recording_manager.clone());
 
     // Pre-warm Bluetooth microphone if selected
     // (triggers A2DP→HFP switch if needed)
@@ -1361,6 +1401,12 @@ pub fn run(cli_args: CliArgs) {
             }
             tauri::WindowEvent::Focused(focused) => {
                 if *focused && window.label() == "main" {
+                    window
+                        .app_handle()
+                        .state::<Arc<AudioRecordingManager>>()
+                        .request_background_topology_refresh(
+                            managers::audio::TopologyRefreshSource::AppForeground,
+                        );
                     undo::flush_pending_linux_toast(&window.app_handle());
                     if growth::has_pending_upgrade_prompt_open_request(&window.app_handle()) {
                         let _ = window
