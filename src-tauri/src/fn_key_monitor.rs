@@ -344,7 +344,26 @@ pub fn start_fn_key_monitor(app: AppHandle, enable_transcription: bool) -> Resul
                                             }
 
                                             if let Some(action) = ACTION_MAP.get(id.as_str()) {
-                                                action.start(&app, id, &fn_combo);
+                                                let trigger_id = new_trigger_id();
+                                                info!(
+                                                    binding = id.as_str(),
+                                                    shortcut = fn_combo.as_str(),
+                                                    trigger_id = %trigger_id,
+                                                    trigger_source = "fn_key_combo_keydown",
+                                                    event_code = "startup_input_received",
+                                                    "On-demand startup input received for Fn combo"
+                                                );
+                                                info!(
+                                                    binding = id.as_str(),
+                                                    shortcut = fn_combo.as_str(),
+                                                    trigger_id = %trigger_id,
+                                                    trigger_source = "fn_key_combo_keydown",
+                                                    event_code = "startup_trigger_received",
+                                                    "Audio startup trigger received before session creation"
+                                                );
+                                                let shortcut_with_trigger =
+                                                    annotate_shortcut_with_trigger(&fn_combo, &trigger_id);
+                                                action.start(&app, id, &shortcut_with_trigger);
                                             }
                                             return CallbackResult::Drop;
                                         }
@@ -553,6 +572,16 @@ fn handle_fn_pressed(app: &AppHandle) {
 
     if FN_TRANSCRIPTION_ENABLED.load(Ordering::SeqCst) && should_trigger_ptt {
         debug!("Starting push-to-talk recording immediately (press_id: {})", press_id);
+        let trigger_id = new_trigger_id();
+        info!(
+            binding = "transcribe",
+            shortcut = "fn",
+            trigger_id = %trigger_id,
+            trigger_source = "fn_key_flags_changed",
+            press_id = press_id,
+            event_code = "startup_input_received",
+            "On-demand startup input received at earliest Fn callback boundary"
+        );
         
         // Check microphone permission BEFORE starting recording
         // This must happen before setting PTT_STARTED to prevent
@@ -598,7 +627,6 @@ fn handle_fn_pressed(app: &AppHandle) {
         info!("handle_fn_pressed: Starting push-to-talk recording (press_id={})", press_id);
         PTT_STARTED.store(true, Ordering::SeqCst);
 
-        let trigger_id = new_trigger_id();
         info!(
             binding = "transcribe",
             shortcut = "fn",
@@ -720,6 +748,14 @@ fn handle_handsfree_toggle(app: &AppHandle) {
         if should_start {
             debug!("Hands-free mode: starting transcription");
             let trigger_id = new_trigger_id();
+            info!(
+                binding = BINDING_ID,
+                shortcut = "fn+space",
+                trigger_id = %trigger_id,
+                trigger_source = "fn_space_keydown",
+                event_code = "startup_input_received",
+                "On-demand startup input received at earliest Fn+Space callback boundary"
+            );
             info!(
                 binding = BINDING_ID,
                 shortcut = "fn+space",

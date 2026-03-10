@@ -5,7 +5,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         mpsc, Arc, Mutex,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpal::{
@@ -213,6 +213,7 @@ impl AudioRecorder {
         if self.worker_handle.is_some() {
             return Ok(()); // already open
         }
+        let open_started = Instant::now();
 
         let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
         let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>();
@@ -244,6 +245,7 @@ impl AudioRecorder {
         let (startup_tx, startup_rx) = mpsc::channel::<Result<mpsc::Receiver<()>, Box<dyn std::error::Error + Send + Sync>>>();
 
         let worker = std::thread::spawn(move || {
+            let worker_started = Instant::now();
             let (data_started_tx, data_started_rx) = mpsc::channel::<()>();
             let sample_rate = config.sample_rate().0;
             let channels = config.channels() as usize;
@@ -282,11 +284,23 @@ impl AudioRecorder {
                     return;
                 }
             };
+            tracing::debug!(
+                event_code = "stream_open_subphase",
+                phase = "stream_built",
+                elapsed_ms = worker_started.elapsed().as_millis() as u64,
+                "Recorder worker built input stream"
+            );
 
             if let Err(e) = stream.play() {
                 let _ = startup_tx.send(Err(Box::new(e)));
                 return;
             }
+            tracing::debug!(
+                event_code = "stream_open_subphase",
+                phase = "stream_play_started",
+                elapsed_ms = worker_started.elapsed().as_millis() as u64,
+                "Recorder worker started stream playback"
+            );
             
             // Signal success, providing the receiver for data-started signal
             let _ = startup_tx.send(Ok(data_started_rx));
@@ -307,10 +321,22 @@ impl AudioRecorder {
                      tracing::error!("{}", msg);
                      return Err(msg.into());
                 }
+                tracing::debug!(
+                    event_code = "stream_open_subphase",
+                    phase = "first_packet_ready",
+                    elapsed_ms = open_started.elapsed().as_millis() as u64,
+                    "Recorder stream received first audio packet"
+                );
 
                 self.device = Some(device);
                 self.cmd_tx = Some(cmd_tx);
                 self.worker_handle = Some(worker);
+                tracing::debug!(
+                    event_code = "stream_open_subphase",
+                    phase = "open_completed",
+                    elapsed_ms = open_started.elapsed().as_millis() as u64,
+                    "Recorder open completed"
+                );
                 Ok(())
             },
             Ok(Err(e)) => Err(e as Box<dyn std::error::Error>), // Stream build/play failed
@@ -468,6 +494,8 @@ fn run_consumer(
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     mut data_started_tx: Option<mpsc::Sender<()>>,
 ) {
+    const COMMAND_POLL_TIMEOUT: Duration = Duration::from_millis(8);
+
     let mut frame_resampler = FrameResampler::new(
         in_sample_rate as usize,
         constants::WHISPER_SAMPLE_RATE as usize,
@@ -540,6 +568,12 @@ fn run_consumer(
         pending_start_ready: &mut Option<PendingStartReady>,
         pre_roll_frames: &mut PreRollBuffer,
     ) {
+        tracing::debug!(
+            event_code = "recorder_start_subphase",
+            phase = "worker_start_applied",
+            start_id = start_id,
+            "Recorder worker applied start command"
+        );
         if let Some(previous_pending) = pending_start_ready.take() {
             let _ = previous_pending.ready_tx.send(StartReadyAck {
                 start_id: previous_pending.start_id,
@@ -590,7 +624,7 @@ fn run_consumer(
     }
 
     loop {
-        let raw = match sample_rx.recv_timeout(Duration::from_millis(20)) {
+        let raw = match sample_rx.recv_timeout(COMMAND_POLL_TIMEOUT) {
             Ok(s) => s,
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Keep command/control path responsive even when no audio packets arrive.
@@ -679,6 +713,12 @@ fn run_consumer(
             }
 
             if let Some(pending) = pending_start_ready.take() {
+                tracing::debug!(
+                    event_code = "recorder_start_subphase",
+                    phase = "worker_capture_ready_evidence",
+                    start_id = pending.start_id,
+                    "Recorder worker observed first post-start frame"
+                );
                 if pending
                     .ready_tx
                     .send(StartReadyAck {

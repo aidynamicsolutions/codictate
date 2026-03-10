@@ -26,7 +26,7 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, LazyLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tauri::AppHandle;
 use tauri::Emitter;
 use tauri::Manager;
@@ -585,34 +585,21 @@ fn complete_connecting_overlay_phase(phase: &AtomicU8) -> u8 {
     phase.swap(CONNECTING_PHASE_COMPLETED, Ordering::SeqCst)
 }
 
-fn log_connecting_overlay_shown(
+fn log_pre_ready_shell_shown(
     session_id: &str,
     binding_id: &str,
     trigger_id: &str,
     message: &'static str,
-    threshold_ms: Option<u128>,
 ) {
-    match threshold_ms {
-        Some(threshold_ms) => {
-            info!(
-                session = %session_id,
-                binding = binding_id,
-                trigger_id = %trigger_id,
-                threshold_ms = threshold_ms,
-                event_code = "overlay_connecting_shown",
-                "{message}"
-            );
-        }
-        None => {
-            info!(
-                session = %session_id,
-                binding = binding_id,
-                trigger_id = %trigger_id,
-                event_code = "overlay_connecting_shown",
-                "{message}"
-            );
-        }
-    }
+    info!(
+        session = %session_id,
+        binding = binding_id,
+        trigger_id = %trigger_id,
+        milestone_kind = "perceived_latency",
+        overlay_state = "pre_ready_shell",
+        event_code = "overlay_pre_ready_shell_shown",
+        "{message}"
+    );
 }
 
 fn should_hide_aborted_recording_overlay(
@@ -754,6 +741,7 @@ impl ShortcutAction for TranscribeAction {
         let binding_id_clone = binding_id.to_string();
         let trigger_id_clone = trigger_id.clone();
         let shortcut_name = shortcut_name.to_string();
+        let pre_ready_phase = Arc::new(AtomicU8::new(CONNECTING_PHASE_PENDING));
 
         // Synchronously prepare recording state to handle race conditions
         // This sets the state to "Preparing" so if stop() is called immediately,
@@ -766,6 +754,36 @@ impl ShortcutAction for TranscribeAction {
             );
             return;
         };
+
+        info!(
+            session = %session_id,
+            binding = binding_id,
+            trigger_id = %trigger_id,
+            event_code = "prepare_state_entered",
+            "Recording startup entered prepare state"
+        );
+
+        if !get_settings(app).always_on_microphone && crate::overlay::is_overlay_available(app) {
+            if try_mark_connecting_overlay_shown(&pre_ready_phase) {
+                log_pre_ready_shell_shown(
+                    &session_id,
+                    binding_id,
+                    &trigger_id,
+                    "Accepted on-demand trigger, showing pre-ready shell immediately",
+                );
+                utils::show_connecting_overlay(app);
+            }
+        } else {
+            let _ = complete_connecting_overlay_phase(&pre_ready_phase);
+        }
+
+        info!(
+            session = %session_id,
+            binding = binding_id,
+            trigger_id = %trigger_id,
+            event_code = "prearm_dispatch_requested",
+            "Dispatching on-demand prearm request"
+        );
 
         rm.kickoff_on_demand_prearm(
             recording_prearm_source_for_shortcut(&shortcut_name),
@@ -829,6 +847,7 @@ impl ShortcutAction for TranscribeAction {
                             device = start_success
                                 .active_device_name
                                 .unwrap_or_else(|| "unknown".to_string()),
+                            milestone_kind = "actual_readiness",
                             event_code = "capture_ready_ack",
                             "Always-on recording capture-ready"
                         );
@@ -850,6 +869,7 @@ impl ShortcutAction for TranscribeAction {
                                 model_ready_for_recording,
                                 model_loading = !selected_model.is_empty()
                                     && !model_ready_for_recording,
+                                milestone_kind = "perceived_ready",
                                 event_code = "overlay_recording_shown",
                                 "Recording overlay shown after safe capture-ready gate"
                             );
@@ -885,56 +905,8 @@ impl ShortcutAction for TranscribeAction {
                 // On-demand mode: Start recording first, then play audio feedback, then apply mute
                 // This allows the microphone to be activated before playing the sound
                 debug!("On-demand mode: Starting recording first (blocking), then audio feedback");
-                // Fast internal-mic starts often complete just after 120ms, which makes the
-                // "Starting microphone..." state flash too briefly to read before we switch to
-                // the recording bars. Hold back the connecting overlay until startup is clearly
-                // perceptible, while still preserving it for genuinely slow starts.
-                const CONNECTING_OVERLAY_THRESHOLD: Duration = Duration::from_millis(220);
-
                 let is_first_trigger = rm.is_first_trigger();
-                // Fast pre-start hint only from explicit settings.
-                // Avoids an extra default-device enumeration in the startup hot path.
-                let likely_bluetooth = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    rm.should_show_connecting_overlay_pre_start()
-                }))
-                .unwrap_or_else(|e| {
-                    error!("Panic in pre-start Bluetooth hint: {:?}", e);
-                    false
-                });
-
-                let connecting_phase = Arc::new(AtomicU8::new(CONNECTING_PHASE_PENDING));
-
-                // Show connecting immediately for known Bluetooth devices.
-                if likely_bluetooth && try_mark_connecting_overlay_shown(&connecting_phase) {
-                    log_connecting_overlay_shown(
-                        &session_id,
-                        binding_id,
-                        trigger_id,
-                        "Bluetooth mic detected, showing connecting overlay",
-                        None,
-                    );
-                    utils::show_connecting_overlay(app);
-                } else {
-                    // For non-Bluetooth starts, only show connecting if startup is visibly slow.
-                    let app_for_threshold = app.clone();
-                    let connecting_phase_for_threshold = Arc::clone(&connecting_phase);
-                    let binding_id_for_threshold = binding_id.to_string();
-                    let session_id_for_threshold = session_id.clone();
-                    let trigger_id_for_threshold = trigger_id.clone();
-                    std::thread::spawn(move || {
-                        std::thread::sleep(CONNECTING_OVERLAY_THRESHOLD);
-                        if try_mark_connecting_overlay_shown(&connecting_phase_for_threshold) {
-                            log_connecting_overlay_shown(
-                                &session_id_for_threshold,
-                                &binding_id_for_threshold,
-                                &trigger_id_for_threshold,
-                                "Recording start exceeded threshold, showing connecting overlay",
-                                Some(CONNECTING_OVERLAY_THRESHOLD.as_millis()),
-                            );
-                            utils::show_connecting_overlay(&app_for_threshold);
-                        }
-                    });
-                }
+                let connecting_phase = Arc::clone(&pre_ready_phase);
 
                 let recording_start_time = Instant::now();
 
@@ -954,6 +926,7 @@ impl ShortcutAction for TranscribeAction {
                             device = start_success
                                 .active_device_name
                                 .unwrap_or_else(|| "unknown".to_string()),
+                            milestone_kind = "actual_readiness",
                             event_code = "capture_ready_ack",
                             "On-demand recording capture-ready"
                         );
@@ -968,18 +941,6 @@ impl ShortcutAction for TranscribeAction {
                             false
                         });
 
-                        // If we couldn't infer Bluetooth from settings pre-start (e.g. Default mic),
-                        // but the active stream is Bluetooth, still show connecting state before delay.
-                        if is_bluetooth && try_mark_connecting_overlay_shown(&connecting_phase) {
-                            log_connecting_overlay_shown(
-                                &session_id,
-                                binding_id,
-                                trigger_id,
-                                "Bluetooth mic detected after stream open, showing connecting overlay",
-                                None,
-                            );
-                            utils::show_connecting_overlay(app);
-                        }
                         let _ = complete_connecting_overlay_phase(&connecting_phase);
 
                         // Add warmup delay for Bluetooth microphones.
@@ -1019,6 +980,7 @@ impl ShortcutAction for TranscribeAction {
                                 model_ready_for_recording,
                                 model_loading = !selected_model.is_empty()
                                     && !model_ready_for_recording,
+                                milestone_kind = "perceived_ready",
                                 event_code = "overlay_recording_shown",
                                 "Recording overlay shown after safe capture-ready gate"
                             );

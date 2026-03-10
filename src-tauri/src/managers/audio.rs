@@ -1626,28 +1626,6 @@ impl AudioRecordingManager {
         settings.selected_microphone.clone()
     }
 
-    /// Fast pre-start hint for showing the "connecting microphone" overlay.
-    /// Uses only explicit settings (no CPAL device enumeration).
-    pub fn should_show_connecting_overlay_pre_start(&self) -> bool {
-        let Some(device_name) = self.get_selected_device_name_fast() else {
-            return false;
-        };
-
-        // "Default" means no explicit device selection; avoid expensive detection here.
-        if device_name.eq_ignore_ascii_case("default") {
-            return false;
-        }
-
-        let is_bt = crate::audio_device_info::is_device_bluetooth(&device_name);
-        info!(
-            device = device_name,
-            is_bluetooth = is_bt,
-            method = "settings_fast_prestart",
-            "Bluetooth device check"
-        );
-        is_bt
-    }
-
     /// Determine Bluetooth status from the currently opened stream device.
     /// This reflects the actual device used for recording without extra enumeration.
     pub fn is_active_stream_bluetooth(&self) -> bool {
@@ -2599,8 +2577,30 @@ impl AudioRecordingManager {
         }
 
         if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+            let stream_open_started = Instant::now();
+            info!(
+                session = session_id,
+                binding = binding_id,
+                trigger_id = trigger_id,
+                phase = "requested",
+                milestone_kind = "actual_readiness",
+                event_code = "stream_open_subphase",
+                "Requested stream-open for on-demand startup"
+            );
             match self.start_microphone_stream() {
                 Ok(stream_start_result) => {
+                    info!(
+                        session = session_id,
+                        binding = binding_id,
+                        trigger_id = trigger_id,
+                        phase = "completed",
+                        elapsed_ms = stream_open_started.elapsed().as_millis() as u64,
+                        stream_open_outcome = stream_start_result.outcome.as_str(),
+                        resolution_mode = stream_start_result.resolution_mode.as_str(),
+                        milestone_kind = "actual_readiness",
+                        event_code = "stream_open_subphase",
+                        "Completed stream-open phase for on-demand startup"
+                    );
                     info!(
                         session = session_id,
                         binding = binding_id,
@@ -2632,7 +2632,17 @@ impl AudioRecordingManager {
                     );
                 }
                 Err(e) => {
-                    error!("Failed to open microphone stream: {e}");
+                    error!(
+                        session = session_id,
+                        binding = binding_id,
+                        trigger_id = trigger_id,
+                        phase = "failed",
+                        elapsed_ms = stream_open_started.elapsed().as_millis() as u64,
+                        error = e.to_string(),
+                        milestone_kind = "actual_readiness",
+                        event_code = "stream_open_subphase",
+                        "Failed stream-open phase for on-demand startup"
+                    );
                     let _ = cleanup_failed_start();
                     return RecordingStartOutcome::Failed(RecordingStartFailure::StreamOpenFailed(
                         e.to_string(),
@@ -2651,6 +2661,7 @@ impl AudioRecordingManager {
                 device = active_device_name
                     .clone()
                     .unwrap_or_else(|| "unknown".to_string()),
+                milestone_kind = "actual_readiness",
                 event_code = "stream_open_ready",
                 "Microphone stream ready before capture-ready wait"
             );
@@ -2667,6 +2678,16 @@ impl AudioRecordingManager {
 
         const CAPTURE_READY_TIMEOUT: Duration = Duration::from_millis(500);
 
+        info!(
+            session = session_id,
+            binding = binding_id,
+            trigger_id = trigger_id,
+            phase = "start_command_dispatch_requested",
+            milestone_kind = "actual_readiness",
+            event_code = "recorder_start_subphase",
+            "Dispatching recorder start command"
+        );
+        let start_dispatch_started = Instant::now();
         let start_wait: Option<Result<RecorderStartWait, RecorderStartError>> = {
             let recorder_guard = self.recorder.lock().unwrap();
             recorder_guard
@@ -2674,16 +2695,56 @@ impl AudioRecordingManager {
                 .map(|rec| rec.begin_start_blocking())
         };
         let Some(start_wait) = start_wait else {
+            error!(
+                session = session_id,
+                binding = binding_id,
+                trigger_id = trigger_id,
+                phase = "start_command_dispatch_failed",
+                elapsed_ms = start_dispatch_started.elapsed().as_millis() as u64,
+                milestone_kind = "actual_readiness",
+                event_code = "recorder_start_subphase",
+                "Recorder start command could not be dispatched because recorder was unavailable"
+            );
             error!("Recorder not available");
             let _ = cleanup_failed_start();
             return RecordingStartOutcome::Failed(RecordingStartFailure::RecorderUnavailable);
         };
+        info!(
+            session = session_id,
+            binding = binding_id,
+            trigger_id = trigger_id,
+            phase = "start_command_dispatched",
+            elapsed_ms = start_dispatch_started.elapsed().as_millis() as u64,
+            milestone_kind = "actual_readiness",
+            event_code = "recorder_start_subphase",
+            "Recorder start command dispatched"
+        );
+        info!(
+            session = session_id,
+            binding = binding_id,
+            trigger_id = trigger_id,
+            phase = "capture_ready_wait_started",
+            timeout_ms = CAPTURE_READY_TIMEOUT.as_millis() as u64,
+            milestone_kind = "actual_readiness",
+            event_code = "recorder_start_subphase",
+            "Waiting for capture-ready acknowledgement"
+        );
         let capture_ready_wait_started = Instant::now();
         let start_result = start_wait.and_then(|wait| wait.wait(CAPTURE_READY_TIMEOUT));
 
         match start_result {
             Ok(()) => {
                 let capture_ready_latency = capture_ready_wait_started.elapsed();
+                info!(
+                    session = session_id,
+                    binding = binding_id,
+                    trigger_id = trigger_id,
+                    phase = "capture_ready_wait_completed",
+                    latency_ms = capture_ready_latency.as_millis() as u64,
+                    milestone_kind = "actual_readiness",
+                    event_code = "recorder_start_subphase",
+                    "Capture-ready wait completed"
+                );
                 let active_device_name = self.current_device_name.lock().unwrap().clone();
 
                 // Phase C: commit start atomically under lock.
@@ -2776,6 +2837,7 @@ impl AudioRecordingManager {
                     trigger_id = trigger_id,
                     latency_ms = capture_ready_latency.as_millis(),
                     device = active_device_name.clone().unwrap_or_else(|| "unknown".to_string()),
+                    milestone_kind = "actual_readiness",
                     event_code = "capture_ready_ack",
                     "Recording capture-ready acknowledgement received"
                 );
@@ -2786,6 +2848,17 @@ impl AudioRecordingManager {
                 })
             }
             Err(err) => {
+                error!(
+                    session = session_id,
+                    binding = binding_id,
+                    trigger_id = trigger_id,
+                    phase = "capture_ready_wait_failed",
+                    latency_ms = capture_ready_wait_started.elapsed().as_millis() as u64,
+                    error = err.to_string(),
+                    milestone_kind = "actual_readiness",
+                    event_code = "recorder_start_subphase",
+                    "Capture-ready wait failed"
+                );
                 let cleanup_action = cleanup_failed_start();
                 let failure = map_recorder_start_error(err, cleanup_action);
 

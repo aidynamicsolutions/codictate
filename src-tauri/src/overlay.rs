@@ -198,6 +198,7 @@ struct OverlayTargetPoint {
     y: f64,
     reason: OverlayMonitorSelectionReason,
     is_fallback: bool,
+    fallback_reason: &'static str,
 }
 
 #[cfg(target_os = "macos")]
@@ -284,18 +285,10 @@ fn monitor_center_point(monitor: &tauri::Monitor) -> (f64, f64) {
 }
 
 #[cfg(target_os = "macos")]
-fn resolve_overlay_target_point(
+fn resolve_overlay_fallback_target_point(
     app_handle: &AppHandle,
     include_cached_fallback: bool,
 ) -> Option<OverlayTargetPoint> {
-    if let Some(target) = resolve_active_cursor_target_point(app_handle) {
-        return Some(target);
-    }
-
-    if let Some(target) = resolve_focused_window_target_point(app_handle) {
-        return Some(target);
-    }
-
     if include_cached_fallback {
         if let Some((x, y)) = read_cached_overlay_target_point() {
             return Some(OverlayTargetPoint {
@@ -303,6 +296,7 @@ fn resolve_overlay_target_point(
                 y,
                 reason: OverlayMonitorSelectionReason::CachedLastSuccessfulScreen,
                 is_fallback: true,
+                fallback_reason: "cached_last_successful_target",
             });
         }
     }
@@ -313,6 +307,7 @@ fn resolve_overlay_target_point(
             y: mouse_location.1 as f64,
             reason: OverlayMonitorSelectionReason::MouseCursorMonitor,
             is_fallback: true,
+            fallback_reason: "cursor_position_fallback",
         });
     }
 
@@ -326,6 +321,7 @@ fn resolve_overlay_target_point(
                         y,
                         reason: OverlayMonitorSelectionReason::OnboardingActivationTargetWindow,
                         is_fallback: true,
+                        fallback_reason: "onboarding_target_fallback",
                     });
                 }
             }
@@ -343,8 +339,54 @@ fn resolve_overlay_target_point(
                 y,
                 reason: OverlayMonitorSelectionReason::PrimaryFallback,
                 is_fallback: true,
+                fallback_reason: "primary_monitor_fallback",
             }
         })
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_overlay_authoritative_target_point(
+    app_handle: &AppHandle,
+) -> Option<OverlayTargetPoint> {
+    let authoritative_lookup_started = Instant::now();
+
+    if let Some(target) = resolve_active_cursor_target_point(app_handle) {
+        return Some(target);
+    }
+
+    if let Some(target) = resolve_focused_window_target_point(app_handle) {
+        return Some(target);
+    }
+
+    if authoritative_lookup_started.elapsed() >= OVERLAY_AX_TRANSIENT_LOOKUP_THRESHOLD {
+        mark_recent_transient_ax_failure(
+            "authoritative_lookup_timeout_or_failure",
+            authoritative_lookup_started.elapsed(),
+        );
+    }
+
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn resolve_overlay_target_point(
+    app_handle: &AppHandle,
+    include_cached_fallback: bool,
+    prefer_fallback_first: bool,
+) -> Option<OverlayTargetPoint> {
+    if prefer_fallback_first {
+        if let Some(target) = resolve_overlay_fallback_target_point(app_handle, include_cached_fallback)
+        {
+            return Some(target);
+        }
+        return resolve_overlay_authoritative_target_point(app_handle);
+    }
+
+    if let Some(target) = resolve_overlay_authoritative_target_point(app_handle) {
+        return Some(target);
+    }
+
+    resolve_overlay_fallback_target_point(app_handle, include_cached_fallback)
 }
 
 #[cfg(target_os = "macos")]
@@ -411,6 +453,7 @@ fn resolve_active_cursor_target_point(app_handle: &AppHandle) -> Option<OverlayT
         y: normalized_y,
         reason: OverlayMonitorSelectionReason::ActiveCursorMonitor,
         is_fallback: false,
+        fallback_reason: "none",
     })
 }
 
@@ -480,6 +523,7 @@ fn resolve_focused_window_target_point(app_handle: &AppHandle) -> Option<Overlay
         y: normalized_y,
         reason: OverlayMonitorSelectionReason::FocusedAxWindow,
         is_fallback: false,
+        fallback_reason: "none",
     })
 }
 
@@ -1083,6 +1127,7 @@ fn dispatch_overlay_panel_presentation(
             presentation_seq = presentation_seq,
             reason = target.reason.as_str(),
             used_fallback = target.is_fallback,
+            fallback_reason = target.fallback_reason,
             target_point_x = target.x,
             target_point_y = target.y,
             screen_name = screen_target.name,
@@ -1136,7 +1181,16 @@ fn schedule_overlay_target_refresh(
             return;
         }
 
-        let Some(refined_target) = resolve_overlay_target_point(&app, false) else {
+        let Some(refined_target) = resolve_overlay_target_point(&app, false, false) else {
+            tracing::debug!(
+                event_code = "overlay_fallback_refinement_skipped",
+                source = source,
+                presentation_seq = presentation_seq,
+                reason = initial_target.reason.as_str(),
+                fallback_reason = initial_target.fallback_reason,
+                outcome = "no_authoritative_target",
+                "Skipped overlay fallback refinement because no authoritative target was available"
+            );
             return;
         };
 
@@ -1154,9 +1208,27 @@ fn schedule_overlay_target_refresh(
         if (refined_target.x - initial_target.x).abs() < 1.0
             && (refined_target.y - initial_target.y).abs() < 1.0
         {
+            tracing::debug!(
+                event_code = "overlay_fallback_refinement_skipped",
+                source = source,
+                presentation_seq = presentation_seq,
+                reason = initial_target.reason.as_str(),
+                fallback_reason = initial_target.fallback_reason,
+                outcome = "no_position_change",
+                "Skipped overlay fallback refinement because target position was unchanged"
+            );
             return;
         }
 
+        tracing::debug!(
+            event_code = "overlay_fallback_refinement_dispatched",
+            source = source,
+            presentation_seq = presentation_seq,
+            initial_reason = initial_target.reason.as_str(),
+            initial_fallback_reason = initial_target.fallback_reason,
+            refined_reason = refined_target.reason.as_str(),
+            "Dispatching overlay fallback refinement to authoritative target"
+        );
         dispatch_overlay_panel_presentation(
             &app,
             source,
@@ -1168,7 +1240,12 @@ fn schedule_overlay_target_refresh(
 
 #[cfg(target_os = "macos")]
 fn present_overlay_panel(app_handle: &AppHandle, source: &'static str) {
-    let target = resolve_overlay_target_point(app_handle, true);
+    let startup_fallback_reason = startup_fallback_reason_for_source(source);
+    let target = resolve_overlay_target_point(
+        app_handle,
+        true,
+        startup_fallback_reason.is_some(),
+    );
     let Some(target) = target else {
         tracing::warn!(
             event_code = "overlay_panel_present_skipped",
@@ -1178,6 +1255,16 @@ fn present_overlay_panel(app_handle: &AppHandle, source: &'static str) {
         );
         return;
     };
+
+    if target.is_fallback {
+        tracing::debug!(
+            event_code = "overlay_startup_fallback_applied",
+            source = source,
+            policy_reason = startup_fallback_reason.unwrap_or("none"),
+            fallback_reason = target.fallback_reason,
+            "Overlay presentation used fallback placement policy"
+        );
+    }
 
     let presentation_seq = OVERLAY_PRESENTATION_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
     dispatch_overlay_panel_presentation(app_handle, source, target, presentation_seq);
@@ -1213,12 +1300,86 @@ static LAST_SUCCESSFUL_OVERLAY_TARGET_POINT: LazyLock<Mutex<Option<(f64, f64)>>>
     LazyLock::new(|| Mutex::new(None));
 #[cfg(target_os = "macos")]
 static OVERLAY_PRESENTATION_SEQ: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_os = "macos")]
+static LAST_WAKE_OR_UNLOCK_AT: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
+#[cfg(target_os = "macos")]
+static LAST_TRANSIENT_AX_FAILURE_AT: LazyLock<Mutex<Option<Instant>>> =
+    LazyLock::new(|| Mutex::new(None));
 
 const OVERLAY_HOVER_ACTIVE_POLL_INTERVAL_MS: u64 = 33;
 const OVERLAY_HOVER_IDLE_POLL_INTERVAL_MS: u64 = 180;
 const ONBOARDING_TRANSCRIBING_MIN_VISIBLE_MS: u64 = 350;
 #[cfg(target_os = "macos")]
 const OVERLAY_PRESENTATION_SAMPLE_DELAY_MS: u64 = 16;
+#[cfg(target_os = "macos")]
+const OVERLAY_WAKE_OR_UNLOCK_RECENCY_WINDOW: Duration = Duration::from_secs(5);
+#[cfg(target_os = "macos")]
+const OVERLAY_AX_TRANSIENT_RECENCY_WINDOW: Duration = Duration::from_secs(5);
+#[cfg(target_os = "macos")]
+const OVERLAY_AX_TRANSIENT_LOOKUP_THRESHOLD: Duration = Duration::from_millis(120);
+
+#[cfg(target_os = "macos")]
+fn overlay_source_is_startup_presentation(source: &str) -> bool {
+    matches!(source, "show_connecting_overlay" | "show_recording_overlay")
+}
+
+#[cfg(target_os = "macos")]
+fn startup_fallback_reason_for_source(source: &str) -> Option<&'static str> {
+    if !overlay_source_is_startup_presentation(source) {
+        return None;
+    }
+
+    let wake_recent = LAST_WAKE_OR_UNLOCK_AT
+        .lock()
+        .ok()
+        .and_then(|value| *value)
+        .is_some_and(|instant| instant.elapsed() <= OVERLAY_WAKE_OR_UNLOCK_RECENCY_WINDOW);
+    if wake_recent {
+        return Some("wake_or_unlock_recent");
+    }
+
+    let ax_failure_recent = LAST_TRANSIENT_AX_FAILURE_AT
+        .lock()
+        .ok()
+        .and_then(|value| *value)
+        .is_some_and(|instant| instant.elapsed() <= OVERLAY_AX_TRANSIENT_RECENCY_WINDOW);
+    if ax_failure_recent {
+        return Some("transient_ax_failure_recent");
+    }
+
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn mark_recent_transient_ax_failure(reason: &'static str, elapsed: Duration) {
+    if let Ok(mut value) = LAST_TRANSIENT_AX_FAILURE_AT.lock() {
+        *value = Some(Instant::now());
+    }
+    tracing::debug!(
+        event_code = "overlay_startup_fallback_signal",
+        signal = "transient_ax_failure",
+        reason = reason,
+        elapsed_ms = elapsed.as_millis() as u64,
+        "Recorded transient AX fallback signal for startup overlay placement"
+    );
+}
+
+#[cfg(target_os = "macos")]
+pub fn note_overlay_wake_or_unlock(source: &'static str) {
+    if let Ok(mut value) = LAST_WAKE_OR_UNLOCK_AT.lock() {
+        *value = Some(Instant::now());
+    }
+    tracing::info!(
+        event_code = "overlay_startup_fallback_signal",
+        signal = "wake_or_unlock",
+        source = source,
+        recency_window_ms = OVERLAY_WAKE_OR_UNLOCK_RECENCY_WINDOW.as_millis() as u64,
+        "Recorded wake/unlock signal for startup overlay fallback policy"
+    );
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn note_overlay_wake_or_unlock(_source: &'static str) {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OverlayInputMode {
@@ -2498,6 +2659,58 @@ pub fn hide_overlay_after_transcription(app_handle: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn startup_source_detection_only_flags_recording_startup_presentations() {
+        assert!(overlay_source_is_startup_presentation("show_connecting_overlay"));
+        assert!(overlay_source_is_startup_presentation("show_recording_overlay"));
+        assert!(!overlay_source_is_startup_presentation("show_transcribing_overlay"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn startup_fallback_reason_prefers_recent_wake_over_ax_failure() {
+        if let Ok(mut wake_at) = LAST_WAKE_OR_UNLOCK_AT.lock() {
+            *wake_at = Some(Instant::now());
+        }
+        if let Ok(mut ax_failure_at) = LAST_TRANSIENT_AX_FAILURE_AT.lock() {
+            *ax_failure_at = Some(Instant::now());
+        }
+
+        assert_eq!(
+            startup_fallback_reason_for_source("show_connecting_overlay"),
+            Some("wake_or_unlock_recent")
+        );
+
+        if let Ok(mut wake_at) = LAST_WAKE_OR_UNLOCK_AT.lock() {
+            *wake_at = None;
+        }
+        if let Ok(mut ax_failure_at) = LAST_TRANSIENT_AX_FAILURE_AT.lock() {
+            *ax_failure_at = None;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn startup_fallback_reason_uses_recent_ax_failure_for_startup_sources() {
+        if let Ok(mut wake_at) = LAST_WAKE_OR_UNLOCK_AT.lock() {
+            *wake_at = None;
+        }
+        if let Ok(mut ax_failure_at) = LAST_TRANSIENT_AX_FAILURE_AT.lock() {
+            *ax_failure_at = Some(Instant::now());
+        }
+
+        assert_eq!(
+            startup_fallback_reason_for_source("show_recording_overlay"),
+            Some("transient_ax_failure_recent")
+        );
+        assert_eq!(startup_fallback_reason_for_source("show_processing_overlay"), None);
+
+        if let Ok(mut ax_failure_at) = LAST_TRANSIENT_AX_FAILURE_AT.lock() {
+            *ax_failure_at = None;
+        }
+    }
 
     #[test]
     fn should_poll_hover_requires_interactive_visible_and_regions() {

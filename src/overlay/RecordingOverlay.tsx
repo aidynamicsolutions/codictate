@@ -9,14 +9,10 @@ import { colors } from "@/theme";
 import { logInfo, logWarn } from "@/utils/logging";
 import { AudioAGC } from "@/utils/audioAGC";
 import { getLanguageDirection } from "@/lib/utils/rtl";
-
-type OverlayState =
-  | "recording"
-  | "transcribing"
-  | "processing"
-  | "connecting"
-  | "cancelling"
-  | "correcting";
+import {
+  resolveOverlayVisualVariant,
+  type OverlayState,
+} from "@/overlay/overlayVisualState";
 
 interface CorrectionResult {
   original: string;
@@ -404,9 +400,6 @@ const RecordingOverlay: React.FC = () => {
     if (state === "processing") {
       return t("overlay.processing");
     }
-    if (state === "connecting") {
-      return t("overlay.starting", "Starting microphone...");
-    }
     if (state === "cancelling") {
       return t("overlay.cancelling", "Cancelling...");
     }
@@ -417,6 +410,11 @@ const RecordingOverlay: React.FC = () => {
   }, [correctionData, state, t]);
 
   const overlayMessageText = undoCard ? undoCardMessage : stateMessage;
+  const visualVariant = resolveOverlayVisualVariant(
+    state,
+    Boolean(undoCard),
+    Boolean(correctionData),
+  );
   const discoverabilityActive = undoCard?.kind === "discoverability_hint";
   const marqueeEligible = discoverabilityActive;
 
@@ -968,6 +966,15 @@ const RecordingOverlay: React.FC = () => {
     );
   };
 
+  const renderPreReadyShell = () => (
+    <div
+      className="pre-ready-shell"
+      role="status"
+      aria-live="polite"
+      aria-label={t("overlay.starting", "Starting microphone...")}
+    />
+  );
+
   return (
     <>
       <div
@@ -1000,6 +1007,38 @@ const RecordingOverlay: React.FC = () => {
         </svg>
       )}
 
+      {/* SVG shimmer border - racing dash during connecting state */}
+      {visualVariant === "pre_ready_shell" && (
+        <svg
+          className="countdown-border shimmer-border"
+          width={SVG_WIDTH}
+          height={SVG_HEIGHT}
+          viewBox={`0 0 ${SVG_WIDTH} ${SVG_HEIGHT}`}
+          aria-hidden
+        >
+          <path
+            d={ROUNDED_RECT_PATH}
+            fill="none"
+            stroke="rgba(255, 255, 255, 0.35)"
+            strokeWidth={SVG_STROKE_WIDTH}
+            pathLength={SVG_PATH_LENGTH}
+            strokeDasharray={`${SVG_PATH_LENGTH}`}
+            strokeDashoffset={0}
+            strokeLinecap="round"
+          />
+          <path
+            className="shimmer-border-dash"
+            d={ROUNDED_RECT_PATH}
+            fill="none"
+            stroke="rgba(255, 255, 255, 0.8)"
+            strokeWidth={SVG_STROKE_WIDTH}
+            pathLength={SVG_PATH_LENGTH}
+            strokeDasharray={`15 85`}
+            strokeLinecap="round"
+          />
+        </svg>
+      )}
+
       <div
         className={`recording-overlay-inner ${discoverabilityActive ? "discoverability-layout" : ""}`}
         style={
@@ -1020,7 +1059,7 @@ const RecordingOverlay: React.FC = () => {
             renderMessageLane(undoCardMessage, true, "undo", discoverabilityActive)
           ) : (
             <>
-              {state === "recording" && (
+              {visualVariant === "bars" && (
                 <div className="bars-container">
                   {levels.map((v, i) => (
                     <div
@@ -1037,19 +1076,17 @@ const RecordingOverlay: React.FC = () => {
                   ))}
                 </div>
               )}
-              {state === "transcribing" && (
+              {visualVariant === "pre_ready_shell" && renderPreReadyShell()}
+              {state === "transcribing" && visualVariant === "status_message" && (
                 renderMessageLane(overlayMessageText)
               )}
-              {state === "processing" && (
+              {state === "processing" && visualVariant === "status_message" && (
                 renderMessageLane(overlayMessageText)
               )}
-              {state === "connecting" && (
+              {state === "cancelling" && visualVariant === "status_message" && (
                 renderMessageLane(overlayMessageText)
               )}
-              {state === "cancelling" && (
-                renderMessageLane(overlayMessageText)
-              )}
-              {state === "correcting" && correctionData && (
+              {visualVariant === "correction" && state === "correcting" && correctionData && (
                 <div className="correction-container">
                   <div className="correction-text">
                     <span className="correction-original">
@@ -1065,7 +1102,7 @@ const RecordingOverlay: React.FC = () => {
                   </div>
                 </div>
               )}
-              {state === "correcting" && !correctionData && (
+              {state === "correcting" && visualVariant === "status_message" && !correctionData && (
                 renderMessageLane(overlayMessageText)
               )}
             </>

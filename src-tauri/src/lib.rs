@@ -216,10 +216,12 @@ fn register_audio_topology_refresh_hooks(recording_manager: Arc<AudioRecordingMa
                 .request_background_topology_refresh(
                     managers::audio::TopologyRefreshSource::AudioRouteChange,
                 ),
-            crate::audio_device_info::AudioTopologyEvent::Wake => recording_manager
-                .request_background_topology_refresh(
+            crate::audio_device_info::AudioTopologyEvent::Wake => {
+                crate::overlay::note_overlay_wake_or_unlock("audio_lifecycle_wake");
+                recording_manager.request_background_topology_refresh(
                     managers::audio::TopologyRefreshSource::Wake,
-                ),
+                )
+            }
         }
     }));
 

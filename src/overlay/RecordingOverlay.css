@@ -98,6 +98,24 @@
   overflow: hidden;
 }
 
+
+
+.shimmer-border-dash {
+  animation: shimmer-border-race 1.6s linear infinite;
+}
+
+/* Accessibility-only element for the pre-ready (connecting) state.
+   The visual feedback is the shimmer-border SVG; this div exists solely
+   to announce "Starting microphone…" to screen readers via role="status". */
+.pre-ready-shell {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+
 .bar {
   width: 6px;
   background: var(--color-bar, #ffe5ee);
@@ -242,7 +260,7 @@
   transform: scale(0.95);
 }
 
-/* Shimmering text effect for 'Starting microphone...' */
+/* Status text styling for transcribing, processing, and cancelling states */
 .connecting-text {
   font-size: 13px;
   font-weight: 500;
@@ -279,6 +297,15 @@
 @keyframes shimmer {
   to {
     background-position: -200% center;
+  }
+}
+
+@keyframes shimmer-border-race {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -100;
   }
 }
 
@@ -377,6 +404,10 @@
   }
 
   .undo-message-text {
+    animation: none;
+  }
+
+  .shimmer-border-dash {
     animation: none;
   }
 }
