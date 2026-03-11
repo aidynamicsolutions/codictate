@@ -117,6 +117,7 @@ const ROUNDED_RECT_PATH = (() => {
 const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
+  const [isSettled, setIsSettled] = useState(false);
   const [state, setState] = useState<OverlayState>("recording");
   const isVisibleRef = useRef(false);
   const overlayStateRef = useRef<OverlayState>("recording");
@@ -139,6 +140,12 @@ const RecordingOverlay: React.FC = () => {
   const hideStateResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  // Tracks whether the GPU compositor has been warmed at least once.
+  // On the first activation after a long idle, we insert a two-frame
+  // rAF settle before starting animations so the compositor can
+  // promote layers without competing with the first animation tick.
+  const compositedRef = useRef(false);
+  const settleRafRef = useRef<number | null>(null);
   const direction = getLanguageDirection(i18n.language);
 
   // Recording time state
@@ -634,6 +641,27 @@ const RecordingOverlay: React.FC = () => {
         setState(overlayState);
         setIsVisible(true);
 
+        // Two-frame compositor settle: on the first cold activation, defer
+        // the fade-in class by two rAF frames so the GPU can promote layers
+        // before animations begin (prevents cold-start jank).
+        if (settleRafRef.current != null) {
+          cancelAnimationFrame(settleRafRef.current);
+          settleRafRef.current = null;
+        }
+        if (!compositedRef.current) {
+          // Frame 1: browser promotes layers (will-change hints are now active)
+          settleRafRef.current = requestAnimationFrame(() => {
+            // Frame 2: layers are composited, safe to start animations
+            settleRafRef.current = requestAnimationFrame(() => {
+              settleRafRef.current = null;
+              compositedRef.current = true;
+              setIsSettled(true);
+            });
+          });
+        } else {
+          setIsSettled(true);
+        }
+
         // Reset time when showing overlay in recording state
         if (overlayState === "recording") {
           setElapsedSecs(0);
@@ -677,6 +705,7 @@ const RecordingOverlay: React.FC = () => {
         setIsPointerOverAction(false);
         setHoverTooltip(null);
         setIsVisible(false);
+        setIsSettled(false);
         setElapsedSecs(0);
         setCorrectionData(null);
 
@@ -856,6 +885,10 @@ const RecordingOverlay: React.FC = () => {
       clearUndoDismissTimer();
       clearUndoCardClearTimer();
       clearHideStateResetTimer();
+      if (settleRafRef.current != null) {
+        cancelAnimationFrame(settleRafRef.current);
+        settleRafRef.current = null;
+      }
       setPointerLaneHover(false);
       setNativeLaneHover(false);
       setNativeCursorIntent("default");
@@ -978,7 +1011,7 @@ const RecordingOverlay: React.FC = () => {
   return (
     <>
       <div
-        className={`recording-overlay-wrapper ${isVisible ? "fade-in" : "fade-out"} ${pointerCursorActive ? "overlay-pointer-intent" : ""}`}
+        className={`recording-overlay-wrapper ${isSettled ? "fade-in" : "fade-out"} ${pointerCursorActive ? "overlay-pointer-intent" : ""}`}
         dir={direction}
         onPointerLeave={() => {
           setPointerLaneHover(false);

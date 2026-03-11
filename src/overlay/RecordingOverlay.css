@@ -11,6 +11,9 @@
   background: #000000;
   overflow: hidden; /* Mask the entrance animation */
   cursor: default;
+  /* Pre-promote to GPU layer so opacity transitions don't cause
+     cold-start compositor jank after long idle periods. */
+  will-change: opacity;
 }
 
 .recording-overlay-wrapper.overlay-pointer-intent,
@@ -24,6 +27,8 @@
   top: 0;
   left: 0;
   pointer-events: none;
+  /* Keep container GPU-backed for strokeDashoffset changes. */
+  will-change: contents;
 }
 
 /* Inner container holds the actual overlay content */
@@ -48,6 +53,9 @@
   transition:
     opacity 100ms ease-out 20ms,
     transform 150ms ease-out;
+  /* Pre-promote so the fade-in-up animation doesn't trigger a cold
+     layer promotion in the same frame as the first animation tick. */
+  will-change: opacity, transform;
 }
 
 .recording-overlay-inner.discoverability-layout {
@@ -102,6 +110,10 @@
 
 .shimmer-border-dash {
   animation: shimmer-border-race 1.6s linear infinite;
+  /* Force GPU compositing for SVG stroke animation; will-change alone
+     is insufficient for SVG paint properties on some WebKit builds. */
+  will-change: stroke-dashoffset;
+  transform: translateZ(0);
 }
 
 /* Accessibility-only element for the pre-ready (connecting) state.

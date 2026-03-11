@@ -85,6 +85,8 @@ To ensure the overlay appears **instantly** when any activation shortcut is pres
 #### 3. Frontend Rendering
 *   **Non-Blocking**: Heavy operations (like language sync) are fire-and-forget.
 *   **Forced Paint**: `requestAnimationFrame` is used to force a browser reflow immediately upon receiving the `show-overlay` event.
+*   **GPU Layer Pre-Promotion**: CSS `will-change` hints on `.recording-overlay-wrapper` (opacity), `.recording-overlay-inner` (opacity, transform), `.countdown-border` (contents), and `.shimmer-border-dash` (stroke-dashoffset) keep GPU compositor layers pre-allocated even during standby. Without these, the first activation after a long idle triggers layer promotion and animation in the same frame, resulting in visible stutter.
+*   **Cold-Start Compositor Settle**: The first overlay activation defers the `fade-in` CSS class by two `requestAnimationFrame` callbacks (~33ms at 60fps), giving the compositor a paint cycle to set up layers before animations begin. Subsequent activations apply the class immediately (tracked by `compositedRef`). This delay is imperceptible to humans.
 
 ### Visual Polish (Content Reveal)
 
