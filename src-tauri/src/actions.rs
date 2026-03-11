@@ -733,8 +733,9 @@ impl ShortcutAction for TranscribeAction {
         let _session_span = info_span!("session", session = %session_id).entered();
 
         // Emit session ID to frontend for correlated logging
+        // We do this in the background thread below to avoid blocking the critical path
+        // but we keep the macro import
         use tauri::Emitter;
-        let _ = app.emit("session-started", &session_id);
         crate::undo::clear_stop_transition_marker(app);
 
         let app_clone = app.clone();
@@ -763,19 +764,27 @@ impl ShortcutAction for TranscribeAction {
             "Recording startup entered prepare state"
         );
 
-        if !get_settings(app).always_on_microphone && crate::overlay::is_overlay_available(app) {
-            if try_mark_connecting_overlay_shown(&pre_ready_phase) {
-                log_pre_ready_shell_shown(
-                    &session_id,
-                    binding_id,
-                    &trigger_id,
-                    "Accepted on-demand trigger, showing pre-ready shell immediately",
-                );
-                utils::show_connecting_overlay(app);
+        let pre_ready_phase_for_overlay = Arc::clone(&pre_ready_phase);
+        let app_for_overlay_check = app.clone();
+        let session_id_for_overlay = session_id.clone();
+        let binding_id_for_overlay = binding_id.to_string();
+        let trigger_id_for_overlay = trigger_id.clone();
+
+        std::thread::spawn(move || {
+            if !get_settings(&app_for_overlay_check).always_on_microphone && crate::overlay::is_overlay_available(&app_for_overlay_check) {
+                if try_mark_connecting_overlay_shown(&pre_ready_phase_for_overlay) {
+                    log_pre_ready_shell_shown(
+                        &session_id_for_overlay,
+                        &binding_id_for_overlay,
+                        &trigger_id_for_overlay,
+                        "Accepted on-demand trigger, dispatching pre-ready shell to background thread",
+                    );
+                    utils::show_connecting_overlay(&app_for_overlay_check);
+                }
+            } else {
+                let _ = complete_connecting_overlay_phase(&pre_ready_phase_for_overlay);
             }
-        } else {
-            let _ = complete_connecting_overlay_phase(&pre_ready_phase);
-        }
+        });
 
         info!(
             session = %session_id,
@@ -795,6 +804,12 @@ impl ShortcutAction for TranscribeAction {
             let app = &app_clone;
             let binding_id = &binding_id_clone;
             let trigger_id = &trigger_id_clone;
+            
+            let app_for_emit = app.clone();
+            let session_id_for_emit = session_id.clone();
+            std::thread::spawn(move || {
+                let _ = app_for_emit.emit("session-started", &session_id_for_emit);
+            });
 
             let rm = app.state::<Arc<AudioRecordingManager>>();
 
