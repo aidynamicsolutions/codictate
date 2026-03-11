@@ -17,9 +17,9 @@ It describes the combined architecture across the first-pass warm-path change
 ### 1. Trigger-bound warm path
 
 - `Fn` down and the earliest non-Fn shortcut boundary start a narrow prearm.
-- Prearm opens the recorder stream behind a single serialized gate.
-- The later recording start reuses the same in-flight or ready stream when possible.
-- Unused warm streams auto-close after a short grace window.
+- Prearm opens the recorder stream behind a single serialized gate if one is not already open.
+- The later recording start reuses the paused stream (using CoreAudio `AudioOutputUnitStop` under the hood) which guarantees ~35-45ms latency to start data flow without lighting up the macOS privacy indicator while idle.
+- Unused warm streams or idle streams after a recording are kept paused, persisting the `cpal::Stream` structurally. They are only auto-closed (torn down) when audio routing explicitly changes or they are re-evaluated as invalid.
 
 ### 2. Long-lived topology cache
 
@@ -39,6 +39,7 @@ It describes the combined architecture across the first-pass warm-path change
   - audio-route change
 - Refresh is single-flight and coalesced.
 - Refresh enumerates devices only. It never opens the recorder stream.
+- Note: Background refreshes that detect invalidation of the current topology will trigger a full teardown of the persistent paused stream so the next startup falls back to the fresh path.
 - Startup never waits on an in-flight refresh; it only reuses refresh results if they
   are already available when startup resolves topology.
 

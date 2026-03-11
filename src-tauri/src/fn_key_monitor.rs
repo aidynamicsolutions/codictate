@@ -68,10 +68,10 @@ const RELEASE_DEBOUNCE_MS: u64 = 150;
 /// Flag to signal the permission check thread to stop
 static PERMISSION_CHECK_ACTIVE: AtomicBool = AtomicBool::new(false);
 
-/// Interval for periodic permission checks (in milliseconds)
-/// Using a short interval (500ms) to minimize keyboard lockup when permission is revoked.
-/// Note: Checking AXIsProcessTrusted() is very cheap (just reads a flag), so frequent polling is fine.
-const PERMISSION_CHECK_INTERVAL_MS: u64 = 500;
+/// Interval for periodic permission checks (in milliseconds).
+/// Permission revocation is a rare user action, so 2s is responsive enough.
+/// Checking AXIsProcessTrusted() is very cheap (just reads a flag).
+const PERMISSION_CHECK_INTERVAL_MS: u64 = 2000;
 
 fn new_trigger_id() -> String {
     uuid::Uuid::new_v4().to_string()[..8].to_string()

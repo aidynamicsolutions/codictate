@@ -1483,7 +1483,7 @@ impl AudioRecordingManager {
                     opened_stream_epoch,
                     active_stream_epoch,
                 ) {
-                    manager.stop_microphone_stream_locked()
+                    manager.teardown_microphone_stream_locked()
                 } else {
                     false
                 };
@@ -1769,7 +1769,7 @@ impl AudioRecordingManager {
                     opened_stream_epoch,
                     active_stream_epoch,
                 ) {
-                    manager.stop_microphone_stream_locked()
+                    manager.teardown_microphone_stream_locked()
                 } else {
                     false
                 };
@@ -2349,6 +2349,32 @@ impl AudioRecordingManager {
     }
 
     fn stop_microphone_stream_locked(&self) -> bool {
+        let open_flag = self.is_open.lock().unwrap();
+        if !*open_flag {
+            return false;
+        }
+
+        let mut did_mute_guard = self.did_mute.lock().unwrap();
+        if *did_mute_guard {
+            set_mute(false);
+        }
+        *did_mute_guard = false;
+
+        if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
+            if *self.is_recording.lock().unwrap() {
+                let _ = rec.stop();
+                *self.is_recording.lock().unwrap() = false;
+            } else {
+                let _ = rec.stop(); // pause stream even if not recording
+            }
+        }
+
+        self.prearm_owner_token.store(0, Ordering::SeqCst);
+        debug!("Microphone stream paused");
+        true
+    }
+
+    fn teardown_microphone_stream_locked(&self) -> bool {
         let mut open_flag = self.is_open.lock().unwrap();
         if !*open_flag {
             return false;
@@ -2361,7 +2387,6 @@ impl AudioRecordingManager {
         *did_mute_guard = false;
 
         if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
-            // If still recording, stop first.
             if *self.is_recording.lock().unwrap() {
                 let _ = rec.stop();
                 *self.is_recording.lock().unwrap() = false;
@@ -2374,8 +2399,13 @@ impl AudioRecordingManager {
         self.prearm_owner_token.store(0, Ordering::SeqCst);
         self.active_stream_epoch.store(0, Ordering::SeqCst);
         self.clear_active_stream_state();
-        debug!("Microphone stream stopped");
+        debug!("Microphone stream torn down completely");
         true
+    }
+
+    pub fn teardown_microphone_stream(&self) {
+        let _stream_start_guard = self.stream_start_lock.lock().unwrap();
+        let _ = self.teardown_microphone_stream_locked();
     }
 
     pub fn stop_microphone_stream(&self) {
@@ -2676,7 +2706,10 @@ impl AudioRecordingManager {
             );
         }
 
-        const CAPTURE_READY_TIMEOUT: Duration = Duration::from_millis(500);
+        // 3000ms allows headroom for worst-case CPU contention during concurrent
+        // ONNX model loading (~2s), which can starve the cpal audio callback thread.
+        // Normal sessions complete the capture-ready handshake in <200ms.
+        const CAPTURE_READY_TIMEOUT: Duration = Duration::from_millis(3000);
 
         info!(
             session = session_id,
@@ -3031,7 +3064,7 @@ impl AudioRecordingManager {
 
         // If currently open, restart the microphone stream to use the new device
         if *self.is_open.lock().unwrap() {
-            self.stop_microphone_stream();
+            self.teardown_microphone_stream();
             self.start_microphone_stream()?;
         }
         Ok(())

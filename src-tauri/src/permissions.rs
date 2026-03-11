@@ -5,7 +5,7 @@
 //! are revoked at runtime and handle graceful degradation.
 
 #[cfg(target_os = "macos")]
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 /// Check if the app has accessibility permission on macOS.
 ///
@@ -21,7 +21,7 @@ pub fn check_accessibility_permission() -> bool {
 
     let result = unsafe { AXIsProcessTrusted() };
     let is_trusted = result != 0;
-    debug!("Accessibility permission check: {} (raw: {})", is_trusted, result);
+    trace!("Accessibility permission check: {} (raw: {})", is_trusted, result);
     is_trusted
 }
 

@@ -306,7 +306,7 @@ impl AudioRecorder {
             let _ = startup_tx.send(Ok(data_started_rx));
 
             // keep the stream alive while we process samples
-            run_consumer(sample_rate, vad, sample_rx, cmd_rx, level_cb, Some(data_started_tx));
+            run_consumer(sample_rate, vad, sample_rx, cmd_rx, level_cb, Some(data_started_tx), Some(stream));
             // stream is dropped here, after run_consumer returns
         });
 
@@ -493,6 +493,7 @@ fn run_consumer(
     cmd_rx: mpsc::Receiver<Cmd>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
     mut data_started_tx: Option<mpsc::Sender<()>>,
+    stream: Option<cpal::Stream>,
 ) {
     const COMMAND_POLL_TIMEOUT: Duration = Duration::from_millis(8);
 
@@ -623,6 +624,22 @@ fn run_consumer(
         let _ = reply_tx.send(std::mem::take(processed_samples));
     }
 
+    fn resume_stream(stream: &Option<cpal::Stream>) {
+        if let Some(s) = stream {
+            if let Err(e) = s.play() {
+                tracing::error!("Failed to resume stream: {}", e);
+            }
+        }
+    }
+
+    fn pause_stream(stream: &Option<cpal::Stream>) {
+        if let Some(s) = stream {
+            if let Err(e) = s.pause() {
+                tracing::error!("Failed to pause stream: {}", e);
+            }
+        }
+    }
+
     loop {
         let raw = match sample_rx.recv_timeout(COMMAND_POLL_TIMEOUT) {
             Ok(s) => s,
@@ -630,26 +647,32 @@ fn run_consumer(
                 // Keep command/control path responsive even when no audio packets arrive.
                 while let Ok(cmd) = cmd_rx.try_recv() {
                     match cmd {
-                        Cmd::Start { start_id, ready_tx } => apply_start_command(
-                            start_id,
-                            ready_tx,
-                            &mut processed_samples,
-                            &mut recording,
-                            &mut warmup_remaining,
-                            &mut visualizer,
-                            &vad,
-                            &mut pending_start_ready,
-                            &mut pre_roll_frames,
-                        ),
-                        Cmd::Stop(reply_tx) => apply_stop_command(
-                            reply_tx,
-                            &mut recording,
-                            &mut pending_start_ready,
-                            &sample_rx,
-                            &mut frame_resampler,
-                            &vad,
-                            &mut processed_samples,
-                        ),
+                        Cmd::Start { start_id, ready_tx } => {
+                            resume_stream(&stream);
+                            apply_start_command(
+                                start_id,
+                                ready_tx,
+                                &mut processed_samples,
+                                &mut recording,
+                                &mut warmup_remaining,
+                                &mut visualizer,
+                                &vad,
+                                &mut pending_start_ready,
+                                &mut pre_roll_frames,
+                            )
+                        }
+                        Cmd::Stop(reply_tx) => {
+                            pause_stream(&stream);
+                            apply_stop_command(
+                                reply_tx,
+                                &mut recording,
+                                &mut pending_start_ready,
+                                &sample_rx,
+                                &mut frame_resampler,
+                                &vad,
+                                &mut processed_samples,
+                            )
+                        }
                         Cmd::Shutdown => return,
                     }
                 }
@@ -687,17 +710,20 @@ fn run_consumer(
             }
 
             match cmd {
-                Cmd::Start { start_id, ready_tx } => apply_start_command(
-                    start_id,
-                    ready_tx,
-                    &mut processed_samples,
-                    &mut recording,
-                    &mut warmup_remaining,
-                    &mut visualizer,
-                    &vad,
-                    &mut pending_start_ready,
-                    &mut pre_roll_frames,
-                ),
+                Cmd::Start { start_id, ready_tx } => {
+                    resume_stream(&stream);
+                    apply_start_command(
+                        start_id,
+                        ready_tx,
+                        &mut processed_samples,
+                        &mut recording,
+                        &mut warmup_remaining,
+                        &mut visualizer,
+                        &vad,
+                        &mut pending_start_ready,
+                        &mut pre_roll_frames,
+                    )
+                }
                 other => {
                     defer_remaining_cmds = true;
                     deferred_cmds.push(other);
@@ -750,53 +776,65 @@ fn run_consumer(
         // Handle deferred non-start commands after processing this packet.
         for cmd in deferred_cmds {
             match cmd {
-                Cmd::Stop(reply_tx) => apply_stop_command(
-                    reply_tx,
-                    &mut recording,
-                    &mut pending_start_ready,
-                    &sample_rx,
-                    &mut frame_resampler,
-                    &vad,
-                    &mut processed_samples,
-                ),
+                Cmd::Stop(reply_tx) => {
+                    pause_stream(&stream);
+                    apply_stop_command(
+                        reply_tx,
+                        &mut recording,
+                        &mut pending_start_ready,
+                        &sample_rx,
+                        &mut frame_resampler,
+                        &vad,
+                        &mut processed_samples,
+                    )
+                }
                 Cmd::Shutdown => return,
-                Cmd::Start { start_id, ready_tx } => apply_start_command(
-                    start_id,
-                    ready_tx,
-                    &mut processed_samples,
-                    &mut recording,
-                    &mut warmup_remaining,
-                    &mut visualizer,
-                    &vad,
-                    &mut pending_start_ready,
-                    &mut pre_roll_frames,
-                ),
+                Cmd::Start { start_id, ready_tx } => {
+                    resume_stream(&stream);
+                    apply_start_command(
+                        start_id,
+                        ready_tx,
+                        &mut processed_samples,
+                        &mut recording,
+                        &mut warmup_remaining,
+                        &mut visualizer,
+                        &vad,
+                        &mut pending_start_ready,
+                        &mut pre_roll_frames,
+                    )
+                }
             }
         }
 
         // non-blocking check for a command
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
-                Cmd::Start { start_id, ready_tx } => apply_start_command(
-                    start_id,
-                    ready_tx,
-                    &mut processed_samples,
-                    &mut recording,
-                    &mut warmup_remaining,
-                    &mut visualizer,
-                    &vad,
-                    &mut pending_start_ready,
-                    &mut pre_roll_frames,
-                ),
-                Cmd::Stop(reply_tx) => apply_stop_command(
-                    reply_tx,
-                    &mut recording,
-                    &mut pending_start_ready,
-                    &sample_rx,
-                    &mut frame_resampler,
-                    &vad,
-                    &mut processed_samples,
-                ),
+                Cmd::Start { start_id, ready_tx } => {
+                    resume_stream(&stream);
+                    apply_start_command(
+                        start_id,
+                        ready_tx,
+                        &mut processed_samples,
+                        &mut recording,
+                        &mut warmup_remaining,
+                        &mut visualizer,
+                        &vad,
+                        &mut pending_start_ready,
+                        &mut pre_roll_frames,
+                    )
+                }
+                Cmd::Stop(reply_tx) => {
+                    pause_stream(&stream);
+                    apply_stop_command(
+                        reply_tx,
+                        &mut recording,
+                        &mut pending_start_ready,
+                        &sample_rx,
+                        &mut frame_resampler,
+                        &vad,
+                        &mut processed_samples,
+                    )
+                }
                 Cmd::Shutdown => return,
             }
         }
@@ -837,6 +875,7 @@ mod tests {
                 None,
                 sample_rx,
                 cmd_rx,
+                None,
                 None,
                 None,
             );

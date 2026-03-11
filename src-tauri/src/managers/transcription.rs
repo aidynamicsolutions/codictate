@@ -14,7 +14,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use transcribe_rs::{
     engines::{
         gigaam::GigaAMEngine,
@@ -236,7 +236,7 @@ impl TranscriptionManager {
                             );
 
                             if let Some(reason) = decision.skip_reason() {
-                                debug!(
+                                trace!(
                                     reason,
                                     has_active_binding,
                                     has_active_session = manager_cloned.is_any_session_active(),

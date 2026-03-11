@@ -165,9 +165,10 @@ The system SHALL optimize the stream-open path separately from topology reuse so
 - **THEN** the system SHALL preserve single-flight stream-open safety
 - **AND** SHALL NOT open a second independent microphone stream for the same startup attempt
 
-#### Scenario: Startup optimization does not move microphone open off the user trigger path
+#### Scenario: Startup optimization uses paused streams instead of teardowns
 - **WHEN** the app is idle and no user-triggered on-demand recording start is in progress
-- **THEN** this optimization change SHALL NOT open or keep open the microphone stream solely for startup-latency improvement
+- **THEN** this optimization change SHALL pause the microphone stream to release the hardware privacy indicator
+- **AND** SHALL NOT completely destroy and rebuild the stream during sequential recorded sessions
 
 ### Requirement: Capture-Ready Handshake Optimization Preserves Safety
 The system SHALL reduce or better structure post-open start latency without weakening the capture-ready safety contract.
