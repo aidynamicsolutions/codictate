@@ -10,6 +10,7 @@ import {
   TooltipTrigger,
 } from "@/components/shared/ui/tooltip";
 import { listen } from "@tauri-apps/api/event";
+import { formatAverageWpm } from "@/components/home/statsDisplayUtils";
 
 interface Stats {
   total_words: number;
@@ -364,7 +365,6 @@ export function StatsOverview({ stats }: StatsOverviewProps) {
       handleFocusRotation();
     }, 500); // Small delay to allow initial render/animations to settle
     return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reset to streak face when lock conditions change
@@ -480,9 +480,14 @@ export function StatsOverview({ stats }: StatsOverviewProps) {
         icon={Trophy}
         label={t("home.stats.wpm")}
         value={
-          <>
-            {Math.round(wpm)} <span className="text-lg">🏆</span>
-          </>
+          <span className="flex items-center gap-1">
+            <AnimatedCounter
+              value={wpm}
+              key={`wpm-${focusKey}`}
+              formatter={(val) => formatAverageWpm(val)}
+            />
+            <span className="text-lg">🏆</span>
+          </span>
         }
         subtext={
           wpm > 0 && fasterThanTyping > 0

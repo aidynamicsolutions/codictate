@@ -38,11 +38,11 @@ This dynamic tile alternates between **Daily Streak** and **Filler Words Removed
 - **Tooltip**: "Total filler words (uh, um, etc.) automatically removed from your transcriptions."
 
 ### WPM Card
-- **Value**: `X 🏆`
+- **Value**: `X.X 🏆`
 - **Subtext**: 
-  - Shows "X% faster than typing" when WPM > 40
+  - Shows "X% faster than typing on average" when WPM > 40
   - Shows encouragement message ("Start speaking...") when WPM is 0
-- **Tooltip**: "Words per minute (average dictation speed). Calculated as total words / total duration."
+- **Tooltip**: "Lifetime average words per minute based on speech-active duration. This can move slightly up or down as new dictations are added."
 
 ### Total Words Card
 - **Value**: `X 🚀` (formatted with locale separators)
@@ -90,6 +90,7 @@ This dynamic tile alternates between **Daily Streak** and **Filler Words Removed
 
 ### WPM (Words Per Minute)
 - Total words divided by total **speech-active** duration in minutes
+- This is a **lifetime average**, so it is not monotonic and may go down after a slower-than-average dictation
 - Threshold: Minimum duration of **0.06 seconds** (0.001 min) required to calculate WPM
 - Returns `0.0` if no recordings exist or total duration is below threshold
 

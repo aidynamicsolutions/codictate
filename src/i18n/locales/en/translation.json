@@ -111,13 +111,13 @@
     "welcome": "Welcome back,",
     "stats": {
       "timeSaved": "Time Saved",
-      "wpm": "WPM",
+      "wpm": "Avg WPM",
       "words": "Total Words",
       "streak": "Daily Streak",
       "days": "days",
       "day": "day",
       "minutes": "min",
-      "fasterThanTyping": "{{val}}% faster than typing",
+      "fasterThanTyping": "{{val}}% faster than typing on average",
       "wpmEncouragement": {
         "zero": "Start speaking to see your speed!"
       },
@@ -168,7 +168,7 @@
       },
       "tooltips": {
         "streak": "Consecutive days with at least one transcription.",
-        "wpm": "Words per minute based on speech-active duration. Formula: Total Words / Total Speech Duration.",
+        "wpm": "Lifetime average words per minute based on speech-active duration. Formula: Total Words / Total Speech Duration. This can move slightly up or down as new dictations are added.",
         "words": "Total words dictated across all transcriptions.",
         "timeSaved": "Estimated time saved vs. typing at 40 WPM using recording duration. Formula: (Total Words / 40) - Total Recording Duration.",
         "fillerWords": "Total filler words (uh, um, etc.) automatically removed from your transcriptions."
