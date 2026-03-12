@@ -1,5 +1,5 @@
 use crate::audio_toolkit::audio::{
-    list_input_devices, AudioRecorder, RecorderStartError, RecorderStartWait,
+    list_input_devices, AudioRecorder, RecorderStartError, RecorderStartWait, RecorderStopWait,
 };
 use crate::audio_toolkit::vad::SmoothedVad;
 use crate::audio_toolkit::SileroVad;
@@ -105,6 +105,7 @@ fn set_mute(mute: bool) {
 }
 
 const WHISPER_SAMPLE_RATE: usize = 16000;
+const RECORDER_STOP_SLOW_WAIT_WARN_THRESHOLD: Duration = Duration::from_millis(250);
 
 /* ──────────────────────────────────────────────────────────────── */
 
@@ -140,6 +141,45 @@ fn build_stopped_recording(
         speech_duration_ms,
         recording_duration_ms,
     }
+}
+
+fn begin_recorder_stop_wait(
+    recorder: &Mutex<Option<AudioRecorder>>,
+) -> Result<Option<RecorderStopWait>, Box<dyn std::error::Error>> {
+    let recorder_guard = recorder.lock().unwrap();
+    recorder_guard
+        .as_ref()
+        .map(|rec| rec.begin_stop())
+        .transpose()
+}
+
+fn wait_for_recorder_stop(
+    stop_wait: RecorderStopWait,
+    stop_context: &'static str,
+) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    let wait_started = Instant::now();
+    let samples = stop_wait.wait()?;
+    let elapsed = wait_started.elapsed();
+
+    if elapsed > RECORDER_STOP_SLOW_WAIT_WARN_THRESHOLD {
+        warn!(
+            stop_context,
+            elapsed_ms = elapsed.as_millis() as u64,
+            sample_count = samples.len(),
+            event_code = "recorder_stop_wait_slow",
+            "Recorder stop wait completed slowly"
+        );
+    } else {
+        debug!(
+            stop_context,
+            elapsed_ms = elapsed.as_millis() as u64,
+            sample_count = samples.len(),
+            event_code = "recorder_stop_wait_completed",
+            "Recorder stop wait completed"
+        );
+    }
+
+    Ok(samples)
 }
 
 /* ──────────────────────────────────────────────────────────────── */
@@ -2360,14 +2400,19 @@ impl AudioRecordingManager {
         }
         *did_mute_guard = false;
 
-        if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
-            if *self.is_recording.lock().unwrap() {
-                let _ = rec.stop();
-                *self.is_recording.lock().unwrap() = false;
-            } else {
-                let _ = rec.stop(); // pause stream even if not recording
+        let stop_wait = match begin_recorder_stop_wait(&self.recorder) {
+            Ok(wait) => wait,
+            Err(err) => {
+                warn!("Failed to dispatch recorder stop while pausing stream: {err}");
+                None
+            }
+        };
+        if let Some(stop_wait) = stop_wait {
+            if let Err(err) = wait_for_recorder_stop(stop_wait, "stop_microphone_stream") {
+                warn!("Recorder stop failed while pausing stream: {err}");
             }
         }
+        *self.is_recording.lock().unwrap() = false;
 
         self.prearm_owner_token.store(0, Ordering::SeqCst);
         debug!("Microphone stream paused");
@@ -2386,11 +2431,21 @@ impl AudioRecordingManager {
         }
         *did_mute_guard = false;
 
-        if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
-            if *self.is_recording.lock().unwrap() {
-                let _ = rec.stop();
-                *self.is_recording.lock().unwrap() = false;
+        let stop_wait = match begin_recorder_stop_wait(&self.recorder) {
+            Ok(wait) => wait,
+            Err(err) => {
+                warn!("Failed to dispatch recorder stop while tearing down stream: {err}");
+                None
             }
+        };
+        if let Some(stop_wait) = stop_wait {
+            if let Err(err) = wait_for_recorder_stop(stop_wait, "teardown_microphone_stream") {
+                warn!("Recorder stop failed while tearing down stream: {err}");
+            }
+        }
+        *self.is_recording.lock().unwrap() = false;
+
+        if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
             let _ = rec.close();
         }
 
@@ -2811,30 +2866,43 @@ impl AudioRecordingManager {
                     );
 
                     if owner == StartCommitMismatchOwner::SelfCancelled {
-                        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                            if let Err(err) = rec.stop() {
-                                let is_channel_unavailable = err
-                                    .downcast_ref::<std::io::Error>()
-                                    .is_some_and(|io_err| {
-                                        io_err.kind() == std::io::ErrorKind::NotConnected
-                                    });
-                                if is_channel_unavailable {
-                                    debug!(
-                                        session = session_id,
-                                        binding = binding_id,
-                                        trigger_id = trigger_id,
-                                        "Recorder stop skipped during self-cancel cleanup: command channel unavailable"
-                                    );
-                                } else {
-                                    warn!(
-                                        session = session_id,
-                                        binding = binding_id,
-                                        trigger_id = trigger_id,
-                                        error = err.to_string(),
-                                        "Recorder stop failed during self-cancel cleanup"
-                                    );
+                        match begin_recorder_stop_wait(&self.recorder) {
+                            Ok(Some(stop_wait)) => {
+                                if let Err(err) = wait_for_recorder_stop(
+                                    stop_wait,
+                                    "recording_start_self_cancel_cleanup",
+                                ) {
+                                    let is_channel_unavailable = err
+                                        .downcast_ref::<std::io::Error>()
+                                        .is_some_and(|io_err| {
+                                            io_err.kind() == std::io::ErrorKind::NotConnected
+                                        });
+                                    if is_channel_unavailable {
+                                        debug!(
+                                            session = session_id,
+                                            binding = binding_id,
+                                            trigger_id = trigger_id,
+                                            "Recorder stop skipped during self-cancel cleanup: command channel unavailable"
+                                        );
+                                    } else {
+                                        warn!(
+                                            session = session_id,
+                                            binding = binding_id,
+                                            trigger_id = trigger_id,
+                                            error = err.to_string(),
+                                            "Recorder stop failed during self-cancel cleanup"
+                                        );
+                                    }
                                 }
                             }
+                            Ok(None) => {}
+                            Err(err) => warn!(
+                                session = session_id,
+                                binding = binding_id,
+                                trigger_id = trigger_id,
+                                error = err.to_string(),
+                                "Failed to dispatch recorder stop during self-cancel cleanup"
+                            ),
                         }
                         let should_close_stream = {
                             let mode = self.mode.lock().unwrap();
@@ -3101,17 +3169,24 @@ impl AudioRecordingManager {
                 // Stop the recording timer
                 self.stop_recording_timer();
 
-                let samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                    match rec.stop() {
-                        Ok(buf) => buf,
-                        Err(e) => {
-                            error!("stop() failed: {e}");
-                            Vec::new()
+                let samples = match begin_recorder_stop_wait(&self.recorder) {
+                    Ok(Some(stop_wait)) => {
+                        match wait_for_recorder_stop(stop_wait, "stop_recording") {
+                            Ok(buf) => buf,
+                            Err(err) => {
+                                error!("stop() failed: {err}");
+                                Vec::new()
+                            }
                         }
                     }
-                } else {
-                    error!("Recorder not available");
-                    Vec::new()
+                    Ok(None) => {
+                        error!("Recorder not available");
+                        Vec::new()
+                    }
+                    Err(err) => {
+                        error!("Failed to dispatch stop() to recorder worker: {err}");
+                        Vec::new()
+                    }
                 };
 
                 *self.is_recording.lock().unwrap() = false;
@@ -3182,8 +3257,14 @@ impl AudioRecordingManager {
                 // Stop the recording timer
                 self.stop_recording_timer();
 
-                if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                    let _: Result<Vec<f32>, _> = rec.stop(); // Discard the result, fixing type inference
+                match begin_recorder_stop_wait(&self.recorder) {
+                    Ok(Some(stop_wait)) => {
+                        if let Err(err) = wait_for_recorder_stop(stop_wait, "cancel_recording") {
+                            warn!("Recorder stop failed during cancellation: {err}");
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(err) => warn!("Failed to dispatch recorder stop during cancellation: {err}"),
                 }
 
                 *self.is_recording.lock().unwrap() = false;

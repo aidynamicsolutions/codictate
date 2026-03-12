@@ -117,6 +117,22 @@ impl RecorderStartWait {
     }
 }
 
+pub struct RecorderStopWait {
+    samples_rx: mpsc::Receiver<Vec<f32>>,
+}
+
+impl RecorderStopWait {
+    pub fn wait(self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        self.samples_rx.recv().map_err(|_| {
+            Error::new(
+                std::io::ErrorKind::NotConnected,
+                "Recorder worker disconnected before stop completed",
+            )
+            .into()
+        })
+    }
+}
+
 struct PreRollBuffer {
     slots: Vec<Vec<f32>>,
     head: usize,
@@ -375,7 +391,7 @@ impl AudioRecorder {
         Ok(RecorderStartWait { start_id, ready_rx })
     }
 
-    pub fn stop(&self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    pub fn begin_stop(&self) -> Result<RecorderStopWait, Box<dyn std::error::Error>> {
         let tx = self.cmd_tx.as_ref().ok_or_else(|| {
             Error::new(
                 std::io::ErrorKind::NotConnected,
@@ -385,7 +401,13 @@ impl AudioRecorder {
 
         let (resp_tx, resp_rx) = mpsc::channel();
         tx.send(Cmd::Stop(resp_tx))?;
-        Ok(resp_rx.recv()?) // wait for the samples
+        Ok(RecorderStopWait {
+            samples_rx: resp_rx,
+        })
+    }
+
+    pub fn stop(&self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+        self.begin_stop()?.wait()
     }
 
     pub fn close(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -843,7 +865,9 @@ fn run_consumer(
 
 #[cfg(test)]
 mod tests {
-    use super::{run_consumer, AudioRecorder, Cmd, RecorderStartError, StartReadyStatus};
+    use super::{
+        run_consumer, AudioRecorder, Cmd, RecorderStartError, RecorderStopWait, StartReadyStatus,
+    };
     use crate::audio_toolkit::constants;
     use std::sync::{
         atomic::AtomicU64,
@@ -1324,5 +1348,50 @@ mod tests {
 
         // Keep the receiver alive through the wait timeout.
         drop(cmd_rx);
+    }
+
+    #[test]
+    fn begin_stop_allows_wait_outside_external_mutex() {
+        let (cmd_tx, cmd_rx) = mpsc::channel::<Cmd>();
+        let recorder = AudioRecorder {
+            device: None,
+            cmd_tx: Some(cmd_tx),
+            worker_handle: None,
+            vad: None,
+            level_cb: None,
+            cached_config: None,
+            next_start_id: AtomicU64::new(1),
+        };
+        let recorder_mutex = Arc::new(Mutex::new(Some(recorder)));
+
+        let stop_wait: RecorderStopWait = {
+            let guard = recorder_mutex.lock().unwrap();
+            guard
+                .as_ref()
+                .expect("recorder must exist")
+                .begin_stop()
+                .expect("stop dispatch should succeed")
+        };
+
+        let recorder_mutex_for_thread = Arc::clone(&recorder_mutex);
+        let wait_thread = std::thread::spawn(move || stop_wait.wait().is_ok());
+        let guard = recorder_mutex_for_thread
+            .lock()
+            .expect("external mutex acquisition should not block on stop wait");
+        assert!(guard.is_some());
+        drop(guard);
+
+        let Cmd::Stop(reply_tx) = cmd_rx
+            .recv_timeout(Duration::from_millis(250))
+            .expect("stop command should be dispatched")
+        else {
+            panic!("expected stop command");
+        };
+        reply_tx
+            .send(vec![0.42; 8])
+            .expect("stop reply should be delivered");
+
+        let stop_completed = wait_thread.join().expect("stop wait thread should join");
+        assert!(stop_completed, "stop wait should complete successfully");
     }
 }
